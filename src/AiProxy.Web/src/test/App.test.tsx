@@ -29,7 +29,7 @@ describe('App shell + navigation', () => {
       ['Chat', 'Send'],
       ['Images', 'Generate'],
       ['Voice', 'Connect'],
-      ['Usage', /Usage filtering, table, and charts/],
+      ['Usage', 'Apply filters'],
       ['Settings', /placeholder for real authentication/],
     ] as const) {
       await user.click(screen.getByText(navLabel));

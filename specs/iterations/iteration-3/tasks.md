@@ -186,15 +186,23 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 5 — Usage dashboard
 
-- [ ] Filter bar: model deployment, consumer, operation type, date range — mapping directly onto
-  `GET /api/v1/usage`'s existing query parameters, with pagination controls matching its `page`/`pageSize`.
-- [ ] Table view: raw `usage_records` rows (timestamp, deployment, consumer, endpoint, operation type,
-  tokens/usage metrics, status code, duration, streaming).
-- [ ] Chart views (`recharts`): tokens-by-deployment bar chart and requests-over-time line chart, computed
-  client-side from the currently-filtered page(s) — no new backend aggregation endpoint in this iteration
-  (flagged as a known limitation if the result set is large/paginated, since the chart only reflects the
-  loaded page, not the full filtered set).
-- [ ] Empty/loading/error states consistent with the rest of the app.
+- [x] Filter bar (`UsageDashboardPage.tsx`): model deployment, consumer (free-text — both filter
+  server-side by exact/partial name via the existing query params), operation type (`Combobox` over all
+  `OperationType` values + "Any"), date range (plain HTML `<input type="date">`, not a FluentUI DatePicker
+  package — avoids a new dependency for two simple date fields), pagination (Previous/Next, fixed page size
+  of 25) — all mapping directly onto `GET /api/v1/usage`'s existing query parameters (`api/usage.ts`).
+- [x] Table view: `usage_records` rows (timestamp, deployment, consumer, operation type, total tokens,
+  streaming, status code, duration).
+- [x] Chart views (`recharts`): tokens-by-deployment bar chart and requests-per-day line chart, computed
+  client-side from the currently-loaded page only — flagged in the UI itself ("Charts reflect only the
+  currently loaded page...") since there's no backend aggregation endpoint in this iteration.
+- [x] Empty ("No usage records match these filters"), loading (`Spinner`), and error (`ErrorBanner`) states.
+- [x] Component tests (`UsageDashboardPage.test.tsx`): records render in the table, and the empty state shows
+  when the query returns nothing.
+- [x] `vite.config.ts`: set `test.fileParallelism: false` — the FluentUI-Dialog/Tabster test flakiness from
+  Phase 3/4 (repo memory) turned out to be genuinely load-dependent (worse with more test files running
+  concurrently, not fully fixed by `fireEvent.click` alone); running test files sequentially removed the
+  contention entirely, verified stable across 3+ repeated full `npm test` runs. Slower suite, but deterministic.
 
 ## Phase 6 — Documentation
 

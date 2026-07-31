@@ -28,5 +28,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // FluentUI's Dialog/Tabster focus-trap timing gets flaky under concurrent test-file load (repo memory
+    // has the full story) — running files sequentially removes the contention instead of chasing timing bugs.
+    fileParallelism: false,
   },
 })
