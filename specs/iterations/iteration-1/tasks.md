@@ -22,37 +22,37 @@ Definition of Done for this iteration:
 
 ## Phase 0 — Solution scaffolding
 
-- [ ] Create solution `AiProxy.sln` and empty projects per [architecture §4](../../architecture/architecture.md#4-solution-structure-clean-architecture):
+- [x] Create solution `AiProxy.sln` and empty projects per [architecture §4](../../architecture/architecture.md#4-solution-structure-clean-architecture):
   `AiProxy.Domain`, `AiProxy.Application`, `AiProxy.Infrastructure`, `AiProxy.Api`, `AiProxy.ServiceDefaults`,
   `AiProxy.AppHost`.
-- [ ] Create test projects: `AiProxy.Domain.Tests`, `AiProxy.Application.Tests`, `AiProxy.Infrastructure.Tests`,
+- [x] Create test projects: `AiProxy.Domain.Tests`, `AiProxy.Application.Tests`, `AiProxy.Infrastructure.Tests`,
   `AiProxy.Api.Tests`, `AiProxy.ArchitectureTests`.
-- [ ] Wire project references so the dependency direction matches Clean Architecture (Domain has zero project
+- [x] Wire project references so the dependency direction matches Clean Architecture (Domain has zero project
   references; Application → Domain; Infrastructure → Application, Domain; Api → Infrastructure, Application,
   Domain, ServiceDefaults; AppHost → Api).
-- [ ] Add `Directory.Build.props`/`Directory.Packages.props` for shared nullable/analyzers/central package
+- [x] Add `Directory.Build.props`/`Directory.Packages.props` for shared nullable/analyzers/central package
   versions.
-- [ ] Create `logs/` and `test-results/` folders with `.gitkeep`; add both to `.gitignore` (contents, not the
+- [x] Create `logs/` and `test-results/` folders with `.gitkeep`; add both to `.gitignore` (contents, not the
   folders themselves).
-- [ ] Add `AiProxy.ArchitectureTests` with NetArchTest rules asserting: `Domain` does not depend on
+- [x] Add `AiProxy.ArchitectureTests` with NetArchTest rules asserting: `Domain` does not depend on
   `Infrastructure`/`Api`/ASP.NET Core/EF Core; `Application` does not depend on `Infrastructure`/`Api`.
-- [ ] Verify `dotnet build` succeeds and `dotnet test` runs (even with zero real tests) with TRX output redirected
+- [x] Verify `dotnet build` succeeds and `dotnet test` runs (even with zero real tests) with TRX output redirected
   to `test-results/`.
 
 ## Phase 1 — Domain layer
 
-- [ ] Implement `ModelDeployment`, `Endpoint`, `UsageRecord`, `SessionAffinityEntry`, `Consumer` entities and
+- [x] Implement `ModelDeployment`, `Endpoint`, `UsageRecord`, `SessionAffinityEntry`, `Consumer` entities and
   `ApiFamily`, `AuthMode`, `RoutingStrategy`, `EndpointHealthState`, `OperationType` (ChatCompletion, Completion,
   Embedding, ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, extensible) value objects/enums
   (architecture §5).
-- [ ] Implement domain invariants: a deployment must have ≥1 endpoint to be usable; priorities must be unique per
+- [x] Implement domain invariants: a deployment must have ≥1 endpoint to be usable; priorities must be unique per
   deployment; an `ApiKey`-mode endpoint must have a non-empty `SecretRef`; a `ManagedIdentity`-mode endpoint must
   have a non-empty scope; a `Consumer` must have a unique `Name` and a non-empty `ApiKeyHash`; a `UsageRecord`
   must always carry a valid `ConsumerId`/`ConsumerName` and at least one usage signal (token fields or
   `UsageMetrics`).
-- [ ] Implement pure endpoint-selection logic (given a set of endpoints + health states + sticky affinity, return
+- [x] Implement pure endpoint-selection logic (given a set of endpoints + health states + sticky affinity, return
   the endpoint to use) as a testable domain service — no I/O.
-- [ ] Unit tests (`AiProxy.Domain.Tests`) for all invariants and selection logic, including edge cases (all
+- [x] Unit tests (`AiProxy.Domain.Tests`) for all invariants and selection logic, including edge cases (all
   endpoints unhealthy, single endpoint, sticky endpoint unhealthy).
 
 ## Phase 2 — Application layer
