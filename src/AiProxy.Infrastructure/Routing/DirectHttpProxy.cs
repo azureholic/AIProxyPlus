@@ -1,0 +1,96 @@
+using System.Net.Http.Headers;
+using System.Text;
+using AiProxy.Application.Abstractions;
+using Microsoft.AspNetCore.Http;
+
+namespace AiProxy.Infrastructure.Routing;
+
+/// <summary>
+/// Builds outbound requests to a selected <see cref="Endpoint"/> and copies the winning response back to the
+/// client. Deliberately NOT built on YARP's <c>IHttpForwarder</c>: that API commits headers/status to the
+/// client response as soon as it receives them from upstream, which makes it impossible to inspect a response
+/// (to decide "retry on this backend's 5xx") before it has already been forwarded. Since our bounded
+/// per-endpoint retry with failover (architecture.md §9) requires exactly that inspect-before-commit
+/// capability, requests are issued directly via <see cref="HttpMessageInvoker"/> and only the response for
+/// the attempt that is ultimately accepted is copied onto <see cref="HttpContext.Response"/>.
+/// </summary>
+internal static class DirectHttpProxy
+{
+    private static readonly HashSet<string> HopByHopRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Connection", "Keep-Alive", "Transfer-Encoding", "TE", "Trailer", "Upgrade", "Proxy-Authorization",
+        "Proxy-Connection", "Host", "Content-Length", "Content-Type",
+    };
+
+    private static readonly HashSet<string> HopByHopResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Connection", "Keep-Alive", "Transfer-Encoding", "TE", "Trailer", "Upgrade", "Proxy-Authenticate", "Content-Length",
+    };
+
+    public static HttpRequestMessage BuildRequest(HttpContext httpContext, string baseUrl, byte[] bodyBytes, EndpointCredential credential)
+    {
+        var uri = new Uri(baseUrl.TrimEnd('/') + httpContext.Request.Path + httpContext.Request.QueryString);
+        var request = new HttpRequestMessage(new HttpMethod(httpContext.Request.Method), uri);
+
+        if (bodyBytes.Length > 0)
+        {
+            request.Content = new ByteArrayContent(bodyBytes);
+            if (MediaTypeHeaderValue.TryParse(httpContext.Request.ContentType, out var contentType))
+            {
+                request.Content.Headers.ContentType = contentType;
+            }
+        }
+
+        foreach (var header in httpContext.Request.Headers)
+        {
+            if (HopByHopRequestHeaders.Contains(header.Key) || string.Equals(header.Key, credential.HeaderName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            request.Headers.TryAddWithoutValidation(header.Key, (IEnumerable<string?>)header.Value!);
+        }
+
+        request.Headers.Remove(credential.HeaderName);
+        request.Headers.TryAddWithoutValidation(credential.HeaderName, credential.HeaderValue);
+        return request;
+    }
+
+    /// <summary>Streams a non-buffered upstream response straight through to the client.</summary>
+    public static async Task CopyResponseAsync(HttpResponseMessage response, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        CopyStatusAndHeaders(response, httpContext);
+        await response.Content.CopyToAsync(httpContext.Response.Body, cancellationToken);
+    }
+
+    /// <summary>Writes an already-buffered (peeked) upstream response body to the client.</summary>
+    public static async Task CopyBufferedResponseAsync(
+        HttpResponseMessage response, string bufferedBody, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        CopyStatusAndHeaders(response, httpContext);
+        var bytes = Encoding.UTF8.GetBytes(bufferedBody);
+        httpContext.Response.ContentLength = bytes.Length;
+        await httpContext.Response.Body.WriteAsync(bytes, cancellationToken);
+    }
+
+    private static void CopyStatusAndHeaders(HttpResponseMessage response, HttpContext httpContext)
+    {
+        httpContext.Response.StatusCode = (int)response.StatusCode;
+
+        foreach (var header in response.Headers)
+        {
+            if (!HopByHopResponseHeaders.Contains(header.Key))
+            {
+                httpContext.Response.Headers[header.Key] = header.Value.ToArray();
+            }
+        }
+
+        foreach (var header in response.Content.Headers)
+        {
+            if (!HopByHopResponseHeaders.Contains(header.Key))
+            {
+                httpContext.Response.Headers[header.Key] = header.Value.ToArray();
+            }
+        }
+    }
+}

@@ -109,27 +109,39 @@ Definition of Done for this iteration:
   (missing path), and `ConsumerAuthenticator` end-to-end against a real hasher+pepper (accepts a valid key,
   rejects an unknown or revoked one).
 
-## Phase 5 — Infrastructure: Routing (YARP)
+## Phase 5 — Infrastructure: Routing
 
-- [ ] Implement a database-backed `IProxyConfigProvider` that builds YARP clusters/destinations from
-  `ModelDeployment`/`Endpoint` data, refreshed on config change (in-process change token).
-- [ ] Implement deployment resolution: peek `model` field from the request body (buffered) before YARP
-  forwarding, for both OpenAI-shaped and Anthropic-shaped payloads.
-- [ ] Implement priority-based load balancing + passive/active health checks (mark endpoint unhealthy on
-  transport error/5xx/timeout for a cooldown window, then retry).
-- [ ] Implement session affinity: extract session id (body field or `X-Session-Id` header), persist/read via
-  `ISessionAffinityStore`, apply YARP session affinity when `StickySessionEnabled`; define and implement the
-  "sticky endpoint unhealthy → fail fast" policy from architecture §9.
-- [ ] Implement Responses API affinity chaining (architecture §6.4/§9): on request, if `previous_response_id`
-  is present, look it up in `ISessionAffinityStore` and pin routing to that endpoint; on response completion,
-  extract the response's own `id` and write a new affinity row (skip entirely when the request set
-  `store: false`).
-- [ ] Implement bounded per-endpoint retry with jittered backoff (Microsoft.Extensions.Http.Resilience) before
-  failover to next priority.
-- [ ] Integration tests (`AiProxy.Api.Tests`) against WireMock.Net fake backends: priority selection, failover on
-  5xx/timeout, sticky session pins to the same fake backend across calls, sticky session with unhealthy endpoint
-  returns the documented error, Responses API `previous_response_id` chaining pins to the originating backend
-  across turns.
+> **Design note (deviation from the original plan):** destination selection depends on the request body
+> (`model`, session id, `previous_response_id`) and our own domain rules (priority/failover/sticky), which
+> doesn't map onto YARP's declarative `IProxyConfigProvider`/cluster model. We also found that YARP's
+> `IHttpForwarder` commits status/headers to the client as soon as it receives them from upstream, which
+> makes bounded per-endpoint retry (inspect-before-commit) impossible when reusing it across attempts on the
+> same `HttpContext` (empirically confirmed via a failing integration test: "the response has already
+> started"). Routing is instead implemented as: buffer + peek the request body, run our own
+> priority/failover/sticky selection (`EndpointSelector`), then forward via a small `DirectHttpProxy` helper
+> that issues each attempt with a raw `HttpMessageInvoker`, inspects the status code, and only copies the
+> response onto `HttpContext.Response` once an attempt is accepted (success or retries exhausted). This keeps
+> full control over retries/affinity while still supporting streaming pass-through later (Phase 6).
+
+- [x] Implement deployment resolution: peek `model` field from the request body (buffered) before forwarding,
+  for both OpenAI-shaped and Anthropic-shaped payloads.
+- [x] Implement priority-based load balancing + passive health checks (mark endpoint unhealthy on transport
+  error/5xx, in-memory `IEndpointHealthTracker`).
+- [x] Implement session affinity: extract session id (body field or `X-Session-Id` header), persist/read via
+  `ISessionAffinityStore`; implement the "sticky endpoint unhealthy → fail fast" policy from architecture §9
+  (no fallback to another endpoint for a pinned session).
+- [x] Implement Responses API affinity chaining (architecture §6.4/§9): on request, if `previous_response_id`
+  is present, look it up in `ISessionAffinityStore` and pin routing to that endpoint (falls back to normal
+  routing if the id is unrecognized); on response completion, extract the response's own `id` and write a new
+  affinity row (skip entirely when the request set `store: false`).
+- [x] Implement bounded per-endpoint retry with jittered backoff before failover to next priority
+  (`DirectHttpProxy` + manual retry loop in `ProxyRoutingService`).
+- [x] Integration tests (`AiProxy.Api.Tests`) against WireMock.Net fake backends: priority selection, failover on
+  5xx/connection-refused, all-endpoints-unhealthy → 503, unknown deployment/missing model → 404, disabled
+  endpoint never selected, sticky session pins to the same fake backend across calls, sticky session with
+  unhealthy endpoint returns the documented error (no silent reroute), different sessions may land on different
+  endpoints, Responses API `previous_response_id` chaining pins to the originating backend across turns, unknown
+  `previous_response_id` falls back to normal routing, `store: false` skips affinity persistence.
 
 ## Phase 6 — Streaming & usage capture
 

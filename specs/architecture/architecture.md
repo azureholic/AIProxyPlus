@@ -30,8 +30,8 @@ it is not tied to Azure:
 | 5 | OpenTelemetry (traces, logs, metrics) | OTLP exporter → Aspire dashboard locally, OTLP collector in prod |
 | 6 | Configuration | see §7 |
 | 6.1 | Model-deployment name | `ModelDeployment.Name` (routing key) |
-| 6.2 | 1+ endpoints, priority + failover | `Endpoint.Priority`, YARP cluster destinations, active/passive health checks |
-| 6.3 | Sticky sessions for stateful calls | YARP session affinity keyed by session id, persisted in Postgres |
+| 6.2 | 1+ endpoints, priority + failover | `Endpoint.Priority`, `EndpointSelector` (Domain) + passive health checks |
+| 6.3 | Sticky sessions for stateful calls | Session-id-keyed affinity (`ISessionAffinityStore`), persisted in Postgres |
 | 6.4 | API key vs Managed Identity per endpoint | `Endpoint.AuthMode` + `ICredentialProvider` strategy |
 | 6.5 | Configuration REST API | `/api/v1/config/*` CRUD endpoints, incl. `Consumer` (API key) management |
 | 7 | Secure API key storage, container-based | HashiCorp Vault (OSS) container, KV v2 engine |
@@ -55,7 +55,7 @@ it is not tied to Azure:
 
 ## 4. Solution Structure (Clean Architecture)
 
-Dependencies point **inward**. Nothing in `Domain` or `Application` references ASP.NET Core, EF Core, YARP, Vault, or
+Dependencies point **inward**. Nothing in `Domain` or `Application` references ASP.NET Core, EF Core,
 OpenTelemetry — those are all `Infrastructure` concerns wired up in `Api` (composition root) and `AppHost`.
 
 ```
@@ -63,7 +63,7 @@ ai-proxy/
 ├── src/
 │   ├── AiProxy.Domain/            # Entities, value objects, domain events, repository interfaces (ports)
 │   ├── AiProxy.Application/       # Use cases (CQRS-ish handlers), DTOs, validation, application-level interfaces
-│   ├── AiProxy.Infrastructure/    # EF Core + Npgsql, Vault client, YARP integration, credential providers,
+│   ├── AiProxy.Infrastructure/    # EF Core + Npgsql, Vault client, direct-HTTP routing/forwarding,
 │   │                              # HTTP forwarding, OpenTelemetry instrumentation, background jobs
 │   ├── AiProxy.Api/                # ASP.NET Core minimal API host, endpoint mapping, middleware, composition root
 │   ├── AiProxy.ServiceDefaults/    # Aspire shared service defaults (OTel, health checks, resilience defaults)
@@ -94,7 +94,8 @@ ai-proxy/
   `OperationType` combination, resolved via `IUsageExtractorResolver`) ports; command/query handlers for
   configuration CRUD and usage queries; validation (FluentValidation).
 - **Infrastructure** — implements all ports: `AiProxyDbContext` (EF Core/Npgsql), `VaultSecretResolver`
-  (VaultSharp), `ApiKeyCredentialProvider` / `ManagedIdentityCredentialProvider`, YARP `IProxyConfigProvider`,
+  (VaultSharp), `ApiKeyCredentialProvider` / `ManagedIdentityCredentialProvider`, `ProxyRoutingService` +
+  `DirectHttpProxy`,
   custom `ITransformProvider` for auth injection, per-operation `IUsageExtractor` implementations (e.g.
   `ChatCompletionUsageExtractor`, `ImageUsageExtractor`), OpenTelemetry resource/exporter setup.
 - **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`), configuration routes
@@ -214,27 +215,36 @@ with a well-known root token confined to the dev environment is acceptable.
 
 ## 9. Routing & Failover
 
-- Built on **YARP** (`Yarp.ReverseProxy`), the same library family the original proxy used, but with a
-  **dynamic, database-backed** `IProxyConfigProvider` instead of static JSON — clusters/destinations are rebuilt
-  from `model_deployments`/`endpoints` whenever configuration changes.
-- **Deployment resolution**: the ingress endpoint peeks the request body (`model` field for OpenAI schema,
-  `model` field for Anthropic schema) to determine the target `ModelDeployment` before YARP forwarding — this
-  is the one place the proxy must buffer the body, and it's covered by a dedicated integration test for both
-  large payloads and streaming requests. The same `model`-field peek covers every OpenAI-compatible operation
-  type (chat completions, completions, embeddings, images) since they all carry a `model` field — no
-  per-operation-type routing logic is needed.
-- **Priority + failover**: destinations are ordered by `Endpoint.Priority`. A custom load-balancing policy tries
-  the lowest-priority-number healthy destination first; YARP active health checks (periodic) and passive health
-  checks (on transport errors/5xx) mark an endpoint unhealthy for a cooldown window, at which point the next
-  priority is tried — mirroring the original `ThrottlingHealthPolicy` idea but generalized beyond 429s.
-- **Sticky sessions (6.3)**: YARP **session affinity** is enabled per deployment when `StickySessionEnabled` is
-  true. The affinity key is resolved per operation type: for chat completions it's a client-supplied session
-  identifier (a `session`/`conversation-id` field in the request body or an `X-Session-Id` header —
-  configurable); for the **Responses API** it's the caller's `previous_response_id`, if present. The affinity map
-  itself is persisted in `session_affinity` (Postgres) rather than only in-memory, so the "one endpoint per
-  stateful session" guarantee survives proxy restarts/multiple replicas. If the affinity-selected endpoint
-  becomes unhealthy, a documented failure policy applies (Iteration 1: fail the request with a clear error
-  rather than silently breaking session state — silently rerouting a stateful session is unsafe).
+> **Implementation note:** the original plan was to build this on YARP's declarative `IProxyConfigProvider`/
+> cluster/session-affinity model. During Phase 5 implementation this was replaced with a custom
+> `DirectHttpProxy` + `ProxyRoutingService` (still using `Yarp.ReverseProxy`'s low-level building blocks was
+> considered, but ultimately not used) for two reasons, confirmed empirically: (1) destination selection here
+> depends on the request *body* (`model`, session id, `previous_response_id`) and domain rules, not a static
+> route table; (2) YARP's `IHttpForwarder` commits response status/headers to the client as soon as they
+> arrive from upstream, which makes "inspect the response, then decide whether to retry on the next endpoint"
+> impossible when reusing the same `HttpContext` across attempts. Routing/failover/affinity/retry are
+> therefore all handled directly in `AiProxy.Infrastructure.Routing`, issuing each attempt via a raw
+> `HttpMessageInvoker` and only copying the accepted response onto `HttpContext.Response` once a winning
+> attempt is chosen (or retries are exhausted).
+
+- **Deployment resolution**: the ingress endpoint buffers and peeks the request body (`model` field for OpenAI
+  schema, `model` field for Anthropic schema) to determine the target `ModelDeployment` before forwarding —
+  this is the one place the proxy must buffer the body, and it's covered by a dedicated integration test. The
+  same `model`-field peek covers every OpenAI-compatible operation type (chat completions, completions,
+  embeddings, images) since they all carry a `model` field — no per-operation-type routing logic is needed.
+- **Priority + failover**: endpoints are ordered by `Endpoint.Priority`. `EndpointSelector` (Domain) picks the
+  lowest-priority-number healthy endpoint first, excluding any already tried in this request. Passive health
+  checks (on transport error/5xx) mark an endpoint unhealthy via `IEndpointHealthTracker`, at which point the
+  next priority is tried — mirroring the original `ThrottlingHealthPolicy` idea but generalized beyond 429s.
+- **Sticky sessions (6.3)**: when `StickySessionEnabled` is true, the affinity key is resolved per operation
+  type: for chat completions it's a client-supplied session identifier (a `session` field in the request body
+  or an `X-Session-Id` header); for the **Responses API** it's the caller's `previous_response_id`, if present.
+  The affinity map is persisted in `session_affinity` (Postgres) rather than only in-memory, so the "one
+  endpoint per stateful session" guarantee survives proxy restarts/multiple replicas. If the affinity-selected
+  endpoint becomes unhealthy, the documented failure policy applies (fail the request with a clear error
+  rather than silently rerouting a stateful session — confirmed unsafe and covered by an integration test).
+  An unrecognized/expired affinity key (no matching row) is *not* an error — the request simply falls back to
+  normal (non-sticky) routing.
 - **Responses API chaining**: the Responses API is stateful by default (OpenAI persists each response server-side
   unless the caller sets `store: false`), and a follow-up call references the prior turn via
   `previous_response_id` — that id only resolves on the endpoint that created it. So whenever a `/responses`
@@ -244,8 +254,11 @@ with a well-known root token confined to the dev environment is acceptable.
   `session_affinity.session_id` is just an opaque affinity key, whether it came from a client or from an
   OpenAI-issued response id. If the client sets `store: false`, there is no chain to preserve and no affinity
   row is written.
-- **Retries**: bounded per-endpoint retry (`Endpoint.MaxRetries`) with jittered backoff (Polly, via
-  `Microsoft.Extensions.Http.Resilience`) before failing over to the next priority.
+- **Retries**: bounded per-endpoint retry (`Endpoint.MaxRetries`) with jittered backoff, issued as direct
+  `HttpMessageInvoker` calls (not `Microsoft.Extensions.Http.Resilience`/Polly — the retry decision needs to
+  inspect the upstream response *before* anything is written to the client, which a `DelegatingHandler`-based
+  resilience pipeline around a single forwarded call doesn't give us control over) before failing over to the
+  next priority.
 
 ## 10. Streaming & Usage Capture (8)
 
@@ -356,7 +369,7 @@ Clean Architecture is enforced and verified, not just aspirational:
 |---|---|---|---|
 | `AiProxy.Domain.Tests` | Unit | xUnit, FluentAssertions | Entity invariants, value objects, routing/failover selection logic |
 | `AiProxy.Application.Tests` | Unit | xUnit, FluentAssertions, NSubstitute | Use case handlers with mocked ports, validation rules |
-| `AiProxy.Infrastructure.Tests` | Integration | xUnit, Testcontainers (Postgres + Vault), VaultSharp, EF Core | Repository behavior, migrations, VaultSecretResolver against a real Vault container, YARP config provider rebuild logic |
+| `AiProxy.Infrastructure.Tests` | Integration | xUnit, Testcontainers (Postgres + Vault), VaultSharp, EF Core | Repository behavior, migrations, VaultSecretResolver against a real Vault container |
 | `AiProxy.Api.Tests` | Integration | xUnit, `WebApplicationFactory`, WireMock.Net (fake OpenAI/Anthropic backends) | End-to-end ingress routing, failover, sticky sessions, streaming usage capture/suppression, config CRUD API, authz |
 | `AiProxy.ArchitectureTests` | Architecture | NetArchTest.Rules | Domain has no dependency on Infrastructure/Api/ASP.NET Core/EF Core; Application has no dependency on Infrastructure |
 
@@ -379,11 +392,11 @@ Clean Architecture is enforced and verified, not just aspirational:
 |---|---|---|
 | Runtime | .NET 10 | Latest LTS-track SDK, required by the user |
 | API style | ASP.NET Core Minimal APIs | Lightweight, fast, matches Clean Architecture composition root pattern |
-| Reverse proxy engine | YARP (`Yarp.ReverseProxy`) | Same family as the original proxy; supports dynamic config, session affinity, health checks, custom transforms |
+| Reverse proxy engine | Custom `DirectHttpProxy` over `HttpMessageInvoker` | Body-driven, domain-rule-based routing/failover/affinity/retry don't map onto YARP's declarative cluster model, and `IHttpForwarder` commits the response before a retry decision can be made (see §9) |
 | Local orchestration | .NET Aspire (AppHost + ServiceDefaults) | Required by the user; first-class OTLP wiring + container orchestration for local dev |
 | Database | PostgreSQL + EF Core/Npgsql | Explicitly requested; portable, container-friendly |
 | Secret store | HashiCorp Vault (OSS), container | Runs in a container as required; industry-standard KV secret engine, supports AppRole and future rotation |
-| Resilience | `Microsoft.Extensions.Http.Resilience` (Polly v8) | Standard .NET-idiomatic retry/circuit-breaker, integrates with YARP/HttpClient |
+| Resilience | Manual bounded retry + jittered backoff (`ProxyRoutingService`) | Retry must inspect the upstream response before committing anything to the client (see §9), which rules out a `DelegatingHandler`-based resilience pipeline |
 | Observability | OpenTelemetry SDK + OTLP exporter | Explicitly requested; vendor-neutral |
 | Optional Azure auth | `Azure.Identity` | Only loaded/used for endpoints configured with `AuthMode = ManagedIdentity` |
 | Testing | xUnit, FluentAssertions, NSubstitute, Testcontainers, WireMock.Net, NetArchTest | Standard, well-supported .NET test stack covering unit/integration/architecture tests |
