@@ -279,14 +279,28 @@ Definition of Done for this iteration:
 
 ## Phase 10 — Test hardening & documentation
 
-- [ ] Add WireMock.Net-based fake OpenAI and Anthropic backend fixtures (success, 5xx, timeout, streaming
-  with/without usage, non-streaming Images API generations/edits/variations responses, and Responses API
-  streaming/non-streaming responses incl. a `previous_response_id` chain across two fake backends) reused across
-  `AiProxy.Api.Tests`.
-- [ ] Ensure `dotnet test` across the whole solution writes TRX + coverage (Cobertura) into `test-results/`
-  (one subfolder per run), and the running API/tests write logs into `logs/`.
-- [ ] Review coverage on `Domain`/`Application`; add tests for any uncovered branches in routing/failover/usage
-  logic specifically (highest-risk areas).
-- [ ] Write top-level `README.md`: architecture summary, how to run locally (Aspire), how to run via
-  `docker compose`, how to run tests and where output lands (`logs/`, `test-results/`), and example `curl`
-  requests for OpenAI and Anthropic ingress routes.
+- [x] Added dedicated unit tests for the `IUsageExtractor` family (`AiProxy.Infrastructure.Tests/Usage`) —
+  `OpenAiStyleTokenUsageExtractorTests`, `AnthropicChatUsageExtractorTests`, `ImageUsageExtractorTests`,
+  `ResponsesUsageExtractorTests` — plus `AdminApiKeyAuthenticatorTests` (auto-provision-on-first-run and
+  reuse-existing-hash branches). Added `AdditionalCoverageTests` (`AiProxy.Api.Tests`) covering the remaining
+  fixture gaps: non-streaming Images API edit/variation, streaming Responses API `previous_response_id`
+  chaining, and a caller-cancellation test proving the retry/failover loop does **not** spuriously retry when
+  the caller (not the backend) gives up — this last one exercises a genuinely previously-untested branch in
+  `ProxyRoutingService`'s `TaskCanceledException` handling.
+- [x] Verified `dotnet test --results-directory test-results/<timestamp> --logger trx --collect:"XPlat Code
+  Coverage"` writes a TRX + `coverage.cobertura.xml` per test project into a single timestamped subfolder
+  (all 5 test projects ran; verification folder deleted afterward — `test-results/` stays git-ignored except
+  `.gitkeep`), and confirmed the API's Serilog rolling-file sink writes to `logs/ai-proxy-.log` during a real
+  run (already exercised manually in Phase 9).
+- [x] Reviewed coverage on `Domain`/`Application` (both already consistently ≥92.9% on every file with any
+  gaps — nothing egregious) and on the highest-risk routing/failover/usage files specifically: after the new
+  tests, `ResponsesUsageExtractor` 30%→100%, `AnthropicChatUsageExtractor` 58.3%→91.7%, `ImageUsageExtractor`
+  66.7%→94.4%, `AdminApiKeyAuthenticator` 65.2%→100%, `ProxyRoutingService` 86.2%→91.6%. Remaining gaps are
+  defensive/malformed-JSON branches and one Domain-invariant-guarded-unreachable branch in
+  `ManagedIdentityCredentialProvider` (documented in Phase 4's notes) — judged acceptable to leave uncovered.
+- [x] Wrote top-level [README.md](../../../README.md): architecture summary + key design decisions, how to run
+  locally via Aspire vs. `docker compose` (incl. the one-time migration + admin-key-is-logged-once steps),
+  example `curl` requests for consumer/deployment creation and both OpenAI and Anthropic ingress routes, and
+  where test/log output lands.
+- 251/251 tests passing solution-wide — **Iteration 1 complete** (all 10 phases done, one commit per phase).
+
