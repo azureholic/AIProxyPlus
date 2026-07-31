@@ -15,6 +15,8 @@ Definition of Done for this iteration:
 - `AiProxy.AppHost` starts the API, Postgres, Vault, and the Aspire dashboard, and traces/metrics/logs for a
   sample request are visible in the dashboard.
 - A README documents how to run locally (Aspire) and via `docker compose`.
+- A git commit is made after each phase (Phase 0 through Phase 10) once its tasks are checked off and
+  `dotnet build`/`dotnet test` pass, so history maps 1:1 to phases and each phase is independently revertible.
 
 ---
 
