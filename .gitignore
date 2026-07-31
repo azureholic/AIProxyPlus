@@ -1,0 +1,17 @@
+# Build artifacts
+[Bb]in/
+[Oo]bj/
+*.user
+
+# Rider / VS
+.vs/
+.idea/
+*.suo
+
+# Runtime debug logs (Serilog rolling file sink) — keep the folder, ignore contents
+logs/*
+!logs/.gitkeep
+
+# dotnet test TRX/coverage output — keep the folder, ignore contents
+test-results/*
+!test-results/.gitkeep
