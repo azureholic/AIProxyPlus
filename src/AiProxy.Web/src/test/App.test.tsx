@@ -1,14 +1,23 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 
 describe('App shell + navigation', () => {
+  beforeEach(() => {
+    // Model Deployments/Consumers fetch on mount — stub fetch so this suite tests navigation, not data loading.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 })));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('renders the app title and lands on the default (Model Deployments) route', async () => {
     render(<App />);
 
     expect(await screen.findByText('AI Proxy')).toBeInTheDocument();
-    expect(await screen.findByText(/Model deployment \+ endpoint management/)).toBeInTheDocument();
+    expect(await screen.findByText('New deployment')).toBeInTheDocument();
   });
 
   it('navigates to each top-level page via the sidebar', async () => {
@@ -16,7 +25,7 @@ describe('App shell + navigation', () => {
     render(<App />);
 
     for (const [navLabel, pageBodyText] of [
-      ['Consumers', /Consumer API key management/],
+      ['Consumers', 'New consumer'],
       ['Chat', /Streaming\/non-streaming chat testing/],
       ['Images', /Image generation testing/],
       ['Voice', /Realtime \(voice\) WebSocket connectivity test/],

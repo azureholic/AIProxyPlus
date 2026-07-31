@@ -121,24 +121,32 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 3 — Config pages
 
-- [ ] **Model Deployments**: list (name, strategy, endpoint count/health summary), create (name + routing
-  strategy), edit (strategy), delete (with a confirm dialog — cascades endpoints per §7.2, worth calling out
-  in the UI).
-- [ ] **Endpoints** (nested under a deployment's detail page): list (base URL, API family, priority, auth
-  mode, enabled, timeout, max retries), add (all `AddEndpointBody` fields, incl. the API key input for
-  `AuthMode.ApiKey` which is write-only — never redisplayed after save), edit (priority/enabled/timeout/max
-  retries — not base URL/API family/auth mode, matching `UpdateEndpointBody`'s actual fields), remove (confirm
-  dialog), rotate/replace secret (separate action calling `PUT .../secret`, not bundled into the general edit
-  form, mirroring the API's own write-only secret design).
-- [ ] **Consumers** (minimal, see Decisions): list (name, enabled, created/revoked — never key/hash), create
-  (name only; show the plaintext API key returned **exactly once** in a copy-to-clipboard dialog with an
-  explicit "you will not see this again" warning), rotate (same one-time-reveal dialog), revoke (confirm
-  dialog).
-- [ ] Form validation mirrors the backend's FluentValidation rules closely enough to avoid round-tripping
-  obviously-invalid input (e.g. required fields, priority ≥ 0), but the backend remains the source of truth —
-  server validation errors are surfaced verbatim, not swallowed.
-- [ ] Component tests: at minimum, the create-consumer one-time-reveal flow and the delete-confirmation flows
-  (the two places a mistake is hardest to recover from).
+- [x] **Model Deployments** (`pages/config/ModelDeploymentsPage.tsx`): list (name, strategy, endpoint health
+  summary badge), create (name — strategy omitted from the form since `RoutingStrategy` has only one value
+  today, hardcoded to `Priority`), delete (`ConfirmDialog`, cascades endpoints per §7.2, called out in the
+  dialog copy). Edit-strategy skipped for the same single-value reason (see Decisions). Row click navigates to
+  a detail page (`/config/model-deployments/:name`, not in the sidebar).
+- [x] **Endpoints** (`pages/config/ModelDeploymentDetailPage.tsx`): list (base URL, API family, priority, auth
+  mode, enabled toggle, health badge, timeout, max retries), add (all `AddEndpointInput` fields incl. the
+  conditional API-key/managed-identity-scope input based on auth mode), inline enabled toggle
+  (`PUT .../endpoints/{id}`), remove (`ConfirmDialog`), set/replace secret (separate dialog calling
+  `PUT .../secret`, not bundled into the add/edit form — matches the API's write-only secret design). Priority
+  edit is currently only settable at add time, not via a dedicated inline edit control (`UpdateEndpointInput`
+  supports it; the UI doesn't expose it yet) — a small gap, noted for a follow-up pass rather than blocking
+  the rest of Phase 3.
+- [x] **Consumers** (`pages/config/ConsumersPage.tsx`, minimal, see Decisions): list (name, status badge,
+  created), create (name only, `SecretRevealDialog` shows the plaintext key exactly once with a
+  copy-to-clipboard button and an explicit "you will not see this again" warning), rotate (same dialog),
+  revoke (`ConfirmDialog`).
+- [x] Form validation: required-field/disable-until-valid checks client-side (e.g. Create disabled until a
+  name is entered); the backend's FluentValidation remains the source of truth — errors surface verbatim via
+  `ErrorBanner` (`ApiError.message`, plus any `Retry-After` header — Iteration 2 Phase 5), never swallowed.
+- [x] Component tests: `ConsumersPage.test.tsx` (create + one-time-reveal, revoke-only-after-confirm) and
+  `ModelDeploymentsPage.test.tsx` (delete-only-after-confirm) — 4 new tests, all passing. Found and fixed two
+  real testing-infrastructure bugs along the way (now in repo memory): jsdom lacks `ResizeObserver`
+  (`MessageBar` crashes without a stub in `src/test/setup.ts`), and `userEvent.type()` on a FluentUI `Input`
+  inside a `Dialog` breaks subsequent `getByRole` queries in the same dialog — worked around with
+  `fireEvent.change`.
 
 ## Phase 4 — Playground
 
