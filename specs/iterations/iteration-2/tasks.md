@@ -73,8 +73,8 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 
 ## Phase 3 — Realtime (voice) API via WebSocket proxy
 
-- [ ] Domain: add `OperationType.RealtimeVoice`.
-- [ ] Infrastructure: `RealtimeProxyService` — accepts the inbound WebSocket
+- [x] Domain: add `OperationType.RealtimeVoice`.
+- [x] Infrastructure: `RealtimeProxyService` — accepts the inbound WebSocket
   (`HttpContext.WebSockets.AcceptWebSocketAsync`), resolves `model` from the **query string** (no body to peek
   on a WebSocket handshake), resolves the `ModelDeployment`, selects an endpoint via the same
   `EndpointSelector` (priority + round-robin — no affinity/stickiness needed, the connection itself is the
@@ -84,13 +84,13 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
   priority/round-robin candidate (bounded by the deployment's endpoint count) — never mid-session. Once
   connected, pump frames bidirectionally (two loops) until either side closes; propagate the close
   status/reason back to the other side.
-- [ ] Api: `app.UseWebSockets()`; new ingress route `GET /openai/v1/realtime` behind the same
+- [x] Api: `app.UseWebSockets()`; new ingress route `GET /openai/v1/realtime` behind the same
   `ConsumerAuthEndpointFilter` as other ingress routes (the handshake is a normal HTTP GET with headers before
   the protocol upgrade, so the existing `X-Api-Key` filter applies unchanged).
-- [ ] Test infrastructure: a minimal in-process fake WebSocket backend (a second `WebApplication`/Kestrel test
+- [x] Test infrastructure: a minimal in-process fake WebSocket backend (a second `WebApplication`/Kestrel test
   host with `UseWebSockets()` + an echo/scripted endpoint) since WireMock.Net doesn't support WebSocket —
   reused across the new realtime tests the same way `WireMockServer` is reused for HTTP fakes.
-- [ ] Integration tests (`AiProxy.Api.Tests`): successful connect + bidirectional echo round-trip; unknown
+- [x] Integration tests (`AiProxy.Api.Tests`): successful connect + bidirectional echo round-trip; unknown
   deployment / missing `model` query param rejected before any upgrade attempt; handshake failure on the
   priority-1 endpoint fails over to priority-2; missing/invalid `X-Api-Key` rejected with 401 before upgrade.
 

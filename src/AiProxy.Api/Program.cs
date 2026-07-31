@@ -97,6 +97,7 @@ builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(Operation
 builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(OperationType.ImageVariation));
 
 builder.Services.AddScoped<ProxyRoutingService>();
+builder.Services.AddScoped<RealtimeProxyService>();
 
 // Secrets/auth — pepper and admin key hash are auto-provisioned from Vault on first read (§8); ISecretResolver
 // itself isn't registered until Phase 9 wires a real Vault client (or a test double supplies one).
@@ -156,6 +157,7 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async httpContext =>
 }));
 
 app.UseSerilogRequestLogging();
+app.UseWebSockets();
 
 app.MapGet("/", () => "Hello World!");
 
@@ -186,6 +188,14 @@ ingress.MapPost("/openai/v1/responses", (HttpContext ctx, ProxyRoutingService ro
     RouteOrFailAsync(ctx, router, OperationType.ResponsesApi, ct));
 ingress.MapPost("/anthropic/v1/messages", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ChatCompletion, ct));
+ingress.MapGet("/openai/v1/realtime", async (HttpContext ctx, RealtimeProxyService router, CancellationToken ct) =>
+{
+    var failure = await router.ProxyAsync(ctx, ct);
+    if (failure is not null)
+    {
+        await WriteRoutingFailureAsync(ctx, failure);
+    }
+});
 
 var config = app.MapGroup("/api/v1/config").AddEndpointFilter<AdminAuthEndpointFilter>();
 
@@ -294,11 +304,14 @@ static async Task RouteOrFailAsync(
         : null;
 
     var failure = await router.RouteAsync(httpContext, operationType, cancellationToken, consumerId, consumerName);
-    if (failure is null)
+    if (failure is not null)
     {
-        return;
+        await WriteRoutingFailureAsync(httpContext, failure);
     }
+}
 
+static async Task WriteRoutingFailureAsync(HttpContext httpContext, RoutingFailure failure)
+{
     httpContext.Response.StatusCode = failure.Reason switch
     {
         RoutingFailureReason.DeploymentNotFound => StatusCodes.Status404NotFound,
