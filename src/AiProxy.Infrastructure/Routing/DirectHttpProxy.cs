@@ -19,7 +19,7 @@ internal static class DirectHttpProxy
     private static readonly HashSet<string> HopByHopRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         "Connection", "Keep-Alive", "Transfer-Encoding", "TE", "Trailer", "Upgrade", "Proxy-Authorization",
-        "Proxy-Connection", "Host", "Content-Length", "Content-Type",
+        "Proxy-Connection", "Host", "Content-Length", "Content-Type", "X-Consumer-Id", "X-Consumer-Name",
     };
 
     private static readonly HashSet<string> HopByHopResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
@@ -73,7 +73,7 @@ internal static class DirectHttpProxy
         await httpContext.Response.Body.WriteAsync(bytes, cancellationToken);
     }
 
-    private static void CopyStatusAndHeaders(HttpResponseMessage response, HttpContext httpContext)
+    internal static void CopyStatusAndHeaders(HttpResponseMessage response, HttpContext httpContext)
     {
         httpContext.Response.StatusCode = (int)response.StatusCode;
 

@@ -17,6 +17,8 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public FakeSessionAffinityStore Affinity { get; } = new();
 
+    public FakeUsageRecordRepository UsageRecords { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureTestServices(services =>
@@ -24,6 +26,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             services.AddSingleton<IModelDeploymentRepository>(Deployments);
             services.AddSingleton<ISessionAffinityStore>(Affinity);
             services.AddSingleton<ICredentialProvider, FakeCredentialProvider>();
+            services.AddSingleton<IUsageRecordRepository>(UsageRecords);
         });
     }
 }

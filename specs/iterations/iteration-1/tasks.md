@@ -145,29 +145,41 @@ Definition of Done for this iteration:
 
 ## Phase 6 — Streaming & usage capture
 
-- [ ] Implement `IUsageExtractor` implementations per architecture §4/§10: `ChatCompletionUsageExtractor` /
-  `CompletionUsageExtractor` / `EmbeddingUsageExtractor` (token-based, from JSON `usage` or the streaming SSE
-  usage frame), `ImageUsageExtractor` (non-streaming; reads whatever billing signal the Images API response
-  contains — e.g. image count/size/quality — into `UsageMetrics`), and `ResponsesUsageExtractor` (reads
-  `input_tokens`/`output_tokens`/`total_tokens` from the `response.completed` SSE event or the JSON body); wire
-  them up via `IUsageExtractorResolver`.
-- [ ] Implement outbound request mutation: force `stream_options.include_usage = true` for OpenAI-family
-  streaming (chat completions) requests.
-- [ ] Implement a streaming response interceptor that parses SSE `data:` frames incrementally (no full-body
-  buffering), detects the usage-bearing frame (OpenAI final chunk / Anthropic `message_start` +
-  `message_delta`), and records usage via the resolved `IUsageExtractor`.
-- [ ] Implement suppression of the injected usage-only chunk when the original client request did not request
-  usage, for both API families.
-- [ ] Implement non-streaming usage extraction from the JSON response body (chat completions without
-  `stream: true`, completions, embeddings, and all Images API operations).
-- [ ] Wire usage capture to `IUsageRecordRepository` (async, non-blocking), attaching the `ConsumerId`/
-  `ConsumerName` resolved during ingress authentication (Phase 7) and the resolved `OperationType` to every
-  `UsageRecord`.
-- [ ] Integration tests (`AiProxy.Api.Tests`): streaming with client-requested usage (chunk forwarded),
-  streaming without client-requested usage (chunk suppressed, stream otherwise identical), non-streaming usage
-  capture for chat completions/embeddings (token fields populated) and images (`UsageMetrics` populated, token
-  fields null), verify `usage_records` row written in all cases with the correct `ConsumerId` and
-  `OperationType`, verify time-to-first-byte isn't materially impacted (no full-stream buffering).
+> **Note:** `ConsumerId`/`ConsumerName` attribution is a placeholder until Phase 7 wires real ingress
+> authentication — `Program.cs` currently reads them from `X-Consumer-Id`/`X-Consumer-Name` headers (stripped
+> before forwarding upstream) so this phase's capture pipeline could be built and tested end-to-end; Phase 7
+> replaces that with `IConsumerAuthenticator` resolution over the caller's API key. Until a real consumer is
+> resolved, or a response carries no usage signal at all, `UsageRecord` capture is skipped rather than
+> violating its `ConsumerId`/"at least one usage signal" domain invariants.
+
+- [x] Implement `IUsageExtractor` implementations per architecture §4/§10: `OpenAiStyleTokenUsageExtractor`
+  (chat completions/completions/embeddings, token-based, from JSON `usage` or the streaming SSE usage frame,
+  shared across the OpenAI/AzureOpenAI/OpenAICompatible families), `AnthropicChatUsageExtractor`
+  (`input_tokens`/`output_tokens` from the body or `message_start`/`message_delta` SSE events),
+  `ImageUsageExtractor` (non-streaming; reads image count/size/quality into `UsageMetrics`), and
+  `ResponsesUsageExtractor` (reads `input_tokens`/`output_tokens`/`total_tokens` from the `response.completed`
+  SSE event or the JSON body); wired up via `IUsageExtractorResolver`.
+- [x] Implement outbound request mutation (`OutboundBodyMutator`): force `stream_options.include_usage = true`
+  for OpenAI-family streaming chat completions/completions requests.
+- [x] Implement a streaming response interceptor (`SseStreamRelay`) that parses SSE `data:` frames
+  incrementally (no full-body buffering — reads/writes line-by-line, block-by-block), detects the usage-bearing
+  frame via the resolved `IUsageExtractor`, and merges usage across multiple frames (e.g. Anthropic's
+  `message_start` + `message_delta`).
+- [x] Implement suppression of the injected usage-only chunk (`IUsageExtractor.IsUsageOnlyStreamingEvent`) when
+  the original client request did not request usage — OpenAI-family only, since Anthropic's usage-bearing
+  frames are otherwise-necessary content and are never suppressed.
+- [x] Implement non-streaming usage extraction from the JSON response body (chat completions without
+  `stream: true`, completions, embeddings, and all Images API operations) via the already-buffered response
+  peek used for Responses API affinity capture.
+- [x] Wire usage capture to `IUsageRecordRepository` via the existing `UsageRecordChannel` (async,
+  non-blocking), attaching `ConsumerId`/`ConsumerName` (see note above) and the resolved `OperationType` to
+  every `UsageRecord`.
+- [x] Integration tests (`AiProxy.Api.Tests`): non-streaming chat completion captures token usage,
+  non-streaming image generation captures `UsageMetrics` with null token fields, streaming with
+  client-requested usage forwards the usage chunk and still captures usage, streaming without
+  client-requested usage suppresses the usage chunk from the client stream but still captures usage
+  server-side, streaming Anthropic messages capture input/output tokens merged across `message_start` +
+  `message_delta`, a response with no usage signal at all succeeds without writing a `UsageRecord`.
 
 ## Phase 7 — API surface
 

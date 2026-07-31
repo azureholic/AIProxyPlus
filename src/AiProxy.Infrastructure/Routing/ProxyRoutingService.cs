@@ -1,33 +1,45 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using AiProxy.Application.Abstractions;
+using AiProxy.Application.Exceptions;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
 using AiProxy.Domain.Services;
+using AiProxy.Infrastructure.Usage;
 using Microsoft.AspNetCore.Http;
 using Endpoint = AiProxy.Domain.Entities.Endpoint;
 
 namespace AiProxy.Infrastructure.Routing;
 
 /// <summary>
-/// Orchestrates deployment resolution, priority/failover selection, sticky sessions, and forwarding for a
-/// single ingress request (architecture.md §9). Forwarding itself goes through <see cref="DirectHttpProxy"/>
-/// rather than YARP's <c>IHttpForwarder</c> — see that type's remarks for why: retries require inspecting an
-/// upstream response before committing anything to the client, which <c>IHttpForwarder</c> does not allow.
+/// Orchestrates deployment resolution, priority/failover selection, sticky sessions, forwarding, and usage
+/// capture for a single ingress request (architecture.md §9/§10). Forwarding itself goes through
+/// <see cref="DirectHttpProxy"/>/<see cref="SseStreamRelay"/> rather than YARP's <c>IHttpForwarder</c> — see
+/// that type's remarks for why: retries require inspecting an upstream response before committing anything to
+/// the client, which <c>IHttpForwarder</c> does not allow.
 /// </summary>
 public sealed class ProxyRoutingService(
     IModelDeploymentRepository modelDeploymentRepository,
     ISessionAffinityStore sessionAffinityStore,
     IEndpointHealthTracker endpointHealthTracker,
     ICredentialProvider credentialProvider,
+    IUsageExtractorResolver usageExtractorResolver,
+    UsageRecordChannel usageRecordChannel,
     HttpMessageInvoker httpClient,
     TimeSpan? sessionAffinityTtl = null)
 {
     private readonly TimeSpan _sessionAffinityTtl = sessionAffinityTtl ?? TimeSpan.FromMinutes(30);
 
-    public async Task<RoutingFailure?> RouteAsync(HttpContext httpContext, OperationType operationType, CancellationToken cancellationToken)
+    public async Task<RoutingFailure?> RouteAsync(
+        HttpContext httpContext,
+        OperationType operationType,
+        CancellationToken cancellationToken,
+        Guid? consumerId = null,
+        string? consumerName = null)
     {
+        var stopwatch = Stopwatch.StartNew();
         var body = await RequestBodyPeek.BufferBodyAsync(httpContext.Request, cancellationToken);
         var bodyBytes = Encoding.UTF8.GetBytes(body);
         var fields = RequestBodyPeek.ExtractFields(body);
@@ -70,22 +82,33 @@ public sealed class ProxyRoutingService(
 
             var endpoint = selection.SelectedEndpoint!;
             var credential = await credentialProvider.GetCredentialAsync(endpoint, cancellationToken);
+            var usageExtractor = TryResolveUsageExtractor(endpoint.ApiFamily, operationType);
+            var outboundBody = OutboundBodyMutator.EnsureStreamUsageRequested(bodyBytes, endpoint.ApiFamily, operationType, fields.Streaming);
 
-            string? capturedResponseId = null;
-            Func<string, Task>? onResponseBodyPeek = operationType == OperationType.ResponsesApi && !fields.Streaming
-                ? body2 =>
-                {
-                    capturedResponseId = TryExtractResponseId(body2);
-                    return Task.CompletedTask;
-                }
-                : null;
+            var outcome = await TryForwardWithRetriesAsync(
+                httpContext, endpoint, credential, outboundBody, usageExtractor,
+                captureResponseId: operationType == OperationType.ResponsesApi,
+                clientRequestedUsage: fields.ClientRequestedUsage,
+                streaming: fields.Streaming,
+                cancellationToken);
 
-            var succeeded = await TryForwardWithRetriesAsync(httpContext, endpoint, credential, bodyBytes, onResponseBodyPeek, cancellationToken);
-            if (succeeded)
+            if (outcome.Succeeded)
             {
                 endpointHealthTracker.MarkHealthy(endpoint.Id);
                 await PersistAffinityOnSuccessAsync(
-                    deployment, endpoint, operationType, fields, sessionKey, affinityEntry, capturedResponseId, cancellationToken);
+                    deployment, endpoint, operationType, fields, sessionKey, affinityEntry, outcome.CapturedResponseId, cancellationToken);
+
+                // ConsumerId is only populated once ingress authentication (Phase 7) resolves a caller; until
+                // then there is no valid Consumer to attribute usage to, so capture is skipped rather than
+                // violating the UsageRecord.ConsumerId invariant with a placeholder id. Likewise, UsageRecord
+                // requires at least one usage signal, so a response the extractor couldn't read any usage from
+                // (e.g. no `usage` field at all) is not recorded rather than persisting an empty row.
+                if (consumerId is not null && outcome.Usage is not null)
+                {
+                    EnqueueUsageRecord(
+                        deployment, endpoint, operationType, fields, sessionKey, consumerId.Value, consumerName, outcome, stopwatch.ElapsedMilliseconds);
+                }
+
                 return null;
             }
 
@@ -102,12 +125,59 @@ public sealed class ProxyRoutingService(
         }
     }
 
-    private async Task<bool> TryForwardWithRetriesAsync(
+    private IUsageExtractor? TryResolveUsageExtractor(ApiFamily apiFamily, OperationType operationType)
+    {
+        try
+        {
+            return usageExtractorResolver.Resolve(apiFamily, operationType);
+        }
+        catch (NotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private void EnqueueUsageRecord(
+        ModelDeployment deployment,
+        Endpoint endpoint,
+        OperationType operationType,
+        RequestBodyFields fields,
+        string? sessionKey,
+        Guid consumerId,
+        string? consumerName,
+        ForwardOutcome outcome,
+        long durationMs)
+    {
+        var usageRecord = UsageRecord.Create(
+            Guid.NewGuid(),
+            deployment.Name,
+            consumerId,
+            consumerName ?? "unknown",
+            endpoint.Id,
+            endpoint.ApiFamily,
+            operationType,
+            requestId: Guid.NewGuid().ToString("n"),
+            streaming: fields.Streaming,
+            httpStatusCode: outcome.StatusCode,
+            durationMs: (int)Math.Min(durationMs, int.MaxValue),
+            sessionId: sessionKey,
+            promptTokens: outcome.Usage?.PromptTokens,
+            completionTokens: outcome.Usage?.CompletionTokens,
+            totalTokens: outcome.Usage?.TotalTokens,
+            usageMetrics: outcome.Usage?.UsageMetrics);
+
+        usageRecordChannel.Enqueue(usageRecord);
+    }
+
+    private async Task<ForwardOutcome> TryForwardWithRetriesAsync(
         HttpContext httpContext,
         Endpoint endpoint,
         EndpointCredential credential,
         byte[] bodyBytes,
-        Func<string, Task>? onResponseBodyPeek,
+        IUsageExtractor? usageExtractor,
+        bool captureResponseId,
+        bool clientRequestedUsage,
+        bool streaming,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt <= endpoint.MaxRetries; attempt++)
@@ -136,27 +206,33 @@ public sealed class ProxyRoutingService(
 
             using (response)
             {
-                if ((int)response.StatusCode >= 500)
+                var statusCode = (int)response.StatusCode;
+                if (statusCode >= 500)
                 {
                     continue;
                 }
 
-                if (onResponseBodyPeek is not null)
+                if (streaming)
                 {
-                    var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                    await onResponseBodyPeek(responseBody);
-                    await DirectHttpProxy.CopyBufferedResponseAsync(response, responseBody, httpContext, cancellationToken);
-                }
-                else
-                {
-                    await DirectHttpProxy.CopyResponseAsync(response, httpContext, cancellationToken);
+                    var relayResult = await SseStreamRelay.RelayAsync(
+                        response,
+                        httpContext,
+                        usageExtractor,
+                        clientRequestedUsage,
+                        captureResponseId ? TryExtractResponseIdFromCompletedEvent : null,
+                        cancellationToken);
+                    return new ForwardOutcome(true, statusCode, relayResult.Usage, relayResult.CapturedResponseId);
                 }
 
-                return true;
+                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                var usage = usageExtractor?.ExtractFromResponseBody(responseBody);
+                var capturedResponseId = captureResponseId ? TryExtractResponseId(responseBody) : null;
+                await DirectHttpProxy.CopyBufferedResponseAsync(response, responseBody, httpContext, cancellationToken);
+                return new ForwardOutcome(true, statusCode, usage, capturedResponseId);
             }
         }
 
-        return false;
+        return new ForwardOutcome(false, 0, null, null);
     }
 
     private async Task PersistAffinityOnSuccessAsync(
@@ -236,10 +312,33 @@ public sealed class ProxyRoutingService(
         }
     }
 
+    private static string? TryExtractResponseIdFromCompletedEvent(string sseEventJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(sseEventJson);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("type", out var typeProp) &&
+                typeProp.GetString() == "response.completed" &&
+                root.TryGetProperty("response", out var responseProp) &&
+                responseProp.TryGetProperty("id", out var idProp) &&
+                idProp.ValueKind == JsonValueKind.String
+                    ? idProp.GetString()
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static TimeSpan JitteredBackoff(int attempt)
     {
         var baseDelayMs = Math.Min(100 * Math.Pow(2, attempt - 1), 2000);
         var jitterMs = Random.Shared.Next(0, 50);
         return TimeSpan.FromMilliseconds(baseDelayMs + jitterMs);
     }
+
+    private readonly record struct ForwardOutcome(bool Succeeded, int StatusCode, UsageExtractionResult? Usage, string? CapturedResponseId);
 }
