@@ -26,9 +26,9 @@ describe('App shell + navigation', () => {
 
     for (const [navLabel, pageBodyText] of [
       ['Consumers', 'New consumer'],
-      ['Chat', /Streaming\/non-streaming chat testing/],
-      ['Images', /Image generation testing/],
-      ['Voice', /Realtime \(voice\) WebSocket connectivity test/],
+      ['Chat', 'Send'],
+      ['Images', 'Generate'],
+      ['Voice', 'Connect'],
       ['Usage', /Usage filtering, table, and charts/],
       ['Settings', /placeholder for real authentication/],
     ] as const) {

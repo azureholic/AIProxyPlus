@@ -26,11 +26,12 @@ describe('ConsumersPage', () => {
     render(<ConsumersPage />);
 
     await user.click(await screen.findByRole('button', { name: 'New consumer' }));
-    // fireEvent.change, not user.type: FluentUI's Field/Input inside a Dialog breaks userEvent's
-    // per-keystroke simulation (getByRole stops finding sibling elements afterward) — see repo memory.
+    // fireEvent, not userEvent, for the input+click pair right after: FluentUI's Field/Input inside a Dialog
+    // interacts badly with userEvent's async pointer/keyboard simulation immediately after a state update
+    // (getByRole intermittently stops finding sibling elements) — see repo memory.
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'my-team' } });
-    expect(await screen.findByRole('button', { name: 'Create' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Create' }));
+    const createButton = await screen.findByRole('button', { name: 'Create' });
+    fireEvent.click(createButton);
 
     // The revealed key is an <Input readOnly value=...>, not text content — assert on display value.
     expect(await screen.findByDisplayValue('sk-plaintext-secret')).toBeInTheDocument();

@@ -68,6 +68,24 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task SuccessfulHandshake_AuthenticatesViaApiKeyQueryParam_WhenNoHeaderIsSet()
+    {
+        // Browsers' native WebSocket API can't set custom headers, so the frontend's Voice Playground
+        // (architecture.md §6.5) authenticates this one route via ?api_key= instead of X-Api-Key.
+        var deploymentName = $"realtime-{Guid.NewGuid():N}";
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
+        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
+        _factory.Deployments.Seed(deployment);
+
+        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={deploymentName}&api_key={ApiTestFactory.DefaultConsumerApiKey}");
+        using var socket = await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None);
+
+        _backend1.AcceptedConnectionCount.Should().Be(1);
+
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task MissingModelQueryParameter_FailsBeforeUpgrade_With404()
     {
         var act = async () => await NewAuthenticatedWebSocketClient().ConnectAsync(

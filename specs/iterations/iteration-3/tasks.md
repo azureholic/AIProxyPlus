@@ -66,8 +66,11 @@ container as the API (no separate frontend host/deployment) — covering:
   coverage over raw percentage" testing philosophy (architecture.md §15) applied to a UI project instead of
   a business-logic-heavy backend one.
 - **No new backend endpoints**: everything the frontend needs already exists on the API surface (§7.2/§12 of
-  architecture.md). Iteration 3 is frontend-only work plus the minimal Program.cs static-file/SPA-fallback
-  wiring — no Domain/Application/Infrastructure changes.
+  architecture.md). Iteration 3 is frontend-only work plus two small, anticipated Infrastructure exceptions:
+  the Program.cs static-file/SPA-fallback wiring (Phase 2), and `ConsumerAuthEndpointFilter` accepting an
+  `?api_key=` query-parameter fallback for the Realtime route (Phase 4 — browser `WebSocket` genuinely cannot
+  set custom headers, so there was no frontend-only way to authenticate that one connection). No Domain/
+  Application changes either way.
 
 ## Phase 1 — Frontend scaffold: project, shell, routing, API client
 
@@ -150,26 +153,36 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 4 — Playground
 
-- [ ] **Deployment picker**: shared component across all three playground tabs — fetches
-  `GET /api/v1/config/model-deployments` (admin key) and lets the operator pick which deployment to send
-  test traffic to.
-- [ ] **Chat tab**: a minimal chat UI (message list + input) posting to `/openai/v1/chat/completions` with the
-  Consumer key; a streaming toggle — when on, reads the SSE body via the Fetch API's `ReadableStream` and
-  renders tokens incrementally; when off, awaits the full JSON response. Shows the final `usage` figures
-  (prompt/completion/total tokens) once available for either mode.
-- [ ] **Images tab**: a form (prompt, size/quality if applicable) posting to
-  `/openai/v1/images/generations`, rendering the returned image(s) (URL or base64, whichever the configured
-  backend returns).
-- [ ] **Voice tab**: per the reduced scope in Decisions — connect/disconnect button
-  (`new WebSocket(...)` against `/openai/v1/realtime?model=...`, same-origin so the browser handles the
-  `X-Api-Key`... **note to verify during implementation**: browser `WebSocket` cannot set custom headers, so
-  the Consumer key likely needs to travel as a query parameter for this one route specifically — this is a
-  real constraint to resolve in Phase 4, not Phase 1's assumption of header-based auth everywhere. A text
-  input + "send event" button (raw JSON textarea, pre-filled with a working `conversation.item.create` +
-  `response.create` example) and a scrolling raw-event log of everything received.
-- [ ] Error states across all three tabs surface the backend's actual error body (status + message/headers
-  where relevant, e.g. a 429's `Retry-After` — see Iteration 2 Phase 5) rather than a generic "something went
-  wrong".
+- [x] **Deployment picker** (`components/DeploymentPicker.tsx`): shared `Combobox` across all three tabs —
+  fetches `GET /api/v1/config/model-deployments` (admin key) and lets the operator pick which deployment to
+  send test traffic to.
+- [x] **Chat tab** (`ChatPlaygroundPage.tsx`): message list + input, streaming toggle. Streaming reads the SSE
+  body via `api/sse.ts`'s `readSseEvents` (Fetch API `ReadableStream`, no `EventSource` since that can't POST/
+  set headers) and renders `delta.content` tokens incrementally; non-streaming awaits the full JSON response.
+  Token usage (prompt/completion/total) shown once available in either mode — the backend forces
+  `stream_options.include_usage` on the outbound streaming request regardless (architecture.md §10), so the
+  final SSE chunk always carries it.
+- [x] **Images tab** (`ImagePlaygroundPage.tsx`): prompt form posting to `/openai/v1/images/generations`,
+  rendering returned images from either `url` or `b64_json` (whichever the configured backend returns).
+- [x] **Voice tab** (`VoicePlaygroundPage.tsx`): connect/disconnect (`new WebSocket(...)` against
+  `/openai/v1/realtime?model=...`), a JSON textarea pre-filled with a working `conversation.item.create`
+  example + a "Send event" button, and a scrolling raw-event log. **The anticipated auth constraint was
+  real**: browser `WebSocket` cannot set custom headers, so `ConsumerAuthEndpointFilter` (Infrastructure) was
+  extended to accept the Consumer key via an `?api_key=` query parameter as a fallback when `X-Api-Key` is
+  absent — header still takes precedence everywhere else. This is the one Iteration 3 change outside
+  `src/AiProxy.Web` (Decisions said "frontend-only... [plus SPA fallback]"; this is the second necessary
+  exception, called out here rather than silently expanding scope). New backend test
+  (`RealtimeProxyTests.SuccessfulHandshake_AuthenticatesViaApiKeyQueryParam_WhenNoHeaderIsSet`) covers it;
+  270/270 backend tests passing.
+- [x] Error states across all three tabs surface the backend's actual error body via the shared `ErrorBanner`
+  (status + message, plus `Retry-After` when present — Iteration 2 Phase 5).
+- [x] Component test: `ChatPlaygroundPage.test.tsx` (non-streaming send → reply + token usage rendered).
+- [x] Two real frontend-testing bugs found/fixed while writing these tests, both now in repo memory: the
+  `ResizeObserver` stub (Phase 3) needed no changes, but the FluentUI-Dialog-vs-`userEvent` issue recurred in
+  a new, load-dependent form — `user.click()` right after a `fireEvent.change` inside a Dialog intermittently
+  breaks a later `getByRole` query, reproducing only under full-suite load, not in isolation. Fixed by using
+  `fireEvent.click` instead of `user.click` for that specific sequence; verified stable across 3 repeated
+  full-suite runs.
 
 ## Phase 5 — Usage dashboard
 
