@@ -85,19 +85,24 @@ ai-proxy/
 ### Layer responsibilities
 
 - **Domain** — `ModelDeployment`, `Endpoint`, `UsageRecord`, `SessionAffinityEntry`, `Consumer`, value objects
-  (`ApiFamily`, `AuthMode`, `RoutingPriority`, `OperationType` — ChatCompletion, Completion, Embedding,
-  ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, extensible to more), domain invariants (e.g. a
-  deployment must have ≥1 enabled endpoint; a `UsageRecord` must always reference a valid `Consumer`; token
-  fields are optional but at least one usage signal — tokens or `UsageMetrics` — must be present).
-- **Application** — `IModelDeploymentRepository`, `IUsageRecorder`, `ISecretResolver`, `IEndpointSelector`,
-  `IConsumerRepository`, `IConsumerAuthenticator`, `IUsageExtractor` (one implementation per `ApiFamily` +
-  `OperationType` combination, resolved via `IUsageExtractorResolver`) ports; command/query handlers for
+  (`ApiFamily`, `AuthMode`, `RoutingStrategy`, `OperationType` — ChatCompletion, Completion, Embedding,
+  ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, extensible to more), `EndpointSelector` (the
+  priority/failover selection algorithm), domain invariants (e.g. two endpoints on the same deployment can't
+  share a priority; a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at
+  least one usage signal — tokens or `UsageMetrics` — must be present). A deployment with zero or no *enabled*
+  endpoints is a valid domain state (`ModelDeployment.HasUsableEndpoint` reports it) — routing simply fails
+  with `NoHealthyEndpoint` for it at request time; it's not a constructor-enforced invariant.
+- **Application** — ports: `IModelDeploymentRepository`, `IConsumerRepository`, `ISessionAffinityStore`,
+  `IUsageRecordRepository`, `ISecretResolver`, `ICredentialProvider`, `IApiKeyHasher`, `IApiKeyGenerator`,
+  `IConsumerAuthenticator`, `IEndpointHealthTracker`, `IUsageExtractor` (one implementation per `ApiFamily` +
+  `OperationType` combination, resolved via `IUsageExtractorResolver`); command/query handlers for
   configuration CRUD and usage queries; validation (FluentValidation).
 - **Infrastructure** — implements all ports: `AiProxyDbContext` (EF Core/Npgsql), `VaultSecretResolver`
   (VaultSharp), `ApiKeyCredentialProvider` / `ManagedIdentityCredentialProvider`, `ProxyRoutingService` +
-  `DirectHttpProxy`,
-  custom `ITransformProvider` for auth injection, per-operation `IUsageExtractor` implementations (e.g.
-  `ChatCompletionUsageExtractor`, `ImageUsageExtractor`), OpenTelemetry resource/exporter setup.
+  `DirectHttpProxy` + `SseStreamRelay` (routing/forwarding/streaming — see §9 for why this isn't built on YARP),
+  per-`(ApiFamily, OperationType)` `IUsageExtractor` implementations (`OpenAiStyleTokenUsageExtractor`,
+  `AnthropicChatUsageExtractor`, `ImageUsageExtractor`, `ResponsesUsageExtractor`), `AiProxyMetrics`/
+  `AiProxyActivitySource` (OpenTelemetry).
 - **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`), configuration routes
   (`/api/v1/config/*`), health endpoints (`/health/live`, `/health/ready`), OpenAPI, DI composition.
 - **ServiceDefaults / AppHost** — Aspire wiring for local development: starts Postgres, Vault, the Api, and the
@@ -162,9 +167,14 @@ consumer's inbound API key — never the key itself — so a Postgres read compr
 `prompt_tokens`/`completion_tokens`/`total_tokens` are nullable — only token-based operations (chat completions,
 completions, embeddings) populate them; other operation types (e.g. image generation) populate the flexible
 `usage_metrics` jsonb column instead, so new modalities can report whatever billing signal they have without a
-schema migration. Configuration reads are cached in-memory with a short TTL + invalidated on config API writes
-(via an in-process change token; a Postgres `LISTEN/NOTIFY` channel is a possible future enhancement for
-multi-instance cache invalidation).
+schema migration.
+
+> **Implementation note:** the originally-planned in-memory config cache (with in-process change-token
+> invalidation on writes) was **not** built in Iteration 1 — `IModelDeploymentRepository`/`IConsumerRepository`
+> hit Postgres directly on every call, including once per ingress request for deployment resolution. This is a
+> known follow-up (a short-TTL cache, invalidated on `/api/v1/config/*` writes, would cut a DB round-trip off
+> the hot path) rather than a documented-and-implemented feature — flagged here so the diagrams/text don't
+> overstate what exists today.
 
 ### 7.2 Configuration REST API (`/api/v1/config`)
 
@@ -275,18 +285,19 @@ with a well-known root token confined to the dev environment is acceptable.
 - Usage extraction is **pluggable per operation type** via `IUsageExtractor`/`IUsageExtractorResolver` (§4), so
   adding a new modality later (e.g. audio) only means adding a new extractor implementation, not changing the
   ingress/routing/forwarding pipeline.
-- For OpenAI-family **chat completions** requests, the proxy always sets `"stream_options": {"include_usage": true}`
-  on the outbound request when `stream: true`, regardless of whether the client set it. The **Responses API**
-  always includes a `usage` object on the completed response (in the terminal `response.completed` SSE event
-  when streaming, or directly in the JSON body otherwise) — no request mutation is needed to force it there.
+- For OpenAI-family **chat completions and completions** requests, the proxy always sets
+  `"stream_options": {"include_usage": true}` on the outbound request when `stream: true`, regardless of
+  whether the client set it (`OutboundBodyMutator`). The **Responses API** always includes a `usage` object on
+  the completed response (in the terminal `response.completed` SSE event when streaming, or directly in the
+  JSON body otherwise) — no request mutation is needed to force it there.
 - For Anthropic-family requests, usage is included in the `message_start` and terminal `message_delta` events by
   default; the proxy simply parses these — no request mutation needed there.
-- A streaming `ITransformProvider`/response-body interceptor reads the SSE byte stream as it flows through,
-  splitting on `\n\n`, parsing `data: {...}` JSON payloads to detect the usage-bearing event (the specific event
-  name/shape depends on the operation type — chat completions' final chunk, or the Responses API's
-  `response.completed` event with an `input_tokens`/`output_tokens`/`total_tokens` usage object), recording it,
-  and otherwise passing bytes through untouched (no buffering of the whole stream — must preserve
-  time-to-first-byte).
+- A streaming response interceptor (`SseStreamRelay`) reads the SSE byte stream as it flows through,
+  splitting on blank-line-delimited event blocks, parsing `data: {...}` JSON payloads to detect the usage-bearing
+  event (the specific event name/shape depends on the operation type — chat completions' final chunk, or the
+  Responses API's `response.completed` event with an `input_tokens`/`output_tokens`/`total_tokens` usage
+  object), recording it, and otherwise passing bytes through untouched (no buffering of the whole stream — must
+  preserve time-to-first-byte).
 - If the **client's original request did not** ask for usage (`include_usage` absent for OpenAI, or an Anthropic
   client that doesn't expect a usage-only trailing event), the proxy removes the *injected* usage-only chunk from
   what is sent downstream, so the client-visible stream is unchanged relative to calling the backend directly.
@@ -354,7 +365,7 @@ with a well-known root token confined to the dev environment is acceptable.
 ## 14. Deployment Topology & Local Development
 
 - **Local development**: `AiProxy.AppHost` (.NET Aspire) starts:
-  - `ai-proxy-api` (the .NET 10 API)
+  - `api` (the .NET 10 API project resource)
   - `postgres` (official `postgres` image, with a named volume)
   - `vault` (official `hashicorp/vault` image, dev mode for local, config-file mode for anything shared)
   - the **Aspire dashboard**, which receives OTLP traces/metrics/logs from the API via service-discovery-injected

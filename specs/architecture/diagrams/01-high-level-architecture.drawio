@@ -22,7 +22,7 @@
     <mxCell id="router" value="Routing Engine&#10;deployment to endpoint selection, priority + failover + sticky session" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
       <mxGeometry x="320" y="170" width="540" height="60" as="geometry" />
     </mxCell>
-    <mxCell id="fwd" value="Forwarder&#10;YARP HttpForwarder + auth injection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+    <mxCell id="fwd" value="Forwarder&#10;Custom DirectHttpProxy (HttpMessageInvoker) + auth injection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
       <mxGeometry x="320" y="260" width="340" height="50" as="geometry" />
     </mxCell>
     <mxCell id="usage" value="Usage Extractor&#10;SSE + JSON usage parsing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
