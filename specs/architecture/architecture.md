@@ -189,6 +189,16 @@ All write routes require an admin API key (`X-Admin-Api-Key` header, validated a
 Iteration 1. Requests/responses are validated with FluentValidation; secrets are **write-only** — no GET ever returns
 key material, only the `secret_ref` path (endpoints) or consumer metadata without the key/hash (consumers).
 
+> **Implementation note (Phase 7):** admin auth (`AdminAuthEndpointFilter`) is applied to the *entire*
+> `/api/v1/config/*` and `/api/v1/usage` surface, not just write routes as originally scoped above — deployment
+> topology (GET) and per-consumer usage/token figures (`GET /api/v1/usage`) are both sensitive enough to keep
+> behind admin auth even for reads, per OWASP API3/API5 (broken object/function-level authorization). Ingress
+> inference routes require a separate, per-caller `X-Api-Key` header resolved to a `Consumer` via
+> `ConsumerAuthEndpointFilter` + `IConsumerAuthenticator`; the resolved identity is stashed in
+> `HttpContext.Items` for `ProxyRoutingService`'s usage capture to read. The admin key itself, like the
+> Consumer-key pepper, is auto-provisioned into Vault on first run (logged once, since there is no
+> chicken-and-egg config API to create it through) — see `AdminApiKeyAuthenticator`.
+
 ## 8. Secrets Management
 
 **HashiCorp Vault (OSS)** runs as a container alongside the proxy (dev mode locally via Aspire; `file` or

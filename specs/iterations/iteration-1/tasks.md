@@ -183,21 +183,33 @@ Definition of Done for this iteration:
 
 ## Phase 7 — API surface
 
-- [ ] Map OpenAI ingress routes (`/openai/v1/chat/completions`, `/openai/v1/completions`,
+- [x] Map OpenAI ingress routes (`/openai/v1/chat/completions`, `/openai/v1/completions`,
   `/openai/v1/embeddings`, `/openai/v1/images/generations`, `/openai/v1/images/edits`,
   `/openai/v1/images/variations`, `/openai/v1/responses`) and Anthropic ingress route (`/anthropic/v1/messages`)
-  per architecture §12.
-- [ ] Map configuration REST API (`/api/v1/config/*`, incl. `Consumer` CRUD/rotate) per architecture §7.2, backed
-  by Phase 2 use cases.
-- [ ] Map usage query endpoint (`GET /api/v1/usage`, filterable by deployment and consumer).
-- [ ] Implement ingress authentication middleware that resolves the caller's API key to a `Consumer` via
-  `IConsumerAuthenticator` (401 on missing/unknown/revoked key) and makes `ConsumerId`/`ConsumerName` available
-  to downstream routing/usage-capture code; implement admin API key auth for config routes (constant-time
-  comparison, key hash stored in Vault).
-- [ ] Add `/health/live`, `/health/ready` (Postgres + Vault reachability) and OpenAPI/Scalar UI in dev.
-- [ ] Integration tests (`AiProxy.Api.Tests`) for full config CRUD lifecycle incl. consumers, authz enforcement
-  (missing/invalid/revoked consumer keys rejected with 401, missing/invalid admin key rejected on config routes),
-  OpenAPI document generation.
+  per architecture §12 (mapped in Phase 5, now behind `ConsumerAuthEndpointFilter`).
+- [x] Map configuration REST API (`/api/v1/config/*`, incl. `Consumer` CRUD/rotate) per architecture §7.2, backed
+  by Phase 2 use cases (`CreateModelDeploymentHandler`, `AddEndpointHandler`, `UpdateEndpointHandler`,
+  `RemoveEndpointHandler`, `SetEndpointSecretHandler`, `UpdateModelDeploymentHandler`,
+  `DeleteModelDeploymentHandler`, `CreateConsumerHandler`, `RotateConsumerKeyHandler`, `RevokeConsumerHandler`),
+  plus direct repository reads for the two list/get routes that have no dedicated use case.
+- [x] Map usage query endpoint (`GET /api/v1/usage`, filterable by deployment, consumer, operation type, date range).
+- [x] Implement ingress authentication (`ConsumerAuthEndpointFilter`) that resolves the caller's `X-Api-Key` to a
+  `Consumer` via `IConsumerAuthenticator` (401 on missing/unknown/revoked key) and stashes `ConsumerId`/
+  `ConsumerName` in `HttpContext.Items` for `ProxyRoutingService` to read (replacing the Phase 6 placeholder
+  headers); implement admin API key auth (`AdminAuthEndpointFilter` + `AdminApiKeyAuthenticator`, constant-time
+  comparison, hash auto-provisioned in Vault on first run) for the **entire** `/api/v1/config/*` + `/api/v1/usage`
+  surface — see the architecture §7.2 implementation note for why this is broader than "write routes only".
+- [x] Add `/health/live` (always healthy — liveness), `/health/ready` (probes `ISecretResolver`/
+  `IModelDeploymentRepository` if registered, reports `"not configured"` until Phase 9 wires Postgres/Vault for
+  real — forward-compatible with no further code changes needed then), and OpenAPI (`/openapi/v1.json`) +
+  Scalar UI in dev.
+- [x] Integration tests (`AiProxy.Api.Tests`): full config CRUD lifecycle (create/get/list/update/delete
+  deployment, add/update/remove endpoint, set/rotate endpoint secret never echoed back, duplicate-name conflict,
+  empty-name validation error, unknown-deployment 404), consumer lifecycle (create returns plaintext key exactly
+  once, list never exposes the key or hash, rotate invalidates the old key, revoke disables ingress auth for
+  that consumer), authz enforcement (config/usage routes reject missing/wrong admin key with 401 and accept the
+  valid one, ingress routes reject missing/unknown/revoked consumer keys with 401 and accept a freshly-created
+  consumer's key), OpenAPI document generation succeeds. 197/197 tests passing solution-wide.
 
 ## Phase 8 — Observability
 

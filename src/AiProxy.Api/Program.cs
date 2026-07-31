@@ -1,9 +1,17 @@
 using System.Net;
 using AiProxy.Application.Abstractions;
+using AiProxy.Application.Consumers;
+using AiProxy.Application.ModelDeployments;
 using AiProxy.Application.Usage;
+using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
 using AiProxy.Infrastructure.Routing;
+using AiProxy.Infrastructure.Secrets;
+using AiProxy.Infrastructure.Security;
 using AiProxy.Infrastructure.Usage;
+using FluentValidation;
+using Microsoft.AspNetCore.Diagnostics;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,40 +50,197 @@ builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(Operation
 
 builder.Services.AddScoped<ProxyRoutingService>();
 
+// Secrets/auth — pepper and admin key hash are auto-provisioned from Vault on first read (§8); ISecretResolver
+// itself isn't registered until Phase 9 wires a real Vault client (or a test double supplies one).
+builder.Services.AddSingleton<IApiKeyHasher>(sp =>
+    ApiKeyHasher.CreateAsync(sp.GetRequiredService<ISecretResolver>()).GetAwaiter().GetResult());
+builder.Services.AddSingleton(sp =>
+    AdminApiKeyAuthenticator.CreateAsync(sp.GetRequiredService<ISecretResolver>(), sp.GetRequiredService<ILogger<Program>>())
+        .GetAwaiter().GetResult());
+builder.Services.AddSingleton<IApiKeyGenerator, ApiKeyGenerator>();
+builder.Services.AddScoped<IConsumerAuthenticator, ConsumerAuthenticator>();
+
+// Configuration REST API use cases (§7.2)
+builder.Services.AddSingleton<IValidator<CreateModelDeploymentCommand>, CreateModelDeploymentValidator>();
+builder.Services.AddSingleton<IValidator<UpdateModelDeploymentCommand>, UpdateModelDeploymentValidator>();
+builder.Services.AddSingleton<IValidator<DeleteModelDeploymentCommand>, DeleteModelDeploymentValidator>();
+builder.Services.AddSingleton<IValidator<AddEndpointCommand>, AddEndpointValidator>();
+builder.Services.AddSingleton<IValidator<UpdateEndpointCommand>, UpdateEndpointValidator>();
+builder.Services.AddSingleton<IValidator<RemoveEndpointCommand>, RemoveEndpointValidator>();
+builder.Services.AddSingleton<IValidator<SetEndpointSecretCommand>, SetEndpointSecretValidator>();
+builder.Services.AddSingleton<IValidator<CreateConsumerCommand>, CreateConsumerValidator>();
+builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsumerKeyValidator>();
+builder.Services.AddSingleton<IValidator<RevokeConsumerCommand>, RevokeConsumerValidator>();
+builder.Services.AddSingleton<IValidator<UsageRecordQuery>, UsageRecordQueryValidator>();
+
+builder.Services.AddScoped<CreateModelDeploymentHandler>();
+builder.Services.AddScoped<UpdateModelDeploymentHandler>();
+builder.Services.AddScoped<DeleteModelDeploymentHandler>();
+builder.Services.AddScoped<AddEndpointHandler>();
+builder.Services.AddScoped<UpdateEndpointHandler>();
+builder.Services.AddScoped<RemoveEndpointHandler>();
+builder.Services.AddScoped<SetEndpointSecretHandler>();
+builder.Services.AddScoped<CreateConsumerHandler>();
+builder.Services.AddScoped<RotateConsumerKeyHandler>();
+builder.Services.AddScoped<RevokeConsumerHandler>();
+builder.Services.AddScoped<QueryUsageRecordsHandler>();
+
+builder.Services.AddOpenApi();
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+
 var app = builder.Build();
+
+app.UseExceptionHandler(errorApp => errorApp.Run(async httpContext =>
+{
+    var error = httpContext.Features.Get<IExceptionHandlerFeature>()?.Error;
+    var (status, message) = error switch
+    {
+        ValidationException validationException => (
+            StatusCodes.Status400BadRequest, string.Join("; ", validationException.Errors.Select(e => e.ErrorMessage))),
+        AiProxy.Application.Exceptions.NotFoundException notFoundException => (StatusCodes.Status404NotFound, notFoundException.Message),
+        AiProxy.Application.Exceptions.ConflictException conflictException => (StatusCodes.Status409Conflict, conflictException.Message),
+        AiProxy.Domain.Exceptions.DomainException domainException => (StatusCodes.Status400BadRequest, domainException.Message),
+        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred."),
+    };
+    httpContext.Response.StatusCode = status;
+    await httpContext.Response.WriteAsJsonAsync(new { error = message });
+}));
 
 app.MapGet("/", () => "Hello World!");
 
-app.MapPost("/openai/v1/chat/completions", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
+
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
+app.MapGet("/health/ready", HealthChecks.CheckReadyAsync);
+
+var ingress = app.MapGroup("").AddEndpointFilter<ConsumerAuthEndpointFilter>();
+
+ingress.MapPost("/openai/v1/chat/completions", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ChatCompletion, ct));
-app.MapPost("/openai/v1/completions", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+ingress.MapPost("/openai/v1/completions", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.Completion, ct));
-app.MapPost("/openai/v1/embeddings", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+ingress.MapPost("/openai/v1/embeddings", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.Embedding, ct));
-app.MapPost("/openai/v1/images/generations", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+ingress.MapPost("/openai/v1/images/generations", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ImageGeneration, ct));
-app.MapPost("/openai/v1/images/edits", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+ingress.MapPost("/openai/v1/images/edits", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ImageEdit, ct));
-app.MapPost("/openai/v1/images/variations", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+ingress.MapPost("/openai/v1/images/variations", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ImageVariation, ct));
-app.MapPost("/openai/v1/responses", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+ingress.MapPost("/openai/v1/responses", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ResponsesApi, ct));
-app.MapPost("/anthropic/v1/messages", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+ingress.MapPost("/anthropic/v1/messages", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ChatCompletion, ct));
+
+var config = app.MapGroup("/api/v1/config").AddEndpointFilter<AdminAuthEndpointFilter>();
+
+config.MapGet("/model-deployments", async (IModelDeploymentRepository repository, CancellationToken ct) =>
+    Results.Ok(await repository.GetAllAsync(ct)));
+
+config.MapGet("/model-deployments/{name}", async (string name, IModelDeploymentRepository repository, CancellationToken ct) =>
+{
+    var deployment = await repository.GetByNameAsync(name, ct);
+    return deployment is null ? Results.NotFound(new { error = $"Model deployment '{name}' was not found." }) : Results.Ok(deployment);
+});
+
+config.MapPost("/model-deployments", async (CreateModelDeploymentCommand command, CreateModelDeploymentHandler handler, CancellationToken ct) =>
+{
+    var deployment = await handler.HandleAsync(command, ct);
+    return Results.Created($"/api/v1/config/model-deployments/{deployment.Name}", deployment);
+});
+
+config.MapPut("/model-deployments/{name}", async (
+    string name, UpdateModelDeploymentBody body, UpdateModelDeploymentHandler handler, CancellationToken ct) =>
+{
+    var deployment = await handler.HandleAsync(new UpdateModelDeploymentCommand(name, body.StickySessionEnabled, body.Strategy), ct);
+    return Results.Ok(deployment);
+});
+
+config.MapDelete("/model-deployments/{name}", async (string name, DeleteModelDeploymentHandler handler, CancellationToken ct) =>
+{
+    await handler.HandleAsync(new DeleteModelDeploymentCommand(name), ct);
+    return Results.NoContent();
+});
+
+config.MapPost("/model-deployments/{name}/endpoints", async (
+    string name, AddEndpointBody body, AddEndpointHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(
+        new AddEndpointCommand(
+            name, body.BaseUrl, body.ApiFamily, body.Priority, body.AuthMode, body.ApiKeyPlaintext,
+            body.ManagedIdentityScope, body.Enabled, body.TimeoutSeconds, body.MaxRetries),
+        ct);
+    return Results.Created($"/api/v1/config/model-deployments/{name}/endpoints/{endpoint.Id}", endpoint);
+});
+
+config.MapPut("/model-deployments/{name}/endpoints/{id:guid}", async (
+    string name, Guid id, UpdateEndpointBody body, UpdateEndpointHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(
+        new UpdateEndpointCommand(name, id, body.Priority, body.Enabled, body.TimeoutSeconds, body.MaxRetries), ct);
+    return Results.Ok(endpoint);
+});
+
+config.MapDelete("/model-deployments/{name}/endpoints/{id:guid}", async (
+    string name, Guid id, RemoveEndpointHandler handler, CancellationToken ct) =>
+{
+    await handler.HandleAsync(new RemoveEndpointCommand(name, id), ct);
+    return Results.NoContent();
+});
+
+config.MapPut("/model-deployments/{name}/endpoints/{id:guid}/secret", async (
+    string name, Guid id, SetEndpointSecretBody body, SetEndpointSecretHandler handler, CancellationToken ct) =>
+{
+    await handler.HandleAsync(new SetEndpointSecretCommand(name, id, body.ApiKeyPlaintext), ct);
+    return Results.NoContent();
+});
+
+config.MapGet("/consumers", async (IConsumerRepository repository, CancellationToken ct) =>
+    Results.Ok((await repository.GetAllAsync(ct)).Select(ConsumerResponse.From)));
+
+config.MapPost("/consumers", async (CreateConsumerCommand command, CreateConsumerHandler handler, CancellationToken ct) =>
+{
+    var result = await handler.HandleAsync(command, ct);
+    return Results.Created(
+        $"/api/v1/config/consumers/{result.Consumer.Name}",
+        new { consumer = ConsumerResponse.From(result.Consumer), apiKey = result.PlaintextApiKey });
+});
+
+config.MapPut("/consumers/{name}/rotate", async (string name, RotateConsumerKeyHandler handler, CancellationToken ct) =>
+{
+    var result = await handler.HandleAsync(new RotateConsumerKeyCommand(name), ct);
+    return Results.Ok(new { consumer = ConsumerResponse.From(result.Consumer), apiKey = result.PlaintextApiKey });
+});
+
+config.MapDelete("/consumers/{name}", async (string name, RevokeConsumerHandler handler, CancellationToken ct) =>
+{
+    var consumer = await handler.HandleAsync(new RevokeConsumerCommand(name), ct);
+    return Results.Ok(ConsumerResponse.From(consumer));
+});
+
+app.MapGroup("/api/v1")
+    .AddEndpointFilter<AdminAuthEndpointFilter>()
+    .MapGet("/usage", async (
+        string? modelDeploymentName, string? consumerName, OperationType? operationType, DateTimeOffset? from, DateTimeOffset? to,
+        int? page, int? pageSize, QueryUsageRecordsHandler handler, CancellationToken ct) =>
+    {
+        var query = new UsageRecordQuery(modelDeploymentName, consumerName, operationType, from, to, page ?? 1, pageSize ?? 50);
+        return Results.Ok(await handler.HandleAsync(query, ct));
+    });
 
 app.Run();
 
 static async Task RouteOrFailAsync(
     HttpContext httpContext, ProxyRoutingService router, OperationType operationType, CancellationToken cancellationToken)
 {
-    // Placeholder until Phase 7 wires real ingress authentication (IConsumerAuthenticator resolving the
-    // caller's API key to a Consumer) — until then usage capture has no identity to attribute usage to.
-    var consumerId = httpContext.Request.Headers.TryGetValue("X-Consumer-Id", out var consumerIdHeader) &&
-        Guid.TryParse(consumerIdHeader, out var parsedConsumerId)
-            ? parsedConsumerId
-            : (Guid?)null;
-    var consumerName = httpContext.Request.Headers.TryGetValue("X-Consumer-Name", out var consumerNameHeader)
-        ? consumerNameHeader.ToString()
+    var consumerId = httpContext.Items.TryGetValue(ConsumerAuthEndpointFilter.ConsumerIdItemKey, out var idValue) ? (Guid?)idValue : null;
+    var consumerName = httpContext.Items.TryGetValue(ConsumerAuthEndpointFilter.ConsumerNameItemKey, out var nameValue)
+        ? (string?)nameValue
         : null;
 
     var failure = await router.RouteAsync(httpContext, operationType, cancellationToken, consumerId, consumerName);
@@ -92,6 +257,64 @@ static async Task RouteOrFailAsync(
         _ => StatusCodes.Status500InternalServerError,
     };
     await httpContext.Response.WriteAsJsonAsync(new { error = failure.Message });
+}
+
+/// <summary>Checks the (optionally registered) Postgres/Vault-backed ports; "not configured" until Phase 9 wires them.</summary>
+static class HealthChecks
+{
+    public static async Task<IResult> CheckReadyAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var checks = new Dictionary<string, string>();
+
+        var secretResolver = services.GetService<ISecretResolver>();
+        checks["vault"] = await ProbeAsync(secretResolver is null, () => secretResolver!.TryResolveAsync("__health_check__", cancellationToken));
+
+        var deploymentRepository = services.GetService<IModelDeploymentRepository>();
+        checks["postgres"] = await ProbeAsync(deploymentRepository is null, () => deploymentRepository!.GetAllAsync(cancellationToken));
+
+        var allHealthy = checks.Values.All(v => v is "healthy" or "not configured");
+        return allHealthy ? Results.Ok(checks) : Results.Json(checks, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    private static async Task<string> ProbeAsync(bool notConfigured, Func<Task> probe)
+    {
+        if (notConfigured)
+        {
+            return "not configured";
+        }
+
+        try
+        {
+            await probe();
+            return "healthy";
+        }
+        catch (Exception ex)
+        {
+            return $"unhealthy: {ex.Message}";
+        }
+    }
+}
+
+public sealed record UpdateModelDeploymentBody(bool StickySessionEnabled, RoutingStrategy Strategy);
+
+public sealed record AddEndpointBody(
+    string BaseUrl,
+    ApiFamily ApiFamily,
+    int Priority,
+    AuthMode AuthMode,
+    string? ApiKeyPlaintext = null,
+    string? ManagedIdentityScope = null,
+    bool Enabled = true,
+    int TimeoutSeconds = 100,
+    int MaxRetries = 2);
+
+public sealed record UpdateEndpointBody(int? Priority = null, bool? Enabled = null, int? TimeoutSeconds = null, int? MaxRetries = null);
+
+public sealed record SetEndpointSecretBody(string ApiKeyPlaintext);
+
+public sealed record ConsumerResponse(Guid Id, string Name, bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt)
+{
+    public static ConsumerResponse From(Consumer consumer) => new(consumer.Id, consumer.Name, consumer.Enabled, consumer.CreatedAt, consumer.RevokedAt);
 }
 
 /// <summary>Exposes the top-level program to <c>WebApplicationFactory&lt;Program&gt;</c> in tests.</summary>

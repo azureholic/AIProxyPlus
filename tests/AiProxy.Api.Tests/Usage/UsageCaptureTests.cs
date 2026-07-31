@@ -14,7 +14,6 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
 {
     private readonly ApiTestFactory _factory = new();
     private WireMockServer _backend = null!;
-    private readonly Guid _consumerId = Guid.NewGuid();
 
     public Task InitializeAsync()
     {
@@ -40,19 +39,14 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
             Guid.NewGuid(), deploymentId, baseUrl, ApiFamily.Anthropic, priority: 1, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
 
-    private HttpRequestMessage BuildRequest(string path, object body)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
-        request.Headers.Add("X-Consumer-Id", _consumerId.ToString());
-        request.Headers.Add("X-Consumer-Name", "test-consumer");
-        return request;
-    }
+    private static HttpRequestMessage BuildRequest(string path, object body) =>
+        new(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
 
     private async Task<UsageRecord> WaitForUsageRecordAsync()
     {
         for (var i = 0; i < 100; i++)
         {
-            var record = _factory.UsageRecords.Records.FirstOrDefault(r => r.ConsumerId == _consumerId);
+            var record = _factory.UsageRecords.Records.FirstOrDefault(r => r.ConsumerId == _factory.DefaultConsumer.Id);
             if (record is not null)
             {
                 return record;
@@ -84,7 +78,7 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
         record.PromptTokens.Should().Be(10);
         record.CompletionTokens.Should().Be(5);
         record.TotalTokens.Should().Be(15);
-        record.ConsumerName.Should().Be("test-consumer");
+        record.ConsumerName.Should().Be(_factory.DefaultConsumer.Name);
         record.OperationType.Should().Be(OperationType.ChatCompletion);
         record.ModelDeploymentName.Should().Be(deploymentName);
         record.Streaming.Should().BeFalse();
@@ -236,6 +230,6 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         await Task.Delay(200);
-        _factory.UsageRecords.Records.Should().NotContain(r => r.ConsumerId == _consumerId);
+        _factory.UsageRecords.Records.Should().NotContain(r => r.ConsumerId == _factory.DefaultConsumer.Id);
     }
 }

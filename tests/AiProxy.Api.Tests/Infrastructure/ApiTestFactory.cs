@@ -1,4 +1,6 @@
 using AiProxy.Application.Abstractions;
+using AiProxy.Domain.Entities;
+using AiProxy.Infrastructure.Secrets;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -13,20 +15,55 @@ namespace AiProxy.Api.Tests.Infrastructure;
 /// </summary>
 public sealed class ApiTestFactory : WebApplicationFactory<Program>
 {
+    private const string TestPepper = "test-pepper-not-for-production-0123456789";
+
+    public const string AdminApiKey = "test-admin-key";
+    public const string DefaultConsumerApiKey = "test-consumer-key";
+
     public FakeModelDeploymentRepository Deployments { get; } = new();
 
     public FakeSessionAffinityStore Affinity { get; } = new();
 
     public FakeUsageRecordRepository UsageRecords { get; } = new();
 
+    public FakeConsumerRepository Consumers { get; } = new();
+
+    public FakeSecretResolver Secrets { get; } = new();
+
+    public Consumer DefaultConsumer { get; }
+
+    public ApiTestFactory()
+    {
+        Secrets.Seed("consumer-key-pepper", TestPepper);
+        Secrets.Seed("admin-api-key-hash", AdminApiKeyAuthenticator.Hash(AdminApiKey));
+
+        var hasher = new ApiKeyHasher(TestPepper);
+        DefaultConsumer = Consumer.Create(Guid.NewGuid(), "default-test-consumer", hasher.Hash(DefaultConsumerApiKey));
+        Consumers.Seed(DefaultConsumer);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Development so /openapi/v1.json (and the Scalar UI) are mapped for OpenApiDocument_IsGeneratedSuccessfully.
+        builder.UseEnvironment("Development");
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IModelDeploymentRepository>(Deployments);
             services.AddSingleton<ISessionAffinityStore>(Affinity);
             services.AddSingleton<ICredentialProvider, FakeCredentialProvider>();
             services.AddSingleton<IUsageRecordRepository>(UsageRecords);
+            services.AddSingleton<IConsumerRepository>(Consumers);
+            services.AddSingleton<ISecretResolver>(Secrets);
         });
+    }
+
+    protected override void ConfigureClient(HttpClient client)
+    {
+        // All ingress routes now require consumer auth (Phase 7) — every test client is pre-authenticated as
+        // the seeded default consumer so existing/new tests don't each need to attach the header themselves.
+        // A request that sets its own X-Api-Key takes precedence over this default.
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Add("X-Api-Key", DefaultConsumerApiKey);
+        client.DefaultRequestHeaders.Add("X-Admin-Api-Key", AdminApiKey);
     }
 }
