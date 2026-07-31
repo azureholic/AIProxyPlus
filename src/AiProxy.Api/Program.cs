@@ -6,15 +6,21 @@ using AiProxy.Application.Usage;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
 using AiProxy.Infrastructure.Observability;
+using AiProxy.Infrastructure.Persistence;
+using AiProxy.Infrastructure.Repositories;
 using AiProxy.Infrastructure.Routing;
 using AiProxy.Infrastructure.Secrets;
 using AiProxy.Infrastructure.Security;
 using AiProxy.Infrastructure.Usage;
+using Azure.Core;
+using Azure.Identity;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Enrichers.Span;
+using VaultSharp;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -45,6 +51,29 @@ builder.Services.AddSingleton<EndpointHealthTracker>();
 builder.Services.AddSingleton<AiProxy.Application.Abstractions.IEndpointHealthTracker>(
     sp => sp.GetRequiredService<EndpointHealthTracker>());
 builder.Services.AddSingleton<AiProxyMetrics>();
+
+// Postgres (architecture.md §7.1) — the Aspire client integration resolves the "aiproxydb" connection string
+// (injected by AiProxy.AppHost via WithReference) and wires resiliency/health checks/OTel automatically.
+builder.AddNpgsqlDbContext<AiProxyDbContext>("aiproxydb");
+builder.Services.AddScoped<IModelDeploymentRepository, ModelDeploymentRepository>();
+builder.Services.AddScoped<IConsumerRepository, ConsumerRepository>();
+builder.Services.AddScoped<ISessionAffinityStore, SessionAffinityStore>();
+builder.Services.AddScoped<IUsageRecordRepository, UsageRecordRepository>();
+
+// Vault (architecture.md §8) — address/token come from AiProxy.AppHost's Vault__Address/Vault__Token in dev.
+builder.Services.AddSingleton(_ => new VaultOptions
+{
+    Address = builder.Configuration["Vault:Address"] ?? "http://localhost:8200",
+    Token = builder.Configuration["Vault:Token"],
+});
+builder.Services.AddSingleton<IVaultClient>(sp => VaultClientFactory.Create(sp.GetRequiredService<VaultOptions>()));
+builder.Services.AddSingleton<ISecretResolver, VaultSecretResolver>();
+
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ApiKeyCredentialProvider>();
+builder.Services.AddSingleton<TokenCredential>(new DefaultAzureCredential());
+builder.Services.AddScoped<ManagedIdentityCredentialProvider>();
+builder.Services.AddScoped<ICredentialProvider, CredentialProvider>();
 
 builder.Services.AddSingleton<UsageRecordChannel>();
 builder.Services.AddHostedService<UsageRecordBackgroundWriter>();
@@ -279,30 +308,24 @@ static async Task RouteOrFailAsync(
     await httpContext.Response.WriteAsJsonAsync(new { error = failure.Message });
 }
 
-/// <summary>Checks the (optionally registered) Postgres/Vault-backed ports; "not configured" until Phase 9 wires them.</summary>
+/// <summary>Probes Postgres/Vault reachability via the registered ports (architecture.md §12).</summary>
 static class HealthChecks
 {
     public static async Task<IResult> CheckReadyAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
-        var checks = new Dictionary<string, string>();
+        var checks = new Dictionary<string, string>
+        {
+            ["vault"] = await ProbeAsync(() =>
+                services.GetRequiredService<ISecretResolver>().TryResolveAsync("__health_check__", cancellationToken)),
+            ["postgres"] = await ProbeAsync(() => services.GetRequiredService<IModelDeploymentRepository>().GetAllAsync(cancellationToken)),
+        };
 
-        var secretResolver = services.GetService<ISecretResolver>();
-        checks["vault"] = await ProbeAsync(secretResolver is null, () => secretResolver!.TryResolveAsync("__health_check__", cancellationToken));
-
-        var deploymentRepository = services.GetService<IModelDeploymentRepository>();
-        checks["postgres"] = await ProbeAsync(deploymentRepository is null, () => deploymentRepository!.GetAllAsync(cancellationToken));
-
-        var allHealthy = checks.Values.All(v => v is "healthy" or "not configured");
+        var allHealthy = checks.Values.All(v => v == "healthy");
         return allHealthy ? Results.Ok(checks) : Results.Json(checks, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
-    private static async Task<string> ProbeAsync(bool notConfigured, Func<Task> probe)
+    private static async Task<string> ProbeAsync(Func<Task> probe)
     {
-        if (notConfigured)
-        {
-            return "not configured";
-        }
-
         try
         {
             await probe();

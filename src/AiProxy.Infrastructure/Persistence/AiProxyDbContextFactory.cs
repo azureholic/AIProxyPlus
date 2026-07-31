@@ -8,8 +8,10 @@ public sealed class AiProxyDbContextFactory : IDesignTimeDbContextFactory<AiProx
 {
     public AiProxyDbContext CreateDbContext(string[] args)
     {
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__aiproxydb")
+            ?? "Host=localhost;Database=aiproxy;Username=aiproxy;Password=design-time-only";
         var optionsBuilder = new DbContextOptionsBuilder<AiProxyDbContext>();
-        optionsBuilder.UseNpgsql("Host=localhost;Database=aiproxy;Username=aiproxy;Password=design-time-only");
+        optionsBuilder.UseNpgsql(connectionString);
         return new AiProxyDbContext(optionsBuilder.Options);
     }
 }

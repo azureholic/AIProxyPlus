@@ -11,6 +11,8 @@
 # Runtime debug logs (Serilog rolling file sink) — keep the folder, ignore contents
 logs/*
 !logs/.gitkeep
+# Serilog writes relative to the process's content root, which varies by how the Api is launched
+src/AiProxy.Api/logs/
 
 # dotnet test TRX/coverage output — keep the folder, ignore contents
 test-results/*

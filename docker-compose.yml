@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: aiproxy
+      POSTGRES_PASSWORD: aiproxy-dev-only
+      POSTGRES_DB: aiproxydb
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiproxy -d aiproxydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Dev-mode Vault (architecture.md §8) — well-known root token, mlock disabled. Never use dev mode for real
+  # deployments; a real deployment should use a proper storage backend + AppRole auth.
+  vault:
+    image: hashicorp/vault:latest
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-only-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_DISABLE_MLOCK: "true"
+    volumes:
+      - vault-data:/vault/file
+    ports:
+      - "8200:8200"
+
+  api:
+    build:
+      context: .
+      dockerfile: src/AiProxy.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__aiproxydb: "Host=postgres;Database=aiproxydb;Username=aiproxy;Password=aiproxy-dev-only"
+      Vault__Address: "http://vault:8200"
+      Vault__Token: "dev-only-root-token"
+      # Point at an external OTLP collector if you have one; leave unset to disable OTLP export.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  vault-data:

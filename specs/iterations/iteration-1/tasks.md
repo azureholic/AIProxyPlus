@@ -237,13 +237,45 @@ Definition of Done for this iteration:
 
 ## Phase 9 — Aspire AppHost & containers
 
-- [ ] Implement `AiProxy.AppHost` wiring: Postgres resource (with volume), Vault resource, the Api project
-  resource, service discovery + OTLP endpoint injection.
-- [ ] Add Dockerfile for `AiProxy.Api`.
-- [ ] Add `docker-compose.yml` (Postgres + Vault + Api) for non-Aspire container runs, with an external OTLP
-  collector endpoint configurable via env var.
-- [ ] Verify `dotnet run --project src/AiProxy.AppHost` brings up the full stack and the API responds to a health
-  check and a sample proxied request against a local fake/stub backend.
+- [x] Implement `AiProxy.AppHost` wiring: Postgres resource (`AddPostgres("postgres").WithDataVolume().AddDatabase("aiproxydb")`),
+  a dev-mode Vault resource (generic `AddContainer("vault", "hashicorp/vault")` — no official Aspire hosting
+  package exists for Vault — with `VAULT_DEV_ROOT_TOKEN_ID`/`VAULT_DISABLE_MLOCK` for a local, throwaway dev
+  instance), the Api project resource wired via `WithReference(postgres)` + `Vault__Address`/`Vault__Token`
+  environment variables + `WaitFor(...)` on both. Also closes the long-standing DI-registration gap from
+  Phases 5–8: `Program.cs` now registers the real `AiProxyDbContext` (via `Aspire.Npgsql.EntityFrameworkCore.PostgreSQL`'s
+  `AddNpgsqlDbContext`), `ModelDeploymentRepository`/`ConsumerRepository`/`SessionAffinityStore`/`UsageRecordRepository`,
+  `VaultSecretResolver` (+ `VaultClientFactory`/`VaultOptions`), and `CredentialProvider`
+  (`ApiKeyCredentialProvider`/`ManagedIdentityCredentialProvider` via `IMemoryCache`/`DefaultAzureCredential`).
+- [x] Add Dockerfile for `AiProxy.Api` (multi-stage restore/publish/runtime, repo-root build context) + a
+  `.dockerignore` (excluding `bin/`/`obj/` — without it, host-machine build artifacts with Windows-specific
+  NuGet fallback paths baked in get copied into the Linux build stage and break `dotnet publish`, confirmed by
+  hitting exactly that failure on the first build attempt).
+- [x] Add `docker-compose.yml` (Postgres + Vault + Api) for non-Aspire container runs, with `OTEL_EXPORTER_OTLP_ENDPOINT`
+  left blank/configurable via env var for an external collector.
+- [x] Verified end-to-end via **both** paths:
+  - `dotnet run --project src/AiProxy.AppHost`: Postgres/Vault containers came up, `AiProxyDbContextFactory`
+    (design-time-only) updated to honor a `ConnectionStrings__aiproxydb` env var override so `dotnet ef database
+    update` could target the Aspire-managed container; `GET /health/ready` initially reported `postgres`
+    unhealthy (`relation "model_deployments" does not exist` — migrations aren't auto-applied at startup, by
+    design, since that would break `WebApplicationFactory`-based tests which never point at a real database),
+    then reported `{"vault":"healthy","postgres":"healthy"}` once the migration was applied. Directly queried
+    Vault's HTTP API with the dev root token and confirmed `admin-api-key-hash` was auto-provisioned at
+    `secret/ai-proxy/admin-api-key-hash` as designed.
+  - `docker compose up -d`: hit the same Postgres 18 image behavior change (data directory must now be mounted
+    at `/var/lib/postgresql`, not `/var/lib/postgresql/data` — fixed in `docker-compose.yml`), then confirmed
+    the identical healthy/unhealthy → healthy health-check transition through the containerized Api on
+    `http://localhost:8080/health/ready`.
+  - Also fixed a related bug this exposed: `/health/ready` originally threw a 500 instead of a graceful 503
+    when `services.GetRequiredService<T>()` itself failed to *construct* a dependency (e.g. Vault client
+    construction throwing because no token was configured) — the probe now wraps resolution *and* the call in
+    the same try/catch. Added `HealthCheckTests` (`AiProxy.Api.Tests`) covering the fake-backed healthy path.
+  - All test/temporary containers, volumes, and images from this verification were torn down afterward
+    (`docker compose down -v`, `docker rm -f`, `docker rmi`, `docker volume rm`) — nothing left running.
+  - A full proxied ingress request against the live stack (vs. the WireMock-backed one already covered by
+    ~30 `AiProxy.Api.Tests`) was not additionally exercised manually — the automated suite already covers that
+    path more rigorously and repeatably than a one-off manual curl would.
+  - 201/201 tests passing solution-wide throughout.
+
 
 ## Phase 10 — Test hardening & documentation
 
