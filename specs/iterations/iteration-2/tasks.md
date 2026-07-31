@@ -96,13 +96,17 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 
 ## Phase 4 — Documentation
 
-- [ ] `architecture.md`: rewrite §6.2/§9 to describe the new load-balancing algorithm (priority tiers +
-  round-robin + 429/5xx failover) and the narrowed, automatic-only affinity model (Responses API + Realtime,
-  no config flag); add a new subsection for the Realtime API (ingress route, WebSocket proxy design, "why
-  failover only applies to the handshake"); update §2 scope table, §7.1 schema table (drop
-  `sticky_session_enabled`), §12 API surface summary, §16 technology choices if needed.
-- [ ] New/updated diagrams if the high-level or sequence diagrams need it (at minimum, note the new ingress
-  route on diagram 01 if it's still accurate enough not to need a full redraw).
-- [ ] `README.md`: mention the realtime route and the removal of `stickySessionEnabled` from the config API
-  example if relevant.
-- [ ] `specs/iterations/iteration-1/tasks.md`: no change needed (historical record of Iteration 1, left as-is).
+- [x] `architecture.md`: rewrote §6.2 (Responses API affinity streaming example, replacing the removed generic
+  session mechanism), added §6.5 (Realtime API), rewrote §9's priority/round-robin/429-failover and narrowed
+  affinity description; updated §2 scope table (6.2/6.3), §4 layer responsibilities (`OperationType.RealtimeVoice`,
+  `IEndpointRoundRobinCounter`, `RealtimeProxyService`, removed the priority-uniqueness invariant mention), §7.1
+  schema table (dropped `sticky_session_enabled`), §12 API surface summary (new Realtime row), §16 technology
+  choices (`System.Net.WebSockets`), §17 assumptions (removed the stale generic-session-id assumption), §18
+  non-goals (Realtime now implemented; Azure Realtime/generic WS backends still deferred).
+- [x] Diagrams: 01 (high-level) ingress/routing box labels updated to mention the Realtime route and
+  round-robin; 04 (streaming sequence) rewritten to depict the Responses API's `previous_response_id` affinity
+  instead of the removed generic `session` field — both re-exported to PNG.
+- [x] `README.md`: intro paragraph and testing-strategy bullet updated to describe priority + round-robin +
+  429 failover, automatic Responses/Realtime affinity (no more generic "sticky sessions"), and the Realtime
+  WebSocket proxy.
+- [x] `specs/iterations/iteration-1/tasks.md`: no change needed (historical record of Iteration 1, left as-is).

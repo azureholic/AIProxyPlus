@@ -16,10 +16,10 @@
       <mxGeometry x="280" y="40" width="620" height="420" as="geometry" />
     </mxCell>
 
-    <mxCell id="ing" value="Ingress Endpoints&#10;/openai/v1/*  /anthropic/v1/messages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+    <mxCell id="ing" value="Ingress Endpoints&#10;/openai/v1/*  /anthropic/v1/messages  /openai/v1/realtime (WS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
       <mxGeometry x="320" y="90" width="540" height="50" as="geometry" />
     </mxCell>
-    <mxCell id="router" value="Routing Engine&#10;deployment to endpoint selection, priority + failover + sticky session" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+    <mxCell id="router" value="Routing Engine&#10;deployment to endpoint selection, priority + round-robin + failover + Responses/Realtime affinity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
       <mxGeometry x="320" y="170" width="540" height="60" as="geometry" />
     </mxCell>
     <mxCell id="fwd" value="Forwarder&#10;Custom DirectHttpProxy (HttpMessageInvoker) + auth injection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">

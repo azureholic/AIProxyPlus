@@ -30,8 +30,8 @@ it is not tied to Azure:
 | 5 | OpenTelemetry (traces, logs, metrics) | OTLP exporter → Aspire dashboard locally, OTLP collector in prod |
 | 6 | Configuration | see §7 |
 | 6.1 | Model-deployment name | `ModelDeployment.Name` (routing key) |
-| 6.2 | 1+ endpoints, priority + failover | `Endpoint.Priority`, `EndpointSelector` (Domain) + passive health checks |
-| 6.3 | Sticky sessions for stateful calls | Session-id-keyed affinity (`ISessionAffinityStore`), persisted in Postgres |
+| 6.2 | 1+ endpoints, priority + failover | `Endpoint.Priority`, `EndpointSelector` (Domain): lowest-priority tier first, round-robin across endpoints that share a priority, failover on `429`/`5xx` (Iteration 2) |
+| 6.3 | Sticky sessions for stateful calls | **Automatic, protocol-inherent affinity only** — no config flag (Iteration 2). Responses API: `previous_response_id`-keyed affinity (`ISessionAffinityStore`, persisted in Postgres). Realtime API: the WebSocket connection itself is the affinity (§6.5/§9) |
 | 6.4 | API key vs Managed Identity per endpoint | `Endpoint.AuthMode` + `ICredentialProvider` strategy |
 | 6.5 | Configuration REST API | `/api/v1/config/*` CRUD endpoints, incl. `Consumer` (API key) management |
 | 7 | Secure API key storage, container-based | HashiCorp Vault (OSS) container, KV v2 engine |
@@ -46,6 +46,7 @@ it is not tied to Azure:
 - Response caching / semantic caching.
 - Admin UI (only REST API + OpenAPI).
 - Automatic secret rotation workflows (Vault supports it; wiring it up is future work).
+- Realtime (voice) API — added in Iteration 2 (§6.5/§9); out of scope for Iteration 1.
 
 ## 3. High-Level Architecture
 
@@ -86,25 +87,29 @@ ai-proxy/
 
 - **Domain** — `ModelDeployment`, `Endpoint`, `UsageRecord`, `SessionAffinityEntry`, `Consumer`, value objects
   (`ApiFamily`, `AuthMode`, `RoutingStrategy`, `OperationType` — ChatCompletion, Completion, Embedding,
-  ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, extensible to more), `EndpointSelector` (the
-  priority/failover selection algorithm), domain invariants (e.g. two endpoints on the same deployment can't
-  share a priority; a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at
-  least one usage signal — tokens or `UsageMetrics` — must be present). A deployment with zero or no *enabled*
-  endpoints is a valid domain state (`ModelDeployment.HasUsableEndpoint` reports it) — routing simply fails
-  with `NoHealthyEndpoint` for it at request time; it's not a constructor-enforced invariant.
+  ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, `RealtimeVoice` (Iteration 2), extensible to more),
+  `EndpointSelector` (the priority + round-robin selection algorithm — Iteration 2 rework, see §9), domain
+  invariants (a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at least
+  one usage signal — tokens or `UsageMetrics` — must be present). Endpoints on the same deployment sharing a
+  `Priority` is intentional (they round-robin together, Iteration 2) rather than a constraint violation. A
+  deployment with zero or no *enabled* endpoints is a valid domain state (`ModelDeployment.HasUsableEndpoint`
+  reports it) — routing simply fails with `NoHealthyEndpoint` for it at request time; it's not a
+  constructor-enforced invariant.
 - **Application** — ports: `IModelDeploymentRepository`, `IConsumerRepository`, `ISessionAffinityStore`,
   `IUsageRecordRepository`, `ISecretResolver`, `ICredentialProvider`, `IApiKeyHasher`, `IApiKeyGenerator`,
-  `IConsumerAuthenticator`, `IEndpointHealthTracker`, `IUsageExtractor` (one implementation per `ApiFamily` +
-  `OperationType` combination, resolved via `IUsageExtractorResolver`); command/query handlers for
-  configuration CRUD and usage queries; validation (FluentValidation).
+  `IConsumerAuthenticator`, `IEndpointHealthTracker`, `IEndpointRoundRobinCounter` (Iteration 2), `IUsageExtractor`
+  (one implementation per `ApiFamily` + `OperationType` combination, resolved via `IUsageExtractorResolver`);
+  command/query handlers for configuration CRUD and usage queries; validation (FluentValidation).
 - **Infrastructure** — implements all ports: `AiProxyDbContext` (EF Core/Npgsql), `VaultSecretResolver`
   (VaultSharp), `ApiKeyCredentialProvider` / `ManagedIdentityCredentialProvider`, `ProxyRoutingService` +
   `DirectHttpProxy` + `SseStreamRelay` (routing/forwarding/streaming — see §9 for why this isn't built on YARP),
-  per-`(ApiFamily, OperationType)` `IUsageExtractor` implementations (`OpenAiStyleTokenUsageExtractor`,
-  `AnthropicChatUsageExtractor`, `ImageUsageExtractor`, `ResponsesUsageExtractor`), `AiProxyMetrics`/
-  `AiProxyActivitySource` (OpenTelemetry).
-- **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`), configuration routes
-  (`/api/v1/config/*`), health endpoints (`/health/live`, `/health/ready`), OpenAPI, DI composition.
+  `RealtimeProxyService` (WebSocket proxy for the Realtime API, Iteration 2, §6.5/§9),
+  `EndpointRoundRobinCounter` (Iteration 2), per-`(ApiFamily, OperationType)` `IUsageExtractor` implementations
+  (`OpenAiStyleTokenUsageExtractor`, `AnthropicChatUsageExtractor`, `ImageUsageExtractor`,
+  `ResponsesUsageExtractor`), `AiProxyMetrics`/`AiProxyActivitySource` (OpenTelemetry).
+- **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`, `/openai/v1/realtime` WebSocket —
+  Iteration 2), configuration routes (`/api/v1/config/*`), health endpoints (`/health/live`, `/health/ready`),
+  OpenAPI, DI composition.
 - **ServiceDefaults / AppHost** — Aspire wiring for local development: starts Postgres, Vault, the Api, and the
   Aspire dashboard, and injects OTLP endpoint + connection strings via service discovery.
 
@@ -122,11 +127,16 @@ ai-proxy/
 
 *Source: [diagrams/03-sequence-non-streaming-failover.drawio](diagrams/03-sequence-non-streaming-failover.drawio)*
 
-### 6.2 Streaming chat completion, sticky session, forced usage capture
+### 6.2 Streaming Responses API call, with automatic affinity, forced usage capture
 
-![Sequence: streaming chat completion with sticky session and usage capture](diagrams/04-sequence-streaming-sticky-usage.png)
+![Sequence: streaming Responses API call with affinity and usage capture](diagrams/04-sequence-streaming-sticky-usage.png)
 
 *Source: [diagrams/04-sequence-streaming-sticky-usage.drawio](diagrams/04-sequence-streaming-sticky-usage.drawio)*
+
+> **Note:** this diagram illustrates the Responses API's automatic `previous_response_id` affinity (§6.4/§9) —
+> the only streaming operation type that also carries cross-request affinity. Plain chat completions streaming
+> looks the same minus the affinity lookup/persist steps (Iteration 2 removed the generic session-id sticky
+> mechanism entirely — every non-Responses/Realtime request just uses priority + round-robin, §9).
 
 ### 6.3 Non-token operations (e.g. image generation)
 
@@ -144,8 +154,23 @@ The Responses API (`/openai/v1/responses`) flows through the same pipeline too, 
 that is stateful *by OpenAI's own design*: unless a caller passes `store: false`, OpenAI persists each response
 server-side, and a follow-up turn references it via `previous_response_id` instead of resending prior messages.
 That id only resolves on the endpoint that originally created it, so it's treated as an implicit sticky-session
-key (see §9) — no client-supplied `session`/`X-Session-Id` is required for this operation type. Usage is
-extracted the same way as any other operation, just via the Responses-specific `IUsageExtractor` (§10).
+key (see §9) — this affinity is automatic and protocol-inherent, not a client-supplied session identifier or a
+deployment-level config flag (Iteration 2 removed the generic `session`/`X-Session-Id` mechanism entirely — see
+the note in §9). Usage is extracted the same way as any other operation, just via the Responses-specific
+`IUsageExtractor` (§10).
+
+### 6.5 Realtime (voice) API — WebSocket proxy (Iteration 2)
+
+`GET /openai/v1/realtime?model={deploymentName}` is not a request/response call — the client upgrades to a
+WebSocket and the connection stays open for the duration of a voice session. `RealtimeProxyService` resolves the
+`ModelDeployment` from the `model` **query string** (there is no request body to peek at handshake time),
+picks an endpoint via the same priority + round-robin `EndpointSelector` used for HTTP ingress, resolves its
+credential, and opens an outbound `ClientWebSocket` to the backend before accepting the inbound upgrade. Once
+both legs are connected, frames are relayed bidirectionally, byte-for-byte, until either side closes — see §9
+for the failover and close-propagation details. Iteration 2 targets the **OpenAI Realtime API** only
+(`wss://.../v1/realtime?model=...`, `Authorization: Bearer` auth); Azure OpenAI Realtime and generic/self-hosted
+WebSocket backends are deferred, as is usage/token capture for this operation type (`OperationType.RealtimeVoice`
+exists for future use, but no `IUsageExtractor` reads a Realtime session yet).
 
 ## 7. Configuration & Persistence
 
@@ -153,7 +178,7 @@ extracted the same way as any other operation, just via the Responses-specific `
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `model_deployments` | Routing key + policy | `id`, `name` (unique), `sticky_session_enabled`, `strategy` |
+| `model_deployments` | Routing key + policy | `id`, `name` (unique), `strategy` |
 | `endpoints` | Backend targets per deployment | `id`, `model_deployment_id`, `base_url`, `api_family`, `priority`, `auth_mode`, `secret_ref`, `enabled` |
 | `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), `api_key_hash`, `enabled`, `created_at`, `revoked_at` |
 | `usage_records` | Usage log (append-only) | `id`, `timestamp`, `model_deployment_name`, `consumer_id`, `consumer_name`, `endpoint_id`, `operation_type`, `prompt_tokens?`, `completion_tokens?`, `total_tokens?`, `usage_metrics` (jsonb), `streaming`, `status_code`, `duration_ms` |
@@ -252,19 +277,39 @@ with a well-known root token confined to the dev environment is acceptable.
   this is the one place the proxy must buffer the body, and it's covered by a dedicated integration test. The
   same `model`-field peek covers every OpenAI-compatible operation type (chat completions, completions,
   embeddings, images) since they all carry a `model` field — no per-operation-type routing logic is needed.
-- **Priority + failover**: endpoints are ordered by `Endpoint.Priority`. `EndpointSelector` (Domain) picks the
-  lowest-priority-number healthy endpoint first, excluding any already tried in this request. Passive health
-  checks (on transport error/5xx) mark an endpoint unhealthy via `IEndpointHealthTracker`, at which point the
-  next priority is tried — mirroring the original `ThrottlingHealthPolicy` idea but generalized beyond 429s.
-- **Sticky sessions (6.3)**: when `StickySessionEnabled` is true, the affinity key is resolved per operation
-  type: for chat completions it's a client-supplied session identifier (a `session` field in the request body
-  or an `X-Session-Id` header); for the **Responses API** it's the caller's `previous_response_id`, if present.
-  The affinity map is persisted in `session_affinity` (Postgres) rather than only in-memory, so the "one
-  endpoint per stateful session" guarantee survives proxy restarts/multiple replicas. If the affinity-selected
-  endpoint becomes unhealthy, the documented failure policy applies (fail the request with a clear error
-  rather than silently rerouting a stateful session — confirmed unsafe and covered by an integration test).
-  An unrecognized/expired affinity key (no matching row) is *not* an error — the request simply falls back to
-  normal (non-sticky) routing.
+- **Priority + round-robin (Iteration 2)**: endpoints are grouped by `Endpoint.Priority`; `EndpointSelector`
+  (Domain) narrows to the healthy/enabled candidates, picks the **lowest surviving priority number**, and, if
+  more than one endpoint shares that priority, **round-robins** across them using a per-request counter
+  (`IEndpointRoundRobinCounter`, snapshotted once per incoming request/connection so a single request's
+  failover retries move deterministically through the tier instead of re-rolling on every retry). A single
+  endpoint, or a deployment where every endpoint has a distinct priority, behaves exactly like strict
+  priority-order failover — round-robin only has a visible effect when two or more endpoints share a priority.
+  Two endpoints sharing a priority is intentional configuration (ties round-robin together), not an error.
+- **Failover triggers**: a backend response of `429` (rate limited) or any `5xx`, or a transport-level failure
+  (timeout, connection refused), marks the endpoint unhealthy for this request (`IEndpointHealthTracker`) and
+  the next candidate in the round-robin tier — or the next priority tier if the current one is exhausted — is
+  tried, bounded by the deployment's total endpoint count. `429` was added in Iteration 2: it's the single most
+  common real-world reason to want failover, and treating it identically to `5xx` means a rate-limited primary
+  endpoint no longer fails every in-flight request while a secondary endpoint sits idle.
+- **Sticky sessions — automatic and protocol-inherent only (Iteration 2)**: there is no deployment-level sticky
+  session config flag and no generic client-supplied `session`/`X-Session-Id` mechanism — both existed in
+  Iteration 1 and were removed. Every request that isn't inherently stateful just uses priority + round-robin
+  above, freely. Two operation types carry their own built-in affinity instead:
+  - **Responses API** (§6.4): the affinity key is the caller's `previous_response_id`. The affinity map is
+    persisted in `session_affinity` (Postgres) rather than only in-memory, so the "one endpoint per stateful
+    chain" guarantee survives proxy restarts/multiple replicas. If the affinity-selected endpoint becomes
+    unhealthy, the documented failure policy applies (fail the request with a clear error rather than silently
+    rerouting a stateful session — confirmed unsafe and covered by an integration test). An
+    unrecognized/expired affinity key (no matching row) is *not* an error — the request simply falls back to
+    normal (non-sticky) routing.
+  - **Realtime API** (§6.5): the WebSocket connection itself *is* the affinity — one endpoint is selected once,
+    for the connection's whole lifetime, via the same priority + round-robin `EndpointSelector`. Failover only
+    applies to the **handshake**: if the outbound `ClientWebSocket.ConnectAsync` to the chosen endpoint fails
+    before any client data has flowed, `RealtimeProxyService` marks that endpoint unhealthy and tries the next
+    priority/round-robin candidate. Once the connection is established, a drop is a client-visible error —
+    silently reconnecting to a different backend mid-call would lose in-flight audio/session state, so this is
+    a deliberate non-goal, not a gap. On a graceful close from either side, the proxy acknowledges the close
+    back to the sender and propagates the close to the other leg, so neither side is left hanging.
 - **Responses API chaining**: the Responses API is stateful by default (OpenAI persists each response server-side
   unless the caller sets `store: false`), and a follow-up call references the prior turn via
   `previous_response_id` — that id only resolves on the endpoint that created it. So whenever a `/responses`
@@ -335,6 +380,7 @@ with a well-known root token confined to the dev environment is acceptable.
 | OpenAI ingress (images) | `POST /openai/v1/images/generations`, `POST /openai/v1/images/edits`, `POST /openai/v1/images/variations` | Passthrough proxy, non-streaming, usage captured via the image `IUsageExtractor` |
 | OpenAI ingress (responses) | `POST /openai/v1/responses` | Passthrough proxy, streaming and non-streaming; stateful via `previous_response_id` — see §9 |
 | Anthropic ingress | `POST /anthropic/v1/messages` | Passthrough proxy, streaming supported |
+| Realtime (voice) ingress (Iteration 2) | `GET /openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover — see §6.5/§9. Usage capture deferred |
 | Configuration | `/api/v1/config/*` | See §7.2, incl. `consumers` CRUD |
 | Usage query | `GET /api/v1/usage` | Chargeback / reporting, filterable by deployment and consumer |
 | Health | `GET /health/live`, `GET /health/ready` | Standard ASP.NET Core health checks (Postgres, Vault reachability) |
@@ -420,14 +466,17 @@ Clean Architecture is enforced and verified, not just aspirational:
 | Resilience | Manual bounded retry + jittered backoff (`ProxyRoutingService`) | Retry must inspect the upstream response before committing anything to the client (see §9), which rules out a `DelegatingHandler`-based resilience pipeline |
 | Observability | OpenTelemetry SDK + OTLP exporter | Explicitly requested; vendor-neutral |
 | Optional Azure auth | `Azure.Identity` | Only loaded/used for endpoints configured with `AuthMode = ManagedIdentity` |
+| Realtime transport (Iteration 2) | `System.Net.WebSockets` (`ClientWebSocket` outbound, `HttpContext.WebSockets` inbound) | BCL-only, no extra package; matches the same "inspect before committing" philosophy as `DirectHttpProxy` — the outbound handshake must succeed before the inbound upgrade is accepted |
 | Testing | xUnit, FluentAssertions, NSubstitute, Testcontainers, WireMock.Net, NetArchTest | Standard, well-supported .NET test stack covering unit/integration/architecture tests |
 
 ## 17. Assumptions & Open Questions
 
 - The config API's admin authentication is a placeholder (static API key) for Iteration 1; a follow-up iteration
   should evaluate OAuth2/Entra ID/mTLS depending on where the proxy is deployed.
-- Session/conversation id extraction defaults to a `session` field in the request body with an `X-Session-Id`
-  header override — needs confirmation against real client usage patterns.
+- Session/conversation affinity is **not** derived from a client-supplied session id (Iteration 2 removed that
+  generic mechanism entirely) — only the Responses API's `previous_response_id` and the Realtime API's
+  connection lifetime carry affinity. If a future operation type needs stickiness without an inherent protocol
+  key, that will need new design work, not a reuse of the removed mechanism.
 - Cross-protocol translation (OpenAI ↔ Anthropic) is explicitly deferred; if needed sooner, it changes the
   ingress/routing design meaningfully and should be scoped as its own iteration.
 - Vault is chosen over alternatives (Docker Secrets, SOPS, age-encrypted files) because it offers dynamic
@@ -453,6 +502,10 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Multi-region / multi-instance cache invalidation via Postgres `LISTEN/NOTIFY` (Iteration 1 uses TTL-based cache
   expiry, which is acceptable for a single-instance or short-TTL multi-instance deployment).
 - Automatic Vault secret rotation workflows.
-- Audio (speech-to-text, text-to-speech) and moderation endpoints — supported in principle by the same pluggable
-  ingress + usage-extractor design, but not implemented in Iteration 1.
+- Audio (speech-to-text, text-to-speech) via traditional request/response endpoints, and moderation endpoints —
+  supported in principle by the same pluggable ingress + usage-extractor design, but not implemented. The
+  Realtime (voice) WebSocket API is implemented (Iteration 2, §6.5/§9), but its usage/token capture is still
+  deferred to a later iteration.
+- Azure OpenAI Realtime and generic/self-hosted WebSocket backends for the Realtime API (Iteration 2 targets
+  the OpenAI Realtime API only).
 - Additional providers beyond OpenAI-compatible and Anthropic (e.g. Google Gemini, Cohere).

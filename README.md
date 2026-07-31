@@ -1,7 +1,8 @@
 # AI Proxy
 
-A reverse proxy for OpenAI, Azure OpenAI, and Anthropic-compatible inference APIs, with priority/failover
-routing, sticky sessions (incl. OpenAI Responses API `previous_response_id` chaining), streaming-safe usage
+A reverse proxy for OpenAI, Azure OpenAI, and Anthropic-compatible inference APIs, with priority + round-robin
+load-balanced routing (failover on `429`/`5xx`), automatic affinity for stateful calls (OpenAI Responses API
+`previous_response_id` chaining, and a WebSocket proxy for the OpenAI Realtime/voice API), streaming-safe usage
 capture for chargeback, and a small configuration REST API — built as a clean, testable .NET 10 solution with
 .NET Aspire for local orchestration.
 
@@ -112,6 +113,7 @@ dotnet test --results-directory "test-results/$(Get-Date -Format yyyyMMdd-HHmmss
 - The running API writes rolling logs to `logs/ai-proxy-.log` (also git-ignored beyond `.gitkeep`).
 - `AiProxy.Domain.Tests`/`AiProxy.Application.Tests` are pure unit tests. `AiProxy.Infrastructure.Tests` uses
   Testcontainers for Postgres/Vault (requires Docker running). `AiProxy.Api.Tests` uses `WebApplicationFactory`
-  + WireMock.Net fake backends (no Docker required) to exercise the full HTTP pipeline — routing/failover,
-  sticky sessions, streaming usage capture, the config REST API, and authz enforcement.
+  + WireMock.Net fake backends (no Docker required) to exercise the full HTTP pipeline — priority/round-robin
+  routing and failover, Responses API affinity, the Realtime WebSocket proxy, streaming usage capture, the
+  config REST API, and authz enforcement.
 - `AiProxy.ArchitectureTests` (NetArchTest) enforces the Clean Architecture dependency direction.
