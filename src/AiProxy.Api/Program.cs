@@ -158,8 +158,8 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async httpContext =>
 
 app.UseSerilogRequestLogging();
 app.UseWebSockets();
-
-app.MapGet("/", () => "Hello World!");
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 if (app.Environment.IsDevelopment())
 {
@@ -292,6 +292,22 @@ app.MapGroup("/api/v1")
         var query = new UsageRecordQuery(modelDeploymentName, consumerName, operationType, from, to, page ?? 1, pageSize ?? 50);
         return Results.Ok(await handler.HandleAsync(query, ct));
     });
+
+// Frontend (Iteration 3, architecture.md §19): a built React app in wwwroot owns "/" and every client-side
+// route via this fallback; falls back to a plain-text hint instead of a bare 404 if it hasn't been built yet.
+// Registered last so it never shadows the API routes above — endpoint routing always prefers the more
+// specific match regardless of registration order, but this ordering also keeps intent obvious in the file.
+if (File.Exists(Path.Combine(app.Environment.WebRootPath, "index.html")))
+{
+    app.MapFallbackToFile("index.html");
+}
+else
+{
+    app.MapFallback(() => Results.Text(
+        "AiProxy frontend not built yet. Run 'npm run build' in src/AiProxy.Web (or 'npm run dev' for local " +
+        "frontend development against this API) to populate wwwroot.",
+        "text/plain"));
+}
 
 app.Run();
 

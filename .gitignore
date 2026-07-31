@@ -17,3 +17,7 @@ src/AiProxy.Api/logs/
 # dotnet test TRX/coverage output — keep the folder, ignore contents
 test-results/*
 !test-results/.gitkeep
+
+# Frontend build output (Vite writes straight into wwwroot — a build artifact, not source)
+src/AiProxy.Api/wwwroot/*
+!src/AiProxy.Api/wwwroot/.gitkeep

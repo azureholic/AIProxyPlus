@@ -59,6 +59,34 @@ Brings up Postgres, dev-mode Vault, and the API (built from `src/AiProxy.Api/Doc
 Apply migrations the same way as above, pointing at `localhost:5432`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` in
 `docker-compose.yml` if you have an external OTLP collector; leave it blank to disable OTLP export.
 
+## Frontend (`src/AiProxy.Web`)
+
+A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboard — see
+[specs/iterations/iteration-3/tasks.md](specs/iterations/iteration-3/tasks.md)), served by the **same**
+container as the API — no separate frontend host/deployment.
+
+- **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it
+  for you) writes the compiled static files straight into `src/AiProxy.Api/wwwroot`, which `AiProxy.Api` then
+  serves at `/` (with a client-side-routing fallback to `index.html`) alongside its existing `/api/*`,
+  `/openai/*`, `/anthropic/*` routes. `wwwroot`'s contents are git-ignored — they're a build artifact, not
+  source (same convention as `logs/`/`test-results/`).
+- **Local frontend development** (hot reload, no rebuild loop):
+  ```powershell
+  # Terminal 1 — the API (Aspire or plain `dotnet run`)
+  dotnet run --project src/AiProxy.Api
+  # Terminal 2 — Vite dev server; proxies /api, /openai, /anthropic, /health to the API above
+  cd src/AiProxy.Web
+  npm install
+  npm run dev
+  ```
+  Open the printed Vite URL (not the API's own port) — `vite.config.ts`'s dev proxy forwards backend calls so
+  the frontend never needs its own copy of the auth/CORS story.
+- On first load, open **Settings** and paste an **Admin API Key** (for Config + Usage) and a **Consumer API
+  Key** (for the Playground — create one under Config → Consumers first). Both are kept in the browser tab's
+  `sessionStorage` only; this is a stand-in for real auth, matching the backend's own placeholder admin-key
+  posture (architecture.md §17).
+- Frontend tests: `cd src/AiProxy.Web && npm test` (Vitest + React Testing Library).
+
 ## Example requests
 
 Create a consumer (admin-only) and use its key for ingress calls:

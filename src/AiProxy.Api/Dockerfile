@@ -1,3 +1,11 @@
+FROM node:22-alpine AS frontend-build
+WORKDIR /src/AiProxy.Web
+COPY src/AiProxy.Web/package.json src/AiProxy.Web/package-lock.json ./
+RUN npm ci
+COPY src/AiProxy.Web/ ./
+RUN npm run build
+# vite.config.ts's build.outDir ("../AiProxy.Api/wwwroot") lands the build here, in this stage.
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
@@ -10,6 +18,9 @@ COPY src/AiProxy.ServiceDefaults/AiProxy.ServiceDefaults.csproj src/AiProxy.Serv
 RUN dotnet restore src/AiProxy.Api/AiProxy.Api.csproj
 
 COPY src/ src/
+# Single-container pattern (specs/iterations/iteration-3/tasks.md §Phase 2): each Docker stage has its own
+# filesystem, so the frontend-build stage's output has to be copied in explicitly — publish alone won't see it.
+COPY --from=frontend-build /src/AiProxy.Api/wwwroot src/AiProxy.Api/wwwroot
 RUN dotnet publish src/AiProxy.Api/AiProxy.Api.csproj -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
