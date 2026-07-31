@@ -55,16 +55,13 @@ public sealed class ModelDeployment
     /// <summary>True once at least one enabled endpoint is registered; false deployments can't be routed to.</summary>
     public bool HasUsableEndpoint => _endpoints.Any(e => e.Enabled);
 
+    /// <summary>Adds a candidate endpoint. Multiple endpoints may share the same <see cref="Endpoint.Priority"/> —
+    /// <see cref="Services.EndpointSelector"/> round-robins across endpoints tied for the lowest priority (§9).</summary>
     public void AddEndpoint(Endpoint endpoint)
     {
         if (endpoint.ModelDeploymentId != Id)
         {
             throw new DomainException("Endpoint.ModelDeploymentId does not match this ModelDeployment.");
-        }
-
-        if (_endpoints.Any(e => e.Priority == endpoint.Priority))
-        {
-            throw new DomainException($"Priority {endpoint.Priority} is already used by another endpoint on this deployment.");
         }
 
         _endpoints.Add(endpoint);
@@ -77,16 +74,11 @@ public sealed class ModelDeployment
         Touch();
     }
 
-    /// <summary>Changes an endpoint's priority, enforcing uniqueness across the deployment's other endpoints.</summary>
+    /// <summary>Changes an endpoint's priority. Ties with other endpoints are allowed (they round-robin together, §9).</summary>
     public void ChangeEndpointPriority(Guid endpointId, int newPriority)
     {
         var endpoint = _endpoints.FirstOrDefault(e => e.Id == endpointId)
             ?? throw new DomainException($"Endpoint '{endpointId}' does not belong to this ModelDeployment.");
-
-        if (_endpoints.Any(e => e.Id != endpointId && e.Priority == newPriority))
-        {
-            throw new DomainException($"Priority {newPriority} is already used by another endpoint on this deployment.");
-        }
 
         endpoint.UpdatePriority(newPriority);
         Touch();

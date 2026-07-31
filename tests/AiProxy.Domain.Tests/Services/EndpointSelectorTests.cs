@@ -159,4 +159,67 @@ public class EndpointSelectorTests
 
         result.IsSuccess.Should().BeFalse();
     }
+
+    [Fact]
+    public void SelectEndpoint_SamePriorityTier_RoundRobinsAcrossCounterValues()
+    {
+        var deploymentId = Guid.NewGuid();
+        var a = Healthy(deploymentId, priority: 1);
+        var b = Healthy(deploymentId, priority: 1);
+        var endpoints = new[] { a, b };
+        var tier = new[] { a, b }.OrderBy(e => e.Id).ToList();
+
+        for (var counter = 0; counter < 6; counter++)
+        {
+            var result = EndpointSelector.SelectEndpoint(endpoints, roundRobinCounter: counter);
+
+            result.IsSuccess.Should().BeTrue();
+            result.SelectedEndpoint.Should().Be(tier[counter % tier.Count]);
+        }
+    }
+
+    [Fact]
+    public void SelectEndpoint_SamePriorityTier_NegativeCounter_StillProducesAValidIndex()
+    {
+        var deploymentId = Guid.NewGuid();
+        var a = Healthy(deploymentId, priority: 1);
+        var b = Healthy(deploymentId, priority: 1);
+
+        var result = EndpointSelector.SelectEndpoint([a, b], roundRobinCounter: -1);
+
+        result.IsSuccess.Should().BeTrue();
+        result.SelectedEndpoint.Should().BeOneOf(a, b);
+    }
+
+    [Fact]
+    public void SelectEndpoint_RoundRobinTier_NeverPicksALowerPriorityEndpoint()
+    {
+        var deploymentId = Guid.NewGuid();
+        var a = Healthy(deploymentId, priority: 1);
+        var b = Healthy(deploymentId, priority: 1);
+        var fallback = Healthy(deploymentId, priority: 2);
+
+        for (var counter = 0; counter < 4; counter++)
+        {
+            var result = EndpointSelector.SelectEndpoint([a, b, fallback], roundRobinCounter: counter);
+
+            result.SelectedEndpoint.Should().BeOneOf(a, b);
+        }
+    }
+
+    [Fact]
+    public void SelectEndpoint_RoundRobinTier_ExcludingOneMember_AlwaysPicksTheSurvivor()
+    {
+        var deploymentId = Guid.NewGuid();
+        var a = Healthy(deploymentId, priority: 1);
+        var b = Healthy(deploymentId, priority: 1);
+
+        for (var counter = 0; counter < 4; counter++)
+        {
+            var result = EndpointSelector.SelectEndpoint(
+                [a, b], excludedEndpointIds: new HashSet<Guid> { a.Id }, roundRobinCounter: counter);
+
+            result.SelectedEndpoint.Should().Be(b);
+        }
+    }
 }

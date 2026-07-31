@@ -50,6 +50,7 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 builder.Services.AddSingleton<EndpointHealthTracker>();
 builder.Services.AddSingleton<AiProxy.Application.Abstractions.IEndpointHealthTracker>(
     sp => sp.GetRequiredService<EndpointHealthTracker>());
+builder.Services.AddSingleton<IEndpointRoundRobinCounter, EndpointRoundRobinCounter>();
 builder.Services.AddSingleton<AiProxyMetrics>();
 
 // Postgres (architecture.md §7.1) — the Aspire client integration resolves the "aiproxydb" connection string

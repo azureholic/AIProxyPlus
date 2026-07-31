@@ -41,14 +41,15 @@ public class ModelDeploymentTests
     }
 
     [Fact]
-    public void AddEndpoint_WithDuplicatePriority_Throws()
+    public void AddEndpoint_WithDuplicatePriority_IsAllowed_ForRoundRobin()
     {
         var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-prod");
         deployment.AddEndpoint(CreateEndpoint(deployment.Id, priority: 1));
 
-        var act = () => deployment.AddEndpoint(CreateEndpoint(deployment.Id, priority: 1));
+        deployment.AddEndpoint(CreateEndpoint(deployment.Id, priority: 1));
 
-        act.Should().Throw<DomainException>().WithMessage("*Priority*");
+        deployment.Endpoints.Should().HaveCount(2);
+        deployment.Endpoints.Should().OnlyContain(e => e.Priority == 1);
     }
 
     [Fact]
@@ -88,7 +89,7 @@ public class ModelDeploymentTests
     }
 
     [Fact]
-    public void ChangeEndpointPriority_WithPriorityUsedByAnotherEndpoint_Throws()
+    public void ChangeEndpointPriority_ToPriorityUsedByAnotherEndpoint_IsAllowed_ForRoundRobin()
     {
         var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-prod");
         var first = CreateEndpoint(deployment.Id, priority: 1);
@@ -96,10 +97,9 @@ public class ModelDeploymentTests
         deployment.AddEndpoint(first);
         deployment.AddEndpoint(second);
 
-        var act = () => deployment.ChangeEndpointPriority(second.Id, 1);
+        deployment.ChangeEndpointPriority(second.Id, 1);
 
-        act.Should().Throw<DomainException>().WithMessage("*Priority*");
-        second.Priority.Should().Be(2);
+        second.Priority.Should().Be(1);
     }
 
     [Fact]

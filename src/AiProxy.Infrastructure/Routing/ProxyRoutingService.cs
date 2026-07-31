@@ -25,6 +25,7 @@ public sealed class ProxyRoutingService(
     IModelDeploymentRepository modelDeploymentRepository,
     ISessionAffinityStore sessionAffinityStore,
     IEndpointHealthTracker endpointHealthTracker,
+    IEndpointRoundRobinCounter roundRobinCounter,
     ICredentialProvider credentialProvider,
     IUsageExtractorResolver usageExtractorResolver,
     UsageRecordChannel usageRecordChannel,
@@ -67,6 +68,10 @@ public sealed class ProxyRoutingService(
 
         rootActivity?.SetTag("deployment", deployment.Name);
 
+        // Snapshot once per incoming request (not per retry) so a single request's failover attempts move
+        // deterministically through the surviving round-robin tier instead of re-rolling on every retry.
+        var roundRobinSeed = roundRobinCounter.Next(deployment.Id);
+
         var sessionKey = ResolveSessionKey(httpContext, fields, operationType);
         SessionAffinityEntry? affinityEntry = null;
         Guid? stickyEndpointId = null;
@@ -84,7 +89,7 @@ public sealed class ProxyRoutingService(
         Endpoint? previouslyFailedEndpoint = null;
         while (true)
         {
-            var selection = EndpointSelector.SelectEndpoint(deployment.Endpoints, stickyEndpointId, excludedEndpointIds);
+            var selection = EndpointSelector.SelectEndpoint(deployment.Endpoints, stickyEndpointId, excludedEndpointIds, roundRobinSeed);
             if (!selection.IsSuccess)
             {
                 var reason = stickyEndpointId is not null
@@ -244,7 +249,7 @@ public sealed class ProxyRoutingService(
             {
                 var statusCode = (int)response.StatusCode;
                 backendCallActivity?.SetTag("status_code", statusCode);
-                if (statusCode >= 500)
+                if (statusCode == 429 || statusCode >= 500)
                 {
                     continue;
                 }

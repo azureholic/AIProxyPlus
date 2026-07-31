@@ -3,7 +3,6 @@ using AiProxy.Application.Exceptions;
 using AiProxy.Application.ModelDeployments;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
-using AiProxy.Domain.Exceptions;
 using FluentAssertions;
 using FluentValidation;
 using NSubstitute;
@@ -88,15 +87,16 @@ public class AddEndpointTests
     }
 
     [Fact]
-    public async Task HandleAsync_WithDuplicatePriority_ThrowsDomainException()
+    public async Task HandleAsync_WithDuplicatePriority_IsAllowed_ForRoundRobin()
     {
         var deployment = GivenDeployment();
         deployment.AddEndpoint(Endpoint.Create(
             Guid.NewGuid(), deployment.Id, "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, secretRef: "x"));
 
-        var act = () => _handler.HandleAsync(new AddEndpointCommand(
+        var endpoint = await _handler.HandleAsync(new AddEndpointCommand(
             deployment.Name, "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, ApiKeyPlaintext: "sk-abc"));
 
-        await act.Should().ThrowAsync<DomainException>();
+        endpoint.Priority.Should().Be(1);
+        deployment.Endpoints.Should().HaveCount(2);
     }
 }

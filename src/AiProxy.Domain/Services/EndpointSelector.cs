@@ -18,10 +18,17 @@ public static class EndpointSelector
     /// Endpoints already tried and failed in this request (used for failover retries so the same endpoint
     /// isn't picked twice). Ignored when <paramref name="stickyEndpointId"/> is set.
     /// </param>
+    /// <param name="roundRobinCounter">
+    /// A monotonically-increasing value supplied by the caller (one per incoming request, not per retry) used
+    /// to rotate the pick across endpoints that share the lowest surviving <see cref="Endpoint.Priority"/>.
+    /// Endpoints are the sole priority holder, or the tier has already been narrowed by failed attempts, this
+    /// has no visible effect. Ignored when <paramref name="stickyEndpointId"/> is set.
+    /// </param>
     public static EndpointSelectionResult SelectEndpoint(
         IReadOnlyList<Endpoint> endpoints,
         Guid? stickyEndpointId = null,
-        IReadOnlySet<Guid>? excludedEndpointIds = null)
+        IReadOnlySet<Guid>? excludedEndpointIds = null,
+        int roundRobinCounter = 0)
     {
         if (stickyEndpointId is { } sticky)
         {
@@ -52,13 +59,18 @@ public static class EndpointSelector
             return EndpointSelectionResult.Failure("No enabled endpoints available for this deployment.");
         }
 
-        var healthy = candidates
-            .Where(e => e.Health != EndpointHealthState.Unhealthy)
-            .OrderBy(e => e.Priority)
-            .ToList();
+        var healthy = candidates.Where(e => e.Health != EndpointHealthState.Unhealthy).ToList();
+        if (healthy.Count == 0)
+        {
+            return EndpointSelectionResult.Failure("All endpoints for this deployment are unhealthy.");
+        }
 
-        return healthy.Count == 0
-            ? EndpointSelectionResult.Failure("All endpoints for this deployment are unhealthy.")
-            : EndpointSelectionResult.Success(healthy[0]);
+        // Lowest Priority number wins; endpoints sharing that priority round-robin via roundRobinCounter,
+        // ordered by Id for a stable, deterministic rotation regardless of collection order (architecture.md §9).
+        var lowestPriority = healthy.Min(e => e.Priority);
+        var tier = healthy.Where(e => e.Priority == lowestPriority).OrderBy(e => e.Id).ToList();
+        var index = ((roundRobinCounter % tier.Count) + tier.Count) % tier.Count;
+
+        return EndpointSelectionResult.Success(tier[index]);
     }
 }
