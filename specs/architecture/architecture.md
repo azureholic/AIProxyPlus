@@ -47,6 +47,8 @@ it is not tied to Azure:
 - Admin UI (only REST API + OpenAPI).
 - Automatic secret rotation workflows (Vault supports it; wiring it up is future work).
 - Realtime (voice) API — added in Iteration 2 (§6.5/§9); out of scope for Iteration 1.
+- Admin UI — added in Iteration 3 (§19) as a small ops/config frontend; still no end-user-facing UI, and the
+  frontend's own auth remains a `sessionStorage`-based stand-in, not a real login system (§19).
 
 ## 3. High-Level Architecture
 
@@ -67,6 +69,8 @@ ai-proxy/
 │   ├── AiProxy.Infrastructure/    # EF Core + Npgsql, Vault client, direct-HTTP routing/forwarding,
 │   │                              # HTTP forwarding, OpenTelemetry instrumentation, background jobs
 │   ├── AiProxy.Api/                # ASP.NET Core minimal API host, endpoint mapping, middleware, composition root
+│   │                                # (wwwroot/ — Iteration 3 frontend build output, gitignored, see §19)
+│   ├── AiProxy.Web/                 # React + TypeScript + FluentUI admin/ops frontend (Iteration 3, §19)
 │   ├── AiProxy.ServiceDefaults/    # Aspire shared service defaults (OTel, health checks, resilience defaults)
 │   └── AiProxy.AppHost/            # .NET Aspire AppHost — orchestrates Api, Postgres, Vault, Aspire Dashboard
 ├── tests/
@@ -109,9 +113,13 @@ ai-proxy/
   `ResponsesUsageExtractor`), `AiProxyMetrics`/`AiProxyActivitySource` (OpenTelemetry).
 - **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`, `/openai/v1/realtime` WebSocket —
   Iteration 2), configuration routes (`/api/v1/config/*`), health endpoints (`/health/live`, `/health/ready`),
-  OpenAPI, DI composition.
+  OpenAPI, DI composition. Also serves the Iteration 3 frontend's static files from `wwwroot` and its SPA
+  fallback route (§19) — this is composition-root wiring, not a new architectural layer.
 - **ServiceDefaults / AppHost** — Aspire wiring for local development: starts Postgres, Vault, the Api, and the
   Aspire dashboard, and injects OTLP endpoint + connection strings via service discovery.
+- **Web** (Iteration 3) — a separate, independently-buildable React/TypeScript project with no dependency on
+  any other project in the solution; it only talks to `Api` over HTTP/WebSocket, exactly like any other API
+  consumer. See §19 for the full design.
 
 ## 5. Domain Model
 
@@ -416,6 +424,7 @@ with a well-known root token confined to the dev environment is acceptable.
 | Usage query | `GET /api/v1/usage` | Chargeback / reporting, filterable by deployment and consumer |
 | Health | `GET /health/live`, `GET /health/ready` | Standard ASP.NET Core health checks (Postgres, Vault reachability) |
 | OpenAPI | `/openapi/v1.json`, Scalar/Swagger UI in dev | Generated from minimal API metadata |
+| Frontend (Iteration 3) | `GET /` and any other non-API path | Serves the built React SPA (`wwwroot`) with a client-side-routing fallback to `index.html` — see §19 |
 
 ## 13. Security Considerations (OWASP-aligned)
 
@@ -429,7 +438,11 @@ with a well-known root token confined to the dev environment is acceptable.
   an enabled `Consumer` (`consumers.api_key_hash` lookup, constant-time comparison) — this is what lets every
   `UsageRecord` attribute tokens back to the calling application/team for chargeback, and stops the proxy from
   being an open relay. Requests with no key, an unknown key, or a revoked consumer are rejected with `401` before
-  any routing/forwarding work happens.
+  any routing/forwarding work happens. The Realtime route additionally accepts the consumer key via an
+  `?api_key=` query parameter (Iteration 3, §19) since a browser's native `WebSocket` API cannot set custom
+  headers — the header is still checked first and preferred everywhere the caller can set one; query strings
+  are more likely to be captured in server/proxy access logs, so this is a deliberate, narrow fallback, not a
+  general alternative to header auth.
 - **Input validation**: FluentValidation on all configuration DTOs; request bodies for ingress routes are only
   partially parsed (enough to read `model`/session id) and otherwise streamed through unmodified — the proxy
   does not attempt to fully validate arbitrary upstream API schemas.
@@ -454,6 +467,11 @@ with a well-known root token confined to the dev environment is acceptable.
 - Model endpoints themselves are **never** part of this topology — they are just URLs in configuration, which may
   point at `http://localhost:11434` (Ollama), `https://api.openai.com`, `https://api.anthropic.com`, or an Azure
   AI Foundry endpoint.
+- **Frontend build (Iteration 3)**: `src/AiProxy.Api/Dockerfile` has a `frontend-build` (`node:22-alpine`) stage
+  that runs `npm ci && npm run build` before the .NET publish stage, and its output is explicitly copied into
+  the .NET build stage's `wwwroot` before `dotnet publish` (each Docker stage is an isolated filesystem, so
+  this copy can't be skipped) — the runtime image ships one artifact, frontend and API together, per the
+  single-container pattern (§19).
 
 ![Deployment topology](diagrams/05-deployment-topology.png)
 
@@ -498,6 +516,10 @@ Clean Architecture is enforced and verified, not just aspirational:
 | Observability | OpenTelemetry SDK + OTLP exporter | Explicitly requested; vendor-neutral |
 | Optional Azure auth | `Azure.Identity` | Only loaded/used for endpoints configured with `AuthMode = ManagedIdentity` |
 | Realtime transport (Iteration 2) | `System.Net.WebSockets` (`ClientWebSocket` outbound, `HttpContext.WebSockets` inbound) | BCL-only, no extra package; matches the same "inspect before committing" philosophy as `DirectHttpProxy` — the outbound handshake must succeed before the inbound upgrade is accepted |
+| Frontend (Iteration 3) | Vite + React 19 + TypeScript | Plain client-side React — no SSR/server routing needed since ASP.NET Core just serves static files; Vite over CRA (unmaintained)/Next.js (its server model doesn't fit this deployment shape) |
+| Frontend UI library | FluentUI v9 (`@fluentui/react-components`) | Explicitly requested |
+| Frontend charting | `recharts` | Smallest well-maintained React charting library for the Usage dashboard (§19) |
+| Frontend testing | Vitest + React Testing Library | Matches the Vite toolchain; scoped to smoke/interaction tests, not exhaustive coverage (§19) |
 | Testing | xUnit, FluentAssertions, NSubstitute, Testcontainers, WireMock.Net, NetArchTest | Standard, well-supported .NET test stack covering unit/integration/architecture tests |
 
 ## 17. Assumptions & Open Questions
@@ -524,12 +546,18 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Responses API affinity rows (keyed by OpenAI response id) are written with an expiry mirroring OpenAI's default
   30-day response retention (configurable); this needs revisiting once real usage patterns/retention settings
   are known.
+- The frontend's admin/consumer key entry (`sessionStorage`, §19) is an explicit stand-in for real
+  authentication, matching the backend's own placeholder admin-key posture — both need revisiting together
+  if/when real auth (OAuth2/Entra ID) is scoped.
 
 ## 18. Non-Goals / Future Iterations
 
 - Rate limiting & per-client quotas.
 - Cross-protocol request/response translation.
-- Admin UI.
+- A general-purpose/end-user admin UI with real authentication — Iteration 3 adds a small **ops/config**
+  frontend (§19) covering Config/Playground/Dashboard, but its own auth is a `sessionStorage` key stand-in,
+  not a login system, and it has no RBAC/multi-user concept of its own beyond the backend's existing
+  admin-key/consumer-key split.
 - Multi-region / multi-instance cache invalidation via Postgres `LISTEN/NOTIFY` (Iteration 1 uses TTL-based cache
   expiry, which is acceptable for a single-instance or short-TTL multi-instance deployment).
 - Automatic Vault secret rotation workflows.
@@ -540,3 +568,71 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Azure OpenAI Realtime and generic/self-hosted WebSocket backends for the Realtime API (Iteration 2 targets
   the OpenAI Realtime API only).
 - Additional providers beyond OpenAI-compatible and Anthropic (e.g. Google Gemini, Cohere).
+
+## 19. Frontend (Iteration 3)
+
+A small **admin/ops frontend** — Config (Model Deployments, Endpoints, Consumers), a Playground (Chat, Images,
+Voice) for exercising the ingress routes manually, and a Usage dashboard — served from the **same container**
+as the API. No new backend endpoints; the frontend is just another consumer of the surface described in
+§7.2/§12, with two narrow, necessary exceptions (the SPA fallback route itself, and the Realtime route's
+query-param auth fallback — both called out below).
+
+### 19.1 Stack
+
+`src/AiProxy.Web`: Vite + React 19 + TypeScript, FluentUI v9 (`@fluentui/react-components`/`react-icons`) per
+the request, `react-router-dom` (browser-history routing — see §19.2 for why that needs a backend fallback
+route), a hand-written `fetch` wrapper (`api/client.ts`) rather than TanStack Query/Redux (the admin surface's
+data volume/interaction complexity doesn't justify it yet), and `recharts` for the two Usage-dashboard charts.
+Vitest + React Testing Library for tests, scoped to smoke/interaction coverage (app shell/navigation, the API
+client's header/error handling, and the highest-risk flows — one-time secret reveal, delete/revoke
+confirmations) rather than exhaustive per-page coverage, mirroring the backend's own "meaningful coverage over
+raw percentage" philosophy (§15) applied to a UI codebase.
+
+### 19.2 Single-container serving pattern
+
+`AiProxy.Web`'s `vite.config.ts` sets `build.outDir` to `../AiProxy.Api/wwwroot` directly — `npm run build`
+(or the Dockerfile's build stage) writes the compiled static files straight into the ASP.NET project, which
+then serves them via `UseDefaultFiles`/`UseStaticFiles` plus `MapFallbackToFile("index.html")` registered
+after every other route, so React Router's client-side routes resolve correctly on a hard refresh without
+ever shadowing `/openai/*`, `/anthropic/*`, `/api/*`, or `/health/*` (verified via integration tests, not
+assumed). `wwwroot` is git-ignored (a build artifact, same convention as `logs/`/`test-results/`), with a
+`.gitkeep` so the folder exists on a fresh checkout; a missing `index.html` gets a plain-text hint
+("run `npm run build`...") instead of a bare 404, so "the frontend isn't built yet" reads differently from
+"the app is broken." The Dockerfile's `frontend-build` stage (§14) is required precisely because each Docker
+stage is an isolated filesystem — an explicit `COPY --from=frontend-build` is necessary; Vite's `outDir`
+trick alone only makes local (non-container) builds "just work" without a separate copy step. For local
+frontend development, `npm run dev` runs the Vite dev server with a proxy (`/api`, `/openai`, `/anthropic`,
+`/health`) to a locally-running API, avoiding a rebuild loop — the production/container path is always
+"build once, serve as static files."
+
+### 19.3 Auth stand-in
+
+There is no real auth system in this codebase (§17) — the frontend's **Settings** page collects an Admin API
+Key (`X-Admin-Api-Key`, for Config + Usage) and a Consumer API Key (`X-Api-Key`, for the Playground), kept in
+`sessionStorage` only (cleared when the tab closes, never `localStorage`, never logged). The **Consumers**
+page itself is a small addition beyond what was explicitly requested, added purely because the Playground is
+unusable without a valid Consumer key and `POST /api/v1/config/consumers` is the only way to obtain one.
+
+### 19.4 Realtime (Voice) Playground — scope and the query-param auth exception
+
+Browsers' native `WebSocket` API cannot set custom headers, so the Voice Playground cannot authenticate the
+Realtime connection (§6.5/§9) via `X-Api-Key` the way every other tab does. `ConsumerAuthEndpointFilter`
+(Infrastructure) was extended to accept the consumer key via an `?api_key=` query parameter as a fallback
+when the header is absent — header auth still takes precedence everywhere, including this route, since query
+strings are more likely to end up in server/proxy access logs (§13). This is the one Infrastructure change
+Iteration 3 made outside the frontend project itself, beyond the SPA fallback wiring.
+
+The Voice tab is intentionally **not** a full duplex audio experience: full mic capture + PCM16 encode/decode
++ playback against OpenAI's Realtime protocol (Web Audio API worklets, base64 frame chunking, barge-in
+handling) is a substantial standalone effort. Iteration 3 ships a connectivity + raw-event-log test tool
+instead — connect/disconnect, send a raw JSON event (pre-filled with a working `conversation.item.create`
+example), and watch everything received scroll by. This proves the WebSocket proxy end-to-end from a real
+browser without committing to full audio UX; real mic/speaker support remains a named follow-up (§18), not a
+silently-dropped requirement.
+
+### 19.5 Usage dashboard limitation
+
+The tokens-by-deployment and requests-per-day charts are computed **client-side from the currently-loaded
+page only** — there is no new backend aggregation endpoint in this iteration, so a heavily-paginated/filtered
+result set will show charts that don't reflect the full filtered set, only what's on-screen. Flagged in the
+UI itself, not just here.

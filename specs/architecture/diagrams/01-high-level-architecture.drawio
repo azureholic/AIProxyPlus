@@ -10,13 +10,16 @@
     <mxCell id="c2" value="Anthropic SDK client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
       <mxGeometry x="40" y="220" width="160" height="50" as="geometry" />
     </mxCell>
+    <mxCell id="c3" value="Browser&#10;(Admin/Ops Frontend, Iteration 3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="40" y="320" width="160" height="50" as="geometry" />
+    </mxCell>
 
     <!-- AI Proxy container -->
     <mxCell id="box" value="AI Proxy (.NET 10)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontStyle=1;fontSize=14;" vertex="1" parent="1">
       <mxGeometry x="280" y="40" width="620" height="420" as="geometry" />
     </mxCell>
 
-    <mxCell id="ing" value="Ingress Endpoints&#10;/openai/v1/*  /anthropic/v1/messages  /openai/v1/realtime (WS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+    <mxCell id="ing" value="Ingress Endpoints &amp; Static Files&#10;/openai/v1/*  /anthropic/v1/messages  /openai/v1/realtime (WS)  /  (React SPA, wwwroot)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
       <mxGeometry x="320" y="90" width="540" height="50" as="geometry" />
     </mxCell>
     <mxCell id="router" value="Routing Engine&#10;deployment to endpoint selection, priority + round-robin + failover + Responses/Realtime affinity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
@@ -65,6 +68,7 @@
     <!-- Edges -->
     <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="c1" target="ing"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="c2" target="ing"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e2b" value="loads SPA, calls /api/v1/config, /openai/v1/*" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="c3" target="ing"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="ing" target="router"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="router" target="fwd"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="fwd" target="usage"><mxGeometry relative="1" as="geometry" /></mxCell>

@@ -65,6 +65,9 @@ A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboar
 [specs/iterations/iteration-3/tasks.md](specs/iterations/iteration-3/tasks.md)), served by the **same**
 container as the API — no separate frontend host/deployment.
 
+- **Pages**: Config → Model Deployments (+ nested Endpoints management), Consumers; Playground → Chat
+  (streaming/non-streaming), Images, Voice (Realtime connectivity + raw-event-log test tool — not full
+  duplex audio, see architecture.md §19.4); Dashboard → Usage (filters, table, token/request charts).
 - **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it
   for you) writes the compiled static files straight into `src/AiProxy.Api/wwwroot`, which `AiProxy.Api` then
   serves at `/` (with a client-side-routing fallback to `index.html`) alongside its existing `/api/*`,

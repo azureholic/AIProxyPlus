@@ -206,13 +206,13 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 6 — Documentation
 
-- [ ] `architecture.md`: new §19 "Frontend (Iteration 3)" — stack choice, single-container serving pattern,
-  the Settings-page auth stand-in, the reduced Realtime Playground scope; update §2 scope table, §4 solution
-  structure tree (new `src/AiProxy.Web/`), §12 API surface summary (note the frontend consumes the existing
-  surface, no new routes besides the SPA fallback), §14 deployment topology (frontend build stage in
-  Dockerfile), §16 technology choices (Vite/React/FluentUI/recharts), §18 non-goals (full duplex voice
-  playground, real auth).
-- [ ] New/updated diagram: extend diagram 01 (high-level architecture) or add a new one showing the browser →
-  static files + `/api`/`/openai`/`/anthropic` split within the same container.
-- [ ] `README.md`: frontend dev workflow (already partly covered in Phase 2), screenshots optional/skipped
-  (text-only docs, consistent with the rest of the repo).
+- [x] `architecture.md`: new §19 "Frontend (Iteration 3)" (stack, single-container serving pattern, auth
+  stand-in, Realtime Playground scope + the query-param auth exception, Usage dashboard's client-side-only
+  chart limitation); updated §2 scope table (6.3 cross-ref, non-goals), §4 (solution tree + layer
+  responsibilities + new **Web** bullet), §12 (new frontend fallback row), §13 (query-param auth fallback),
+  §14 (Dockerfile frontend-build stage), §16 (Vite/React/FluentUI/recharts/Vitest rows), §17 (auth stand-in
+  assumption), §18 (Admin UI non-goal updated to reflect what Iteration 3 actually delivered vs. still missing).
+- [x] Diagram 01 (high-level architecture): added a "Browser (Admin/Ops Frontend)" client box and updated the
+  ingress box's label to note it also serves the React SPA/static files — re-exported to PNG.
+- [x] `README.md`: added a "Pages" bullet listing what's actually implemented (Config/Playground/Dashboard
+  pages) to the existing Frontend section (dev workflow was already covered when Phase 2 landed).
