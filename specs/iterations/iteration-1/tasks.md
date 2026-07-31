@@ -17,6 +17,8 @@ Definition of Done for this iteration:
 - A README documents how to run locally (Aspire) and via `docker compose`.
 - A git commit is made after each phase (Phase 0 through Phase 10) once its tasks are checked off and
   `dotnet build`/`dotnet test` pass, so history maps 1:1 to phases and each phase is independently revertible.
+  This commit includes the corresponding checkbox updates in this `tasks.md` file — code and task status land
+  together, not as a separate follow-up commit.
 
 ---
 
