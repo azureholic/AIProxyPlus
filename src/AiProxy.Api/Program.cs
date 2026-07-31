@@ -5,6 +5,7 @@ using AiProxy.Application.ModelDeployments;
 using AiProxy.Application.Usage;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
+using AiProxy.Infrastructure.Observability;
 using AiProxy.Infrastructure.Routing;
 using AiProxy.Infrastructure.Secrets;
 using AiProxy.Infrastructure.Security;
@@ -12,8 +13,24 @@ using AiProxy.Infrastructure.Usage;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Scalar.AspNetCore;
+using Serilog;
+using Serilog.Enrichers.Span;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .Enrich.WithSpan()
+    .Enrich.WithProperty("Application", "AiProxy")
+    // EndpointCredential carries the outbound Authorization/api-key header value — never render it raw (architecture.md §13).
+    .Destructure.ByTransforming<EndpointCredential>(c => new { c.HeaderName, HeaderValue = "[REDACTED]" })
+    .WriteTo.Console()
+    .WriteTo.File("logs/ai-proxy-.log", rollingInterval: RollingInterval.Day),
+    writeToProviders: true); // also forward to the OTel logging provider registered by AddServiceDefaults, for OTLP export
 
 builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 {
@@ -27,6 +44,7 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 builder.Services.AddSingleton<EndpointHealthTracker>();
 builder.Services.AddSingleton<AiProxy.Application.Abstractions.IEndpointHealthTracker>(
     sp => sp.GetRequiredService<EndpointHealthTracker>());
+builder.Services.AddSingleton<AiProxyMetrics>();
 
 builder.Services.AddSingleton<UsageRecordChannel>();
 builder.Services.AddHostedService<UsageRecordBackgroundWriter>();
@@ -106,6 +124,8 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async httpContext =>
     httpContext.Response.StatusCode = status;
     await httpContext.Response.WriteAsJsonAsync(new { error = message });
 }));
+
+app.UseSerilogRequestLogging();
 
 app.MapGet("/", () => "Hello World!");
 

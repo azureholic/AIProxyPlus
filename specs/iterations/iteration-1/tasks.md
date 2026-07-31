@@ -213,15 +213,27 @@ Definition of Done for this iteration:
 
 ## Phase 8 — Observability
 
-- [ ] Configure `AiProxy.ServiceDefaults` with OpenTelemetry traces/metrics/logs + OTLP exporter, ASP.NET
-  Core/HttpClient/Npgsql auto-instrumentation, per architecture §11.
-- [ ] Add custom `Meter("AiProxy")` instruments: request count, prompt/completion/total token counters, request
-  duration histogram, failover counter.
-- [ ] Add custom spans for deployment resolution, secret resolution, backend call, usage extraction.
-- [ ] Configure Serilog with the OTLP + rolling-file (`logs/ai-proxy-.log`) sinks, trace/span-id enrichment, and
-  secret redaction.
-- [ ] Manual verification: run via Aspire, issue a sample request, confirm traces/metrics/logs appear in the
-  Aspire dashboard with the expected custom span/metric names.
+- [x] Configure `AiProxy.ServiceDefaults` with OpenTelemetry traces/metrics/logs + OTLP exporter, ASP.NET
+  Core/HttpClient/Npgsql auto-instrumentation, per architecture §11 (`AddMeter("AiProxy")`/`AddSource("AiProxy")`/
+  `AddSource("Npgsql")` added alongside the existing ASP.NET Core/HttpClient/runtime instrumentation); wired into
+  `AiProxy.Api` via `builder.AddServiceDefaults()`.
+- [x] Add custom `Meter("AiProxy")` instruments (`AiProxyMetrics`): `ai_proxy.requests.count`,
+  `ai_proxy.tokens.prompt`/`.completion`/`.total`, `ai_proxy.request.duration` (histogram), `ai_proxy.failover.count`.
+- [x] Add custom spans (`AiProxyActivitySource`) for deployment resolution, secret resolution, backend call
+  (tagged with endpoint/attempt/status), and usage extraction, nested under one root `ai_proxy.request` activity
+  per ingress request (tagged with operation_type/deployment) in `ProxyRoutingService`.
+- [x] Configure Serilog (`UseSerilog(..., writeToProviders: true)` so events still reach the OTel logging
+  provider for OTLP export) with a rolling-file sink (`logs/ai-proxy-.log`), `Enrich.WithSpan()` for trace/span-id
+  enrichment, and a `Destructure.ByTransforming<EndpointCredential>` policy that redacts the credential header
+  value if one is ever logged.
+- [x] Automated stand-in for the "run via Aspire, confirm traces/metrics appear" manual verification step:
+  `TelemetryTests` (`AiProxy.Api.Tests`) attaches an `ActivityListener` + `MeterListener` directly to the
+  `AiProxy` sources during a real routed WireMock-backed request and asserts all five spans and five metric
+  instruments (incl. `ai_proxy.failover.count` on a forced 5xx failover) actually fire. Full Aspire-dashboard
+  visual confirmation is still a Phase 9 manual step once Postgres/Vault containers make `dotnet run` viable
+  standalone (currently blocked by the same DI-registration gap noted in Phases 5–7 — confirmed via a real
+  `dotnet run` attempt, which fails **only** on the expected missing repository/secret-store registrations, not
+  on anything Serilog/OpenTelemetry-related). 199/199 tests passing solution-wide.
 
 ## Phase 9 — Aspire AppHost & containers
 

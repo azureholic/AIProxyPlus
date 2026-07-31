@@ -7,6 +7,7 @@ using AiProxy.Application.Exceptions;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
 using AiProxy.Domain.Services;
+using AiProxy.Infrastructure.Observability;
 using AiProxy.Infrastructure.Usage;
 using Microsoft.AspNetCore.Http;
 using Endpoint = AiProxy.Domain.Entities.Endpoint;
@@ -27,6 +28,7 @@ public sealed class ProxyRoutingService(
     ICredentialProvider credentialProvider,
     IUsageExtractorResolver usageExtractorResolver,
     UsageRecordChannel usageRecordChannel,
+    AiProxyMetrics metrics,
     HttpMessageInvoker httpClient,
     TimeSpan? sessionAffinityTtl = null)
 {
@@ -39,6 +41,9 @@ public sealed class ProxyRoutingService(
         Guid? consumerId = null,
         string? consumerName = null)
     {
+        using var rootActivity = AiProxyActivitySource.Instance.StartActivity("ai_proxy.request");
+        rootActivity?.SetTag("operation_type", operationType.ToString());
+
         var stopwatch = Stopwatch.StartNew();
         var body = await RequestBodyPeek.BufferBodyAsync(httpContext.Request, cancellationToken);
         var bodyBytes = Encoding.UTF8.GetBytes(body);
@@ -49,11 +54,18 @@ public sealed class ProxyRoutingService(
             return new RoutingFailure(RoutingFailureReason.DeploymentNotFound, "Request body must include a 'model' field.");
         }
 
-        var deployment = await modelDeploymentRepository.GetByNameAsync(fields.Model, cancellationToken);
+        ModelDeployment? deployment;
+        using (AiProxyActivitySource.Instance.StartActivity("deployment_resolution"))
+        {
+            deployment = await modelDeploymentRepository.GetByNameAsync(fields.Model, cancellationToken);
+        }
+
         if (deployment is null)
         {
             return new RoutingFailure(RoutingFailureReason.DeploymentNotFound, $"Model deployment '{fields.Model}' was not found.");
         }
+
+        rootActivity?.SetTag("deployment", deployment.Name);
 
         var sessionKey = ResolveSessionKey(httpContext, fields, operationType);
         SessionAffinityEntry? affinityEntry = null;
@@ -69,6 +81,7 @@ public sealed class ProxyRoutingService(
         }
 
         var excludedEndpointIds = new HashSet<Guid>();
+        Endpoint? previouslyFailedEndpoint = null;
         while (true)
         {
             var selection = EndpointSelector.SelectEndpoint(deployment.Endpoints, stickyEndpointId, excludedEndpointIds);
@@ -81,7 +94,18 @@ public sealed class ProxyRoutingService(
             }
 
             var endpoint = selection.SelectedEndpoint!;
-            var credential = await credentialProvider.GetCredentialAsync(endpoint, cancellationToken);
+
+            if (previouslyFailedEndpoint is not null && previouslyFailedEndpoint.Id != endpoint.Id)
+            {
+                metrics.RecordFailover(deployment.Name, previouslyFailedEndpoint.BaseUrl, endpoint.BaseUrl);
+            }
+
+            EndpointCredential credential;
+            using (AiProxyActivitySource.Instance.StartActivity("secret_resolution"))
+            {
+                credential = await credentialProvider.GetCredentialAsync(endpoint, cancellationToken);
+            }
+
             var usageExtractor = TryResolveUsageExtractor(endpoint.ApiFamily, operationType);
             var outboundBody = OutboundBodyMutator.EnsureStreamUsageRequested(bodyBytes, endpoint.ApiFamily, operationType, fields.Streaming);
 
@@ -95,6 +119,14 @@ public sealed class ProxyRoutingService(
             if (outcome.Succeeded)
             {
                 endpointHealthTracker.MarkHealthy(endpoint.Id);
+                metrics.RecordRequest(deployment.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
+                metrics.RecordDuration(stopwatch.Elapsed.TotalMilliseconds, deployment.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
+                if (outcome.Usage is not null)
+                {
+                    metrics.RecordTokens(
+                        deployment.Name, endpoint.BaseUrl, outcome.Usage.PromptTokens, outcome.Usage.CompletionTokens, outcome.Usage.TotalTokens);
+                }
+
                 await PersistAffinityOnSuccessAsync(
                     deployment, endpoint, operationType, fields, sessionKey, affinityEntry, outcome.CapturedResponseId, cancellationToken);
 
@@ -113,6 +145,7 @@ public sealed class ProxyRoutingService(
             }
 
             endpointHealthTracker.MarkUnhealthy(endpoint.Id);
+            previouslyFailedEndpoint = endpoint;
 
             if (stickyEndpointId is not null)
             {
@@ -188,6 +221,9 @@ public sealed class ProxyRoutingService(
             }
 
             HttpResponseMessage? response;
+            using var backendCallActivity = AiProxyActivitySource.Instance.StartActivity("backend_call");
+            backendCallActivity?.SetTag("endpoint", endpoint.BaseUrl);
+            backendCallActivity?.SetTag("attempt", attempt);
             try
             {
                 using var request = DirectHttpProxy.BuildRequest(httpContext, endpoint.BaseUrl, bodyBytes, credential);
@@ -207,6 +243,7 @@ public sealed class ProxyRoutingService(
             using (response)
             {
                 var statusCode = (int)response.StatusCode;
+                backendCallActivity?.SetTag("status_code", statusCode);
                 if (statusCode >= 500)
                 {
                     continue;
@@ -225,7 +262,12 @@ public sealed class ProxyRoutingService(
                 }
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                var usage = usageExtractor?.ExtractFromResponseBody(responseBody);
+                UsageExtractionResult? usage;
+                using (AiProxyActivitySource.Instance.StartActivity("usage_extraction"))
+                {
+                    usage = usageExtractor?.ExtractFromResponseBody(responseBody);
+                }
+
                 var capturedResponseId = captureResponseId ? TryExtractResponseId(responseBody) : null;
                 await DirectHttpProxy.CopyBufferedResponseAsync(response, responseBody, httpContext, cancellationToken);
                 return new ForwardOutcome(true, statusCode, usage, capturedResponseId);
