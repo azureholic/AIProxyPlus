@@ -90,6 +90,12 @@ public sealed class ProxyRoutingService(
 
         var excludedEndpointIds = new HashSet<Guid>();
         Endpoint? previouslyFailedEndpoint = null;
+
+        // The first endpoint tried this request (typically priority 1) is the one whose error is most
+        // meaningful to the caller — captured here so it can be relayed verbatim (status/headers/body,
+        // including any 429 Retry-After) if every endpoint ends up failing, instead of a generic 503
+        // (architecture.md §9). Only ever set once per request via `??=` below.
+        UpstreamFailureSnapshot? firstFailureSnapshot = null;
         while (true)
         {
             var selection = EndpointSelector.SelectEndpoint(deployment.Endpoints, stickyEndpointId, excludedEndpointIds, roundRobinSeed);
@@ -98,7 +104,7 @@ public sealed class ProxyRoutingService(
                 var reason = stickyEndpointId is not null
                     ? RoutingFailureReason.StickyEndpointUnavailable
                     : RoutingFailureReason.NoHealthyEndpoint;
-                return new RoutingFailure(reason, selection.FailureReason!);
+                return new RoutingFailure(reason, selection.FailureReason!, firstFailureSnapshot);
             }
 
             var endpoint = selection.SelectedEndpoint!;
@@ -154,9 +160,13 @@ public sealed class ProxyRoutingService(
 
             endpointHealthTracker.MarkUnhealthy(endpoint.Id);
             previouslyFailedEndpoint = endpoint;
+            firstFailureSnapshot ??= outcome.Failure;
 
             if (stickyEndpointId is not null)
             {
+                // Deliberately not attaching a snapshot here: a stateful session must fail fast with a clear,
+                // generic error rather than have a stale/misleading upstream body replayed to the client — see
+                // architecture.md §9.
                 return new RoutingFailure(
                     RoutingFailureReason.StickyEndpointUnavailable,
                     $"Sticky endpoint '{stickyEndpointId}' failed and failover is disallowed for stateful sessions.");
@@ -221,6 +231,7 @@ public sealed class ProxyRoutingService(
         bool streaming,
         CancellationToken cancellationToken)
     {
+        UpstreamFailureSnapshot? lastFailureSnapshot = null;
         for (var attempt = 0; attempt <= endpoint.MaxRetries; attempt++)
         {
             if (attempt > 0)
@@ -254,6 +265,7 @@ public sealed class ProxyRoutingService(
                 backendCallActivity?.SetTag("status_code", statusCode);
                 if (statusCode == 429 || statusCode >= 500)
                 {
+                    lastFailureSnapshot = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
                     continue;
                 }
 
@@ -282,7 +294,7 @@ public sealed class ProxyRoutingService(
             }
         }
 
-        return new ForwardOutcome(false, 0, null, null);
+        return new ForwardOutcome(false, lastFailureSnapshot?.StatusCode ?? 0, null, null, lastFailureSnapshot);
     }
 
     private async Task PersistResponsesApiAffinityAsync(
@@ -347,5 +359,6 @@ public sealed class ProxyRoutingService(
         return TimeSpan.FromMilliseconds(baseDelayMs + jitterMs);
     }
 
-    private readonly record struct ForwardOutcome(bool Succeeded, int StatusCode, UsageExtractionResult? Usage, string? CapturedResponseId);
+    private readonly record struct ForwardOutcome(
+        bool Succeeded, int StatusCode, UsageExtractionResult? Usage, string? CapturedResponseId, UpstreamFailureSnapshot? Failure = null);
 }

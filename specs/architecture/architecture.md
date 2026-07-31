@@ -324,6 +324,37 @@ with a well-known root token confined to the dev environment is acceptable.
   inspect the upstream response *before* anything is written to the client, which a `DelegatingHandler`-based
   resilience pipeline around a single forwarded call doesn't give us control over) before failing over to the
   next priority.
+- **Exhausted failover — client sees the first endpoint's real error**: if every endpoint/tier is tried and
+  none succeed, the client does **not** get a generic 503 that hides what actually happened. `ProxyRoutingService`
+  buffers the response (status, headers, body) from the *first* endpoint attempted this request — typically
+  priority 1 — the moment it fails, and replays that snapshot verbatim once failover is exhausted, even if a
+  later endpoint failed with a *different* status. This matters most for `429`: the client gets the original
+  `Retry-After`/rate-limit headers back and can back off correctly, instead of a synthetic error that gives no
+  indication of when to retry. (The one exception is the sticky-endpoint-failure path in the bullet above —
+  that intentionally stays a generic error, not a replayed upstream body, per the "fail fast, don't mask a
+  stateful-session failure" policy.) A request that fails before any endpoint is even attempted (e.g. the
+  deployment has zero enabled endpoints) has no upstream response to replay and still gets the generic
+  `RoutingFailureReason`-mapped error.
+- **Multiple AI Proxy replicas behind a load balancer / ingress controller**: the proxy itself is stateless
+  across requests — nothing above depends on which replica handles a given call, so horizontal scaling needs no
+  special ingress-level session affinity/sticky routing to the *same AI Proxy instance*:
+  - **Responses API affinity** is keyed by `previous_response_id` and persisted in `session_affinity`
+    (Postgres, shared across replicas) — whichever replica receives the follow-up call looks up the same row
+    and pins to the same backend endpoint. This is exactly why it's a database table and not an in-process
+    cache (§7.1).
+  - **Realtime API affinity** is the WebSocket connection itself, which is inherently pinned to whichever
+    single replica accepted the upgrade for as long as the TCP connection stays open — this is a property of
+    how L7 ingress proxying works (the ingress doesn't/can't migrate an established WebSocket to a different
+    backend pod mid-connection), not something the application has to implement or configure.
+  - **`IEndpointRoundRobinCounter`/`IEndpointHealthTracker`**, by contrast, *are* per-replica in-memory state
+    (a `ConcurrentDictionary`, not persisted) — each replica keeps its own round-robin cursor and passive
+    health view. This is an accepted trade-off, not a bug: round-robin fairness only needs to be "even in
+    aggregate", which holds as long as the ingress spreads requests across replicas reasonably (each replica
+    independently cycling through the same priority tier still balances out overall); it does not need to be a
+    single globally-synchronized counter. `IEndpointHealthTracker`'s per-replica view isn't actually consulted
+    by `EndpointSelector` for candidate filtering today — the only health signal that drives same-request
+    failover is the request-scoped `excludedEndpointIds` set — so replica-local health state has no correctness
+    impact either way; it's tracked for future use (e.g. an admin health-status view), not selection.
 
 ## 10. Streaming & Usage Capture (8)
 

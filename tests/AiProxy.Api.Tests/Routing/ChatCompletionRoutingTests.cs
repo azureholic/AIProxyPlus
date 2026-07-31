@@ -102,8 +102,10 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task AllEndpointsUnhealthy_Returns503()
+    public async Task AllEndpointsUnhealthy_ReturnsFirstEndpointsOriginalError()
     {
+        // The client sees the priority-1 endpoint's own error (500), not a generic 503 that masks which
+        // backend actually failed and why (architecture.md §9) — even though priority-2 failed differently (503).
         var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
         var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
         deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
@@ -111,13 +113,14 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
         _factory.Deployments.Seed(deployment);
 
         _backend1.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
-            .RespondWith(Response.Create().WithStatusCode(500));
+            .RespondWith(Response.Create().WithStatusCode(500).WithBodyAsJson(new { error = "backend1 exploded" }));
         _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(503));
 
         var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(deploymentName));
 
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("backend1 exploded");
     }
 
     [Fact]

@@ -93,4 +93,31 @@ internal static class DirectHttpProxy
             }
         }
     }
+
+    /// <summary>
+    /// Buffers a failed upstream response (status, headers incl. any <c>Retry-After</c>/rate-limit headers,
+    /// body) so it can be replayed to the client later if every endpoint ends up failing (architecture.md §9).
+    /// </summary>
+    internal static async Task<UpstreamFailureSnapshot> CaptureFailureSnapshotAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var headers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var header in response.Headers)
+        {
+            if (!HopByHopResponseHeaders.Contains(header.Key))
+            {
+                headers[header.Key] = header.Value.ToArray();
+            }
+        }
+
+        foreach (var header in response.Content.Headers)
+        {
+            if (!HopByHopResponseHeaders.Contains(header.Key))
+            {
+                headers[header.Key] = header.Value.ToArray();
+            }
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        return new UpstreamFailureSnapshot((int)response.StatusCode, headers, body);
+    }
 }

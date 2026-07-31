@@ -110,3 +110,39 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
   429 failover, automatic Responses/Realtime affinity (no more generic "sticky sessions"), and the Realtime
   WebSocket proxy.
 - [x] `specs/iterations/iteration-1/tasks.md`: no change needed (historical record of Iteration 1, left as-is).
+
+## Phase 5 — Design challenge follow-ups: multi-replica affinity, exhausted-failover error propagation
+
+Two questions raised after Phase 4 review:
+
+1. **"With multiple AI Proxy instances behind an ingress controller, do sessions still stick to the correct
+   instance?"** Answer: yes, and no ingress-level sticky routing to a specific replica is needed — analyzed and
+   written up in architecture.md §9 ("Multiple AI Proxy replicas..."). Responses API affinity lives in Postgres
+   (shared), and Realtime affinity is the WebSocket TCP connection itself (inherently pinned to one replica by
+   the transport, not the application). The one caveat: `IEndpointRoundRobinCounter`/`IEndpointHealthTracker`
+   are per-replica in-memory state, which is an accepted trade-off (round-robin only needs to be fair in
+   aggregate; the health tracker isn't actually consulted by `EndpointSelector` today regardless of replica
+   count) — no code change required, this was a documentation gap, not a bug.
+- [x] `architecture.md` §9: added the multi-replica analysis above.
+
+2. **"If the priority-1 endpoint fails and secondary endpoints fail with a different error, return the first
+   (priority-1) error to the client — and if it's a 429, include the backoff headers."** This *was* a real gap:
+   `ProxyRoutingService` discarded the actual upstream failure entirely once every endpoint was exhausted,
+   always synthesizing a generic 503 regardless of what any backend actually returned.
+- [x] `DirectHttpProxy.CaptureFailureSnapshotAsync`: buffers a failed (429/5xx) response's status, non-hop-by-hop
+  headers, and body before the attempt is discarded/retried.
+- [x] New `UpstreamFailureSnapshot` record (`RoutingFailure.cs`) + `RoutingFailure.UpstreamFailure` optional
+  property; `UpstreamFailureSnapshot.WriteToAsync` replays it onto the client response verbatim.
+- [x] `ProxyRoutingService.RouteAsync`: captures the **first** endpoint's failure snapshot per request
+  (`firstFailureSnapshot ??= outcome.Failure`) and attaches it to the `RoutingFailure` once failover is
+  exhausted — deliberately **not** attached on the sticky-endpoint-failure path, which intentionally stays a
+  generic fail-fast error (architecture.md §9).
+- [x] `Program.cs`'s `WriteRoutingFailureAsync`: when `UpstreamFailure` is present, replays it (status/headers/
+  body) instead of the generic JSON error envelope.
+- [x] Tests updated/added (`AiProxy.Api.Tests`): `ChatCompletionRoutingTests.AllEndpointsUnhealthy_ReturnsFirstEndpointsOriginalError`
+  (renamed/rewritten — now expects the priority-1 endpoint's real 500, not a synthetic 503, even though
+  priority-2 failed differently with 503); `LoadBalancingTests.AllEndpointsReturn429_ReturnsFirstEndpointsOriginal429WithRetryAfterHeader`
+  (renamed/rewritten — asserts the original 429 + `Retry-After` header round-trips to the client);
+  `LoadBalancingTests.FirstEndpointFails429_SecondEndpointFailsWithADifferentError_ClientSeesFirstEndpoints429`
+  (new — the exact "different error" scenario from the question, 429 vs 500).
+- [x] `architecture.md` §9: added the "Exhausted failover — client sees the first endpoint's real error" bullet.

@@ -312,6 +312,14 @@ static async Task RouteOrFailAsync(
 
 static async Task WriteRoutingFailureAsync(HttpContext httpContext, RoutingFailure failure)
 {
+    if (failure.UpstreamFailure is not null)
+    {
+        // Surface the first endpoint's own error (status/headers/body) verbatim instead of a generic 503 —
+        // e.g. a 429's Retry-After/rate-limit headers tell the client how long to back off (architecture.md §9).
+        await failure.UpstreamFailure.WriteToAsync(httpContext, httpContext.RequestAborted);
+        return;
+    }
+
     httpContext.Response.StatusCode = failure.Reason switch
     {
         RoutingFailureReason.DeploymentNotFound => StatusCodes.Status404NotFound,
