@@ -6,18 +6,24 @@ namespace AiProxy.Domain.Entities;
 /// <summary>A single backend target that can serve a <see cref="ModelDeployment"/>.</summary>
 public sealed class Endpoint
 {
-    public Guid Id { get; }
-    public Guid ModelDeploymentId { get; }
-    public string BaseUrl { get; }
-    public ApiFamily ApiFamily { get; }
+    public Guid Id { get; private set; }
+    public Guid ModelDeploymentId { get; private set; }
+    public string BaseUrl { get; private set; }
+    public ApiFamily ApiFamily { get; private set; }
     public int Priority { get; private set; }
-    public AuthMode AuthMode { get; }
-    public string? SecretRef { get; }
-    public string? ManagedIdentityScope { get; }
+    public AuthMode AuthMode { get; private set; }
+    public string? SecretRef { get; private set; }
+    public string? ManagedIdentityScope { get; private set; }
     public bool Enabled { get; private set; }
     public int TimeoutSeconds { get; private set; }
     public int MaxRetries { get; private set; }
     public EndpointHealthState Health { get; private set; }
+
+    /// <summary>For EF Core materialization only — domain code must use <see cref="Create"/>.</summary>
+    private Endpoint()
+    {
+        BaseUrl = null!;
+    }
 
     private Endpoint(
         Guid id,

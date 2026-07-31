@@ -10,23 +10,31 @@ namespace AiProxy.Domain.Entities;
 /// </summary>
 public sealed class UsageRecord
 {
-    public Guid Id { get; }
-    public DateTimeOffset Timestamp { get; }
-    public string ModelDeploymentName { get; }
-    public Guid ConsumerId { get; }
-    public string ConsumerName { get; }
-    public Guid EndpointId { get; }
-    public ApiFamily ApiFamily { get; }
-    public OperationType OperationType { get; }
-    public string RequestId { get; }
-    public string? SessionId { get; }
-    public int? PromptTokens { get; }
-    public int? CompletionTokens { get; }
-    public int? TotalTokens { get; }
-    public IReadOnlyDictionary<string, string>? UsageMetrics { get; }
-    public bool Streaming { get; }
-    public int HttpStatusCode { get; }
-    public int DurationMs { get; }
+    public Guid Id { get; private set; }
+    public DateTimeOffset Timestamp { get; private set; }
+    public string ModelDeploymentName { get; private set; }
+    public Guid ConsumerId { get; private set; }
+    public string ConsumerName { get; private set; }
+    public Guid EndpointId { get; private set; }
+    public ApiFamily ApiFamily { get; private set; }
+    public OperationType OperationType { get; private set; }
+    public string RequestId { get; private set; }
+    public string? SessionId { get; private set; }
+    public int? PromptTokens { get; private set; }
+    public int? CompletionTokens { get; private set; }
+    public int? TotalTokens { get; private set; }
+    public IReadOnlyDictionary<string, string>? UsageMetrics { get; private set; }
+    public bool Streaming { get; private set; }
+    public int HttpStatusCode { get; private set; }
+    public int DurationMs { get; private set; }
+
+    /// <summary>For EF Core materialization only — domain code must use <see cref="Create"/>.</summary>
+    private UsageRecord()
+    {
+        ModelDeploymentName = null!;
+        ConsumerName = null!;
+        RequestId = null!;
+    }
 
     private UsageRecord(
         Guid id,

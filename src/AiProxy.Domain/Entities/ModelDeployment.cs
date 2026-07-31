@@ -8,13 +8,19 @@ public sealed class ModelDeployment
 {
     private readonly List<Endpoint> _endpoints = [];
 
-    public Guid Id { get; }
-    public string Name { get; }
+    public Guid Id { get; private set; }
+    public string Name { get; private set; }
     public bool StickySessionEnabled { get; private set; }
     public RoutingStrategy Strategy { get; private set; }
-    public DateTimeOffset CreatedAt { get; }
+    public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public IReadOnlyList<Endpoint> Endpoints => _endpoints;
+
+    /// <summary>For EF Core materialization only — domain code must use <see cref="Create"/>.</summary>
+    private ModelDeployment()
+    {
+        Name = null!;
+    }
 
     private ModelDeployment(
         Guid id,

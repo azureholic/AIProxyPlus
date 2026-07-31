@@ -79,17 +79,17 @@ Definition of Done for this iteration:
 
 ## Phase 3 — Infrastructure: PostgreSQL
 
-- [ ] Add EF Core + Npgsql, `AiProxyDbContext`, entity configurations for all five tables
+- [x] Add EF Core + Npgsql, `AiProxyDbContext`, entity configurations for all five tables
   (architecture §7.1, incl. `consumers`), initial migration. `usage_records.prompt_tokens`/`completion_tokens`/
   `total_tokens` are nullable; add `operation_type` and a `usage_metrics` jsonb column.
-- [ ] Implement `IModelDeploymentRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
-  `IConsumerRepository` against `AiProxyDbContext`.
-- [ ] Implement `IConsumerAuthenticator` using a salted hash (e.g. HMAC-SHA256 with a server-side pepper) and a
-  constant-time comparison against `consumers.api_key_hash`.
-- [ ] Implement a bounded-channel background writer for usage records so writes never block the response path.
-- [ ] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Postgres module: migrations apply
-  cleanly, repository CRUD round-trips, uniqueness constraints enforced, usage-record writer persists under load,
-  consumer create/rotate/revoke round-trips and authenticator accepts/rejects correctly.
+- [x] Implement `IModelDeploymentRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
+  `IConsumerRepository` (incl. `GetByApiKeyHashAsync`) against `AiProxyDbContext`.
+- [x] Implement a bounded-channel background writer for usage records so writes never block the response path.
+- [x] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Postgres module: migrations apply
+  cleanly, repository CRUD round-trips, uniqueness constraints enforced (`model_deployments.name`,
+  `consumers.name`/`api_key_hash`, `endpoints.(model_deployment_id, priority)`), usage-record writer persists
+  under load (channel → background service → DB, 50 concurrent records), consumer create/rotate/revoke
+  round-trips.
 
 ## Phase 4 — Infrastructure: Secrets (Vault)
 
@@ -98,11 +98,15 @@ Definition of Done for this iteration:
 - [ ] Implement `ApiKeyCredentialProvider` (resolves secret via `ISecretResolver`, caches with TTL, attaches
   `Authorization`/`api-key` header per `ApiFamily` convention) and `ManagedIdentityCredentialProvider` (uses
   `Azure.Identity` token credential, attaches bearer token) behind `ICredentialProvider`.
+- [ ] Implement `IApiKeyHasher` as HMAC-SHA256 with a pepper resolved once at startup via `ISecretResolver`
+  from `secret/ai-proxy/consumer-key-pepper` (architecture.md §8) and a constant-time comparison; implement
+  `IApiKeyGenerator` (cryptographically random plaintext key).
 - [ ] Ensure no secret value is ever written to logs (Serilog destructuring/redaction policy + a unit test
   asserting log output doesn't contain injected secret markers).
 - [ ] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Vault (or a dev-mode Vault
   container) module: write/read/rotate a secret, cache TTL expiry behavior, resolver failure handling
-  (missing path).
+  (missing path), and `ConsumerAuthenticator` end-to-end against a real hasher+pepper (accepts a valid key,
+  rejects an unknown or revoked one).
 
 ## Phase 5 — Infrastructure: Routing (YARP)
 

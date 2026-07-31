@@ -9,11 +9,17 @@ namespace AiProxy.Domain.Entities;
 /// </summary>
 public sealed class SessionAffinityEntry
 {
-    public string SessionId { get; }
-    public Guid ModelDeploymentId { get; }
-    public Guid EndpointId { get; }
+    public string SessionId { get; private set; }
+    public Guid ModelDeploymentId { get; private set; }
+    public Guid EndpointId { get; private set; }
     public DateTimeOffset LastUsedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
+
+    /// <summary>For EF Core materialization only — domain code must use <see cref="Create"/>.</summary>
+    private SessionAffinityEntry()
+    {
+        SessionId = null!;
+    }
 
     private SessionAffinityEntry(
         string sessionId,

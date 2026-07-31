@@ -5,12 +5,19 @@ namespace AiProxy.Domain.Entities;
 /// <summary>A caller allowed to invoke the proxy, authenticated via a hashed API key (architecture.md §8).</summary>
 public sealed class Consumer
 {
-    public Guid Id { get; }
-    public string Name { get; }
+    public Guid Id { get; private set; }
+    public string Name { get; private set; }
     public string ApiKeyHash { get; private set; }
     public bool Enabled { get; private set; }
-    public DateTimeOffset CreatedAt { get; }
+    public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? RevokedAt { get; private set; }
+
+    /// <summary>For EF Core materialization only — domain code must use <see cref="Create"/>.</summary>
+    private Consumer()
+    {
+        Name = null!;
+        ApiKeyHash = null!;
+    }
 
     private Consumer(Guid id, string name, string apiKeyHash, DateTimeOffset createdAt)
     {
