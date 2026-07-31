@@ -93,17 +93,18 @@ Definition of Done for this iteration:
 
 ## Phase 4 — Infrastructure: Secrets (Vault)
 
-- [ ] Add VaultSharp client, `VaultSecretResolver : ISecretResolver` writing/reading KV v2 secrets at
+- [x] Add VaultSharp client, `VaultSecretResolver : ISecretResolver` writing/reading KV v2 secrets at
   `secret/ai-proxy/endpoints/{endpointId}`.
-- [ ] Implement `ApiKeyCredentialProvider` (resolves secret via `ISecretResolver`, caches with TTL, attaches
+- [x] Implement `ApiKeyCredentialProvider` (resolves secret via `ISecretResolver`, caches with TTL, attaches
   `Authorization`/`api-key` header per `ApiFamily` convention) and `ManagedIdentityCredentialProvider` (uses
   `Azure.Identity` token credential, attaches bearer token) behind `ICredentialProvider`.
-- [ ] Implement `IApiKeyHasher` as HMAC-SHA256 with a pepper resolved once at startup via `ISecretResolver`
+- [x] Implement `IApiKeyHasher` as HMAC-SHA256 with a pepper resolved once at startup via `ISecretResolver`
   from `secret/ai-proxy/consumer-key-pepper` (architecture.md §8) and a constant-time comparison; implement
   `IApiKeyGenerator` (cryptographically random plaintext key).
-- [ ] Ensure no secret value is ever written to logs (Serilog destructuring/redaction policy + a unit test
-  asserting log output doesn't contain injected secret markers).
-- [ ] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Vault (or a dev-mode Vault
+- [x] Ensure no secret value is ever written to logs (`VaultSecretResolver` only ever logs the secret *path*;
+  a unit test with a capturing logger asserts the log output never contains an injected secret value —
+  Serilog-specific sink/redaction wiring is layered on top in Phase 8).
+- [x] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Vault (or a dev-mode Vault
   container) module: write/read/rotate a secret, cache TTL expiry behavior, resolver failure handling
   (missing path), and `ConsumerAuthenticator` end-to-end against a real hasher+pepper (accepts a valid key,
   rejects an unknown or revoked one).
