@@ -19,6 +19,9 @@ Definition of Done for this iteration:
   `dotnet build`/`dotnet test` pass, so history maps 1:1 to phases and each phase is independently revertible.
   This commit includes the corresponding checkbox updates in this `tasks.md` file — code and task status land
   together, not as a separate follow-up commit.
+- Before every phase commit, tests are run via the VS Code Testing tool (Test Explorer) rather than a raw
+  `dotnet test --logger trx` dump to `test-results/`, and a pass/fail summary is reported in chat — that folder
+  is for real CI/manual `dotnet test` runs, not something populated on every phase commit.
 
 ---
 
