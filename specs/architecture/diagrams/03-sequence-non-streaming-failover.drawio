@@ -1,0 +1,38 @@
+<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1260" pageHeight="800" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- Lifeline headers -->
+    <mxCell id="h-client" value="Client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="30" y="30" width="140" height="40" as="geometry" /></mxCell>
+    <mxCell id="h-api" value="Api (Ingress)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="210" y="30" width="140" height="40" as="geometry" /></mxCell>
+    <mxCell id="h-router" value="Router" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="390" y="30" width="140" height="40" as="geometry" /></mxCell>
+    <mxCell id="h-vault" value="Vault" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="570" y="30" width="140" height="40" as="geometry" /></mxCell>
+    <mxCell id="h-b1" value="Endpoint (priority 1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="750" y="30" width="140" height="40" as="geometry" /></mxCell>
+    <mxCell id="h-b2" value="Endpoint (priority 2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="930" y="30" width="140" height="40" as="geometry" /></mxCell>
+    <mxCell id="h-pg" value="PostgreSQL" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="1110" y="20" width="120" height="60" as="geometry" /></mxCell>
+
+    <!-- Lifelines (dashed vertical) -->
+    <mxCell id="l-client" style="html=1;dashed=1;strokeColor=#999999;endArrow=none;startArrow=none;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="100" y="70" as="sourcePoint" /><mxPoint x="100" y="740" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="l-api" style="html=1;dashed=1;strokeColor=#999999;endArrow=none;startArrow=none;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="280" y="70" as="sourcePoint" /><mxPoint x="280" y="740" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="l-router" style="html=1;dashed=1;strokeColor=#999999;endArrow=none;startArrow=none;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="70" as="sourcePoint" /><mxPoint x="460" y="740" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="l-vault" style="html=1;dashed=1;strokeColor=#999999;endArrow=none;startArrow=none;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="640" y="70" as="sourcePoint" /><mxPoint x="640" y="740" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="l-b1" style="html=1;dashed=1;strokeColor=#999999;endArrow=none;startArrow=none;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="820" y="70" as="sourcePoint" /><mxPoint x="820" y="740" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="l-b2" style="html=1;dashed=1;strokeColor=#999999;endArrow=none;startArrow=none;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="1000" y="70" as="sourcePoint" /><mxPoint x="1000" y="740" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="l-pg" style="html=1;dashed=1;strokeColor=#999999;endArrow=none;startArrow=none;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="1170" y="80" as="sourcePoint" /><mxPoint x="1170" y="740" as="targetPoint" /></mxGeometry></mxCell>
+
+    <!-- Messages -->
+    <mxCell id="m1" value="POST /openai/v1/chat/completions {model: gpt-4o-prod}" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="100" y="110" as="sourcePoint" /><mxPoint x="280" y="110" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m2" value="Authenticate consumer (API key hash) + resolve deployment &quot;gpt-4o-prod&quot;" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="280" y="150" as="sourcePoint" /><mxPoint x="460" y="150" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m3" value="Load ModelDeployment + Endpoints (cached)" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="190" as="sourcePoint" /><mxPoint x="1170" y="190" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m4" value="Resolve secret for Endpoint(priority=1)" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="230" as="sourcePoint" /><mxPoint x="640" y="230" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m5" value="Forward request (+ injected auth)" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="270" as="sourcePoint" /><mxPoint x="820" y="270" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m6" value="Timeout / 5xx" style="html=1;endArrow=open;dashed=1;strokeColor=#b85450;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="820" y="310" as="sourcePoint" /><mxPoint x="460" y="310" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="note1" value="Mark Endpoint(1) unhealthy, pick next" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;" vertex="1" parent="1"><mxGeometry x="390" y="330" width="200" height="30" as="geometry" /></mxCell>
+    <mxCell id="m7" value="Resolve secret for Endpoint(priority=2)" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="380" as="sourcePoint" /><mxPoint x="640" y="380" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m8" value="Forward request (+ injected auth)" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="420" as="sourcePoint" /><mxPoint x="1000" y="420" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m9" value="200 OK + usage" style="html=1;endArrow=open;dashed=1;strokeColor=#82b366;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="1000" y="460" as="sourcePoint" /><mxPoint x="460" y="460" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m10" value="Write UsageRecord (deployment, endpoint, consumer, tokens)" style="html=1;endArrow=block;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="500" as="sourcePoint" /><mxPoint x="1170" y="500" as="targetPoint" /></mxGeometry></mxCell>
+    <mxCell id="m11" value="200 OK (passthrough body)" style="html=1;endArrow=open;dashed=1;strokeColor=#82b366;strokeWidth=1.5;fontSize=11;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="460" y="540" as="sourcePoint" /><mxPoint x="100" y="540" as="targetPoint" /></mxGeometry></mxCell>
+  </root>
+</mxGraphModel>

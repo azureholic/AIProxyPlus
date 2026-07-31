@@ -1,0 +1,39 @@
+<mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="820" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <mxCell id="md" value="&lt;b&gt;ModelDeployment&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;Name: string (unique routing key)&lt;br&gt;StickySessionEnabled: bool&lt;br&gt;Strategy: RoutingStrategy&lt;br&gt;CreatedAt / UpdatedAt: DateTimeOffset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="60" y="60" width="320" height="150" as="geometry" />
+    </mxCell>
+
+    <mxCell id="ep" value="&lt;b&gt;Endpoint&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;ModelDeploymentId: Guid&lt;br&gt;BaseUrl: string&lt;br&gt;ApiFamily: OpenAI | AzureOpenAI | Anthropic | OpenAICompatible&lt;br&gt;Priority: int (lower = tried first)&lt;br&gt;AuthMode: ApiKey | ManagedIdentity&lt;br&gt;SecretRef: string (Vault path)&lt;br&gt;ManagedIdentityScope: string&lt;br&gt;Enabled: bool&lt;br&gt;TimeoutSeconds / MaxRetries: int&lt;br&gt;Health: EndpointHealthState" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="700" y="40" width="380" height="230" as="geometry" />
+    </mxCell>
+
+    <mxCell id="ur" value="&lt;b&gt;UsageRecord&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;Timestamp: DateTimeOffset&lt;br&gt;ModelDeploymentName: string&lt;br&gt;ConsumerId: Guid&lt;br&gt;ConsumerName: string&lt;br&gt;EndpointId: Guid&lt;br&gt;ApiFamily: ApiFamily&lt;br&gt;OperationType: ChatCompletion | Completion | Embedding | ImageGeneration | ImageEdit | ImageVariation | ResponsesApi | ...&lt;br&gt;RequestId: string&lt;br&gt;SessionId: string?&lt;br&gt;PromptTokens / CompletionTokens / TotalTokens: int?&lt;br&gt;UsageMetrics: jsonb? (e.g. image count/size/quality)&lt;br&gt;Streaming: bool&lt;br&gt;HttpStatusCode: int&lt;br&gt;DurationMs: int" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="60" y="320" width="340" height="320" as="geometry" />
+    </mxCell>
+
+    <mxCell id="cons" value="&lt;b&gt;Consumer&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;Name: string (unique)&lt;br&gt;ApiKeyHash: string (salted hash)&lt;br&gt;Enabled: bool&lt;br&gt;CreatedAt: DateTimeOffset&lt;br&gt;RevokedAt: DateTimeOffset?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="440" y="340" width="260" height="170" as="geometry" />
+    </mxCell>
+
+    <mxCell id="sa" value="&lt;b&gt;SessionAffinityEntry&lt;/b&gt;&lt;hr size=1&gt;SessionId: string&lt;br&gt;ModelDeploymentId: Guid&lt;br&gt;EndpointId: Guid&lt;br&gt;LastUsedAt: DateTimeOffset&lt;br&gt;ExpiresAt: DateTimeOffset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="700" y="380" width="320" height="150" as="geometry" />
+    </mxCell>
+
+    <mxCell id="e1" value="1 : many" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;startArrow=diamondThin;startFill=1;endArrow=none;labelBackgroundColor=#ffffff;exitX=1;exitY=0.15;exitDx=0;exitDy=0;entryX=0;entryY=0.08;entryDx=0;entryDy=0;" edge="1" parent="1" source="md" target="ep">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e2" value="1 : many" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;startArrow=diamondThin;startFill=1;endArrow=none;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="md" target="ur">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e3" value="1 : many" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;startArrow=diamondThin;startFill=1;endArrow=none;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="md" target="sa">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e4" value="1 : many" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;startArrow=diamondThin;startFill=1;endArrow=none;labelBackgroundColor=#ffffff;exitX=0;exitY=0.3;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;" edge="1" parent="1" source="cons" target="ur">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+  </root>
+</mxGraphModel>

@@ -1,0 +1,81 @@
+<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1650" pageHeight="950" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- Clients -->
+    <mxCell id="c1" value="OpenAI SDK client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="40" y="120" width="160" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="c2" value="Anthropic SDK client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="40" y="220" width="160" height="50" as="geometry" />
+    </mxCell>
+
+    <!-- AI Proxy container -->
+    <mxCell id="box" value="AI Proxy (.NET 10)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+      <mxGeometry x="280" y="40" width="620" height="420" as="geometry" />
+    </mxCell>
+
+    <mxCell id="ing" value="Ingress Endpoints&#10;/openai/v1/*  /anthropic/v1/messages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="320" y="90" width="540" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="router" value="Routing Engine&#10;deployment to endpoint selection, priority + failover + sticky session" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="320" y="170" width="540" height="60" as="geometry" />
+    </mxCell>
+    <mxCell id="fwd" value="Forwarder&#10;YARP HttpForwarder + auth injection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="320" y="260" width="340" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="usage" value="Usage Extractor&#10;SSE + JSON usage parsing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="700" y="260" width="160" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cfgapi" value="Configuration API&#10;/api/v1/config/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="320" y="340" width="260" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="otel" value="OpenTelemetry SDK" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="700" y="340" width="160" height="50" as="geometry" />
+    </mxCell>
+
+    <!-- Data stores -->
+    <mxCell id="pg" value="PostgreSQL&#10;config + usage" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+      <mxGeometry x="980" y="100" width="140" height="90" as="geometry" />
+    </mxCell>
+    <mxCell id="vault" value="HashiCorp Vault&#10;API keys" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+      <mxGeometry x="980" y="240" width="140" height="90" as="geometry" />
+    </mxCell>
+
+    <!-- Observability -->
+    <mxCell id="dash" value="Aspire Dashboard /&#10;OTLP Collector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+      <mxGeometry x="980" y="390" width="140" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- Backends -->
+    <mxCell id="b1" value="Local: Ollama / vLLM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="1220" y="40" width="200" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="b2" value="OpenAI API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="1220" y="120" width="200" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="b3" value="Anthropic API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="1220" y="200" width="200" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="b4" value="Azure AI Foundry / Azure OpenAI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="1220" y="280" width="200" height="50" as="geometry" />
+    </mxCell>
+
+    <!-- Edges -->
+    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="c1" target="ing"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="c2" target="ing"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="ing" target="router"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="router" target="fwd"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="fwd" target="usage"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e6" value="reads config" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="router" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e7" value="resolves secret" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.94;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="fwd" target="vault"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="640" y="410" /><mxPoint x="1050" y="410" /></Array></mxGeometry></mxCell>
+    <mxCell id="e8" value="writes usage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="usage" target="pg"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="60" /><mxPoint x="1050" y="60" /></Array></mxGeometry></mxCell>
+    <mxCell id="e9" value="CRUD" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cfgapi" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="fwd" target="b1"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="fwd" target="b2"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="fwd" target="b3"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="fwd" target="b4"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e14" value="traces/metrics/logs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="otel" target="dash"><mxGeometry relative="1" as="geometry" /></mxCell>
+  </root>
+</mxGraphModel>
