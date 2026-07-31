@@ -72,11 +72,14 @@ public sealed class ProxyRoutingService(
         // deterministically through the surviving round-robin tier instead of re-rolling on every retry.
         var roundRobinSeed = roundRobinCounter.Next(deployment.Id);
 
-        var sessionKey = ResolveSessionKey(httpContext, fields, operationType);
+        // The Responses API is the only operation type with cross-request affinity, and it's automatic — no
+        // deployment-level config flag (architecture.md §9). Everything else round-robins/fails over freely;
+        // Realtime API connections (§9) get their own connection-scoped selection, not this per-request path.
+        var sessionKey = operationType == OperationType.ResponsesApi ? fields.PreviousResponseId : null;
         SessionAffinityEntry? affinityEntry = null;
         Guid? stickyEndpointId = null;
 
-        if (deployment.StickySessionEnabled && sessionKey is not null)
+        if (sessionKey is not null)
         {
             affinityEntry = await sessionAffinityStore.GetAsync(sessionKey, cancellationToken);
             if (affinityEntry is not null && !affinityEntry.IsExpired())
@@ -132,8 +135,8 @@ public sealed class ProxyRoutingService(
                         deployment.Name, endpoint.BaseUrl, outcome.Usage.PromptTokens, outcome.Usage.CompletionTokens, outcome.Usage.TotalTokens);
                 }
 
-                await PersistAffinityOnSuccessAsync(
-                    deployment, endpoint, operationType, fields, sessionKey, affinityEntry, outcome.CapturedResponseId, cancellationToken);
+                await PersistResponsesApiAffinityAsync(
+                    deployment, endpoint, operationType, fields.StoreFalse, outcome.CapturedResponseId, cancellationToken);
 
                 // ConsumerId is only populated once ingress authentication (Phase 7) resolves a caller; until
                 // then there is no valid Consumer to attribute usage to, so capture is skipped rather than
@@ -282,64 +285,21 @@ public sealed class ProxyRoutingService(
         return new ForwardOutcome(false, 0, null, null);
     }
 
-    private async Task PersistAffinityOnSuccessAsync(
+    private async Task PersistResponsesApiAffinityAsync(
         ModelDeployment deployment,
         Endpoint endpoint,
         OperationType operationType,
-        RequestBodyFields fields,
-        string? sessionKey,
-        SessionAffinityEntry? existingEntry,
+        bool storeFalse,
         string? capturedResponseId,
         CancellationToken cancellationToken)
     {
-        if (fields.StoreFalse)
+        if (operationType != OperationType.ResponsesApi || storeFalse || capturedResponseId is null)
         {
             return;
         }
 
-        if (operationType == OperationType.ResponsesApi)
-        {
-            if (capturedResponseId is not null)
-            {
-                var entry = SessionAffinityEntry.Create(capturedResponseId, deployment.Id, endpoint.Id, _sessionAffinityTtl);
-                await sessionAffinityStore.SaveAsync(entry, cancellationToken);
-            }
-
-            return;
-        }
-
-        if (!deployment.StickySessionEnabled || sessionKey is null)
-        {
-            return;
-        }
-
-        if (existingEntry is not null)
-        {
-            existingEntry.Touch(_sessionAffinityTtl);
-            await sessionAffinityStore.SaveAsync(existingEntry, cancellationToken);
-        }
-        else
-        {
-            var entry = SessionAffinityEntry.Create(sessionKey, deployment.Id, endpoint.Id, _sessionAffinityTtl);
-            await sessionAffinityStore.SaveAsync(entry, cancellationToken);
-        }
-    }
-
-    private static string? ResolveSessionKey(HttpContext httpContext, RequestBodyFields fields, OperationType operationType)
-    {
-        if (operationType == OperationType.ResponsesApi)
-        {
-            return fields.PreviousResponseId;
-        }
-
-        if (!string.IsNullOrWhiteSpace(fields.SessionId))
-        {
-            return fields.SessionId;
-        }
-
-        return httpContext.Request.Headers.TryGetValue("X-Session-Id", out var headerValue) && headerValue.Count > 0
-            ? headerValue.ToString()
-            : null;
+        var entry = SessionAffinityEntry.Create(capturedResponseId, deployment.Id, endpoint.Id, _sessionAffinityTtl);
+        await sessionAffinityStore.SaveAsync(entry, cancellationToken);
     }
 
     private static string? TryExtractResponseId(string responseBody)

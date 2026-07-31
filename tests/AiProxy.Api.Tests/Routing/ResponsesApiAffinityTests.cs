@@ -41,7 +41,7 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
     public async Task FollowUpTurn_WithPreviousResponseId_PinsToOriginatingBackend()
     {
         var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName, stickySessionEnabled: true);
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
         deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
         deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
         _factory.Deployments.Seed(deployment);
@@ -71,7 +71,7 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
         // An unrecognized (e.g. expired/evicted) previous_response_id has no affinity entry, so there is no
         // sticky endpoint to pin to or fail over from — the request is simply routed like a fresh one.
         var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName, stickySessionEnabled: true);
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
         deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
         _factory.Deployments.Seed(deployment);
 
@@ -88,7 +88,7 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
     public async Task WithStoreFalse_DoesNotPersistAffinityForFollowUp()
     {
         var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName, stickySessionEnabled: true);
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
         deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
         _factory.Deployments.Seed(deployment);
 
@@ -101,5 +101,37 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await _factory.Affinity.GetAsync(responseId)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task WhenOriginatingEndpointFailsOnFollowUp_FailsFast_WithoutFallingBackToOtherEndpoint()
+    {
+        // Responses API affinity is unconditional (no deployment config needed) and, like any sticky session,
+        // must fail fast rather than silently reroute a stateful conversation to a different backend.
+        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
+        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
+        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
+        _factory.Deployments.Seed(deployment);
+
+        const string responseId = "resp_flaky";
+        _backend1.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = responseId }));
+
+        var client = _factory.CreateClient();
+        var first = await client.PostAsJsonAsync("/openai/v1/responses", new { model = deploymentName, input = "hi" });
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _backend1.Reset();
+        _backend1.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(500));
+        _backend2.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "should-not-be-called" }));
+
+        var second = await client.PostAsJsonAsync(
+            "/openai/v1/responses", new { model = deploymentName, previous_response_id = responseId, input = "and then?" });
+
+        second.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        _backend2.LogEntries.Should().BeEmpty("a failed sticky endpoint must fail fast, not silently reroute a stateful conversation");
     }
 }

@@ -207,7 +207,7 @@ config.MapPost("/model-deployments", async (CreateModelDeploymentCommand command
 config.MapPut("/model-deployments/{name}", async (
     string name, UpdateModelDeploymentBody body, UpdateModelDeploymentHandler handler, CancellationToken ct) =>
 {
-    var deployment = await handler.HandleAsync(new UpdateModelDeploymentCommand(name, body.StickySessionEnabled, body.Strategy), ct);
+    var deployment = await handler.HandleAsync(new UpdateModelDeploymentCommand(name, body.Strategy), ct);
     return Results.Ok(deployment);
 });
 
@@ -339,7 +339,7 @@ static class HealthChecks
     }
 }
 
-public sealed record UpdateModelDeploymentBody(bool StickySessionEnabled, RoutingStrategy Strategy);
+public sealed record UpdateModelDeploymentBody(RoutingStrategy Strategy);
 
 public sealed record AddEndpointBody(
     string BaseUrl,

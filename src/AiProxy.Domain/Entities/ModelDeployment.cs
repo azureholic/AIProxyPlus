@@ -10,7 +10,6 @@ public sealed class ModelDeployment
 
     public Guid Id { get; private set; }
     public string Name { get; private set; }
-    public bool StickySessionEnabled { get; private set; }
     public RoutingStrategy Strategy { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -25,13 +24,11 @@ public sealed class ModelDeployment
     private ModelDeployment(
         Guid id,
         string name,
-        bool stickySessionEnabled,
         RoutingStrategy strategy,
         DateTimeOffset createdAt)
     {
         Id = id;
         Name = name;
-        StickySessionEnabled = stickySessionEnabled;
         Strategy = strategy;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
@@ -40,7 +37,6 @@ public sealed class ModelDeployment
     public static ModelDeployment Create(
         Guid id,
         string name,
-        bool stickySessionEnabled = false,
         RoutingStrategy strategy = RoutingStrategy.Priority,
         DateTimeOffset? createdAt = null)
     {
@@ -49,7 +45,7 @@ public sealed class ModelDeployment
             throw new DomainException("ModelDeployment.Name must not be empty.");
         }
 
-        return new ModelDeployment(id, name, stickySessionEnabled, strategy, createdAt ?? DateTimeOffset.UtcNow);
+        return new ModelDeployment(id, name, strategy, createdAt ?? DateTimeOffset.UtcNow);
     }
 
     /// <summary>True once at least one enabled endpoint is registered; false deployments can't be routed to.</summary>
@@ -81,12 +77,6 @@ public sealed class ModelDeployment
             ?? throw new DomainException($"Endpoint '{endpointId}' does not belong to this ModelDeployment.");
 
         endpoint.UpdatePriority(newPriority);
-        Touch();
-    }
-
-    public void SetStickySessionEnabled(bool enabled)
-    {
-        StickySessionEnabled = enabled;
         Touch();
     }
 

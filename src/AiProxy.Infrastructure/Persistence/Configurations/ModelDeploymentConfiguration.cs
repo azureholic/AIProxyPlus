@@ -16,7 +16,6 @@ public sealed class ModelDeploymentConfiguration : IEntityTypeConfiguration<Mode
         builder.HasIndex(d => d.Name).IsUnique();
 
         builder.Property(d => d.Strategy).HasConversion<string>().HasMaxLength(50);
-        builder.Property(d => d.StickySessionEnabled);
         builder.Property(d => d.CreatedAt);
         builder.Property(d => d.UpdatedAt);
 

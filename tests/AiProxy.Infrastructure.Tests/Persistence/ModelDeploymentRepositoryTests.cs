@@ -93,7 +93,7 @@ public class ModelDeploymentRepositoryTests(PostgresContainerFixture fixture)
         {
             var updateRepository = new ModelDeploymentRepository(updateContext);
             var reloaded = await updateRepository.GetByNameAsync(deploymentName);
-            reloaded!.SetStickySessionEnabled(true);
+            reloaded!.SetStrategy(RoutingStrategy.Priority);
             reloaded.AddEndpoint(NewEndpoint(reloaded.Id, priority: 2));
             await updateRepository.UpdateAsync(reloaded);
         }
@@ -101,7 +101,7 @@ public class ModelDeploymentRepositoryTests(PostgresContainerFixture fixture)
         await using var readContext = fixture.CreateDbContext();
         var loaded = await new ModelDeploymentRepository(readContext).GetByNameAsync(deploymentName);
 
-        loaded!.StickySessionEnabled.Should().BeTrue();
+        loaded!.Strategy.Should().Be(RoutingStrategy.Priority);
         loaded.Endpoints.Should().HaveCount(2);
     }
 

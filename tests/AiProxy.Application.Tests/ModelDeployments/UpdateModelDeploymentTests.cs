@@ -24,9 +24,9 @@ public class UpdateModelDeploymentTests
         var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-prod");
         _repository.GetByNameAsync("gpt-4o-prod", Arg.Any<CancellationToken>()).Returns(deployment);
 
-        var result = await _handler.HandleAsync(new UpdateModelDeploymentCommand("gpt-4o-prod", true, RoutingStrategy.Priority));
+        var result = await _handler.HandleAsync(new UpdateModelDeploymentCommand("gpt-4o-prod", RoutingStrategy.Priority));
 
-        result.StickySessionEnabled.Should().BeTrue();
+        result.Strategy.Should().Be(RoutingStrategy.Priority);
         await _repository.Received(1).UpdateAsync(deployment, Arg.Any<CancellationToken>());
     }
 
@@ -35,7 +35,7 @@ public class UpdateModelDeploymentTests
     {
         _repository.GetByNameAsync("missing", Arg.Any<CancellationToken>()).Returns((ModelDeployment?)null);
 
-        var act = () => _handler.HandleAsync(new UpdateModelDeploymentCommand("missing", true, RoutingStrategy.Priority));
+        var act = () => _handler.HandleAsync(new UpdateModelDeploymentCommand("missing", RoutingStrategy.Priority));
 
         await act.Should().ThrowAsync<NotFoundException>();
     }

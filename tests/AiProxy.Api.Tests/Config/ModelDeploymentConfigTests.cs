@@ -19,11 +19,10 @@ public class ModelDeploymentConfigTests : IDisposable
         var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
 
         var createResponse = await client.PostAsJsonAsync(
-            "/api/v1/config/model-deployments", new { name = deploymentName, stickySessionEnabled = true });
+            "/api/v1/config/model-deployments", new { name = deploymentName });
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         using var created = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
         created.RootElement.GetProperty("name").GetString().Should().Be(deploymentName);
-        created.RootElement.GetProperty("stickySessionEnabled").GetBoolean().Should().BeTrue();
 
         var getResponse = await client.GetAsync($"/api/v1/config/model-deployments/{deploymentName}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);

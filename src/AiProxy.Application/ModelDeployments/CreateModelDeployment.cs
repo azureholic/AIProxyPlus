@@ -8,7 +8,6 @@ namespace AiProxy.Application.ModelDeployments;
 
 public sealed record CreateModelDeploymentCommand(
     string Name,
-    bool StickySessionEnabled = false,
     RoutingStrategy Strategy = RoutingStrategy.Priority);
 
 public sealed class CreateModelDeploymentValidator : AbstractValidator<CreateModelDeploymentCommand>
@@ -34,7 +33,7 @@ public sealed class CreateModelDeploymentHandler(
             throw new ConflictException($"A model deployment named '{command.Name}' already exists.");
         }
 
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), command.Name, command.StickySessionEnabled, command.Strategy);
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), command.Name, command.Strategy);
         await repository.AddAsync(deployment, cancellationToken);
         return deployment;
     }

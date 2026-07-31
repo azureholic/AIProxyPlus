@@ -126,9 +126,6 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<bool>("StickySessionEnabled")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Strategy")
                         .IsRequired()
                         .HasMaxLength(50)

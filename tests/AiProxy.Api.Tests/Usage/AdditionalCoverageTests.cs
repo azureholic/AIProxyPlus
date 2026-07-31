@@ -75,7 +75,7 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
     public async Task ResponsesApi_StreamingFollowUpTurn_PinsToOriginatingBackend()
     {
         var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName, stickySessionEnabled: true);
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
         var backend2 = WireMockServer.Start();
         try
         {

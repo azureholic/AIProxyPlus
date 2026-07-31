@@ -55,20 +55,21 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 
 ## Phase 2 — Remove generic sticky-session config; Responses API affinity becomes unconditional
 
-- [ ] Domain: remove `ModelDeployment.StickySessionEnabled` (property, constructor parameter,
-  `SetStickySessionEnabled`/equivalent mutator).
-- [ ] EF Core: migration dropping the `sticky_session_enabled` column from `model_deployments`.
-- [ ] Application: `CreateModelDeploymentCommand`/`UpdateModelDeploymentCommand` (+ validators) drop
+- [x] Domain: remove `ModelDeployment.StickySessionEnabled` (property, constructor parameter,
+  `SetStickySessionEnabled`/equivalent mutator). Also removed the priority-uniqueness invariant while touching
+  this file (folded into Phase 1 since it was the same `AddEndpoint`/`ChangeEndpointPriority` code path).
+- [x] EF Core: migration (`RemoveStickySessionEnabled`) dropping the `sticky_session_enabled` column from
+  `model_deployments`.
+- [x] Application: `CreateModelDeploymentCommand`/`UpdateModelDeploymentCommand` (+ validators) drop
   `StickySessionEnabled`.
-- [ ] Api: config API request/response bodies for model-deployments drop `stickySessionEnabled`.
-- [ ] `ProxyRoutingService`: `ResolveSessionKey`/affinity lookup applies **only** to
-  `OperationType.ResponsesApi` via `PreviousResponseId` — unconditionally, no deployment flag gate (fixes the
-  latent bug described above). The generic body-`session`/`X-Session-Id` header lookup path is deleted, along
-  with the now-dead parts of `RequestBodyFields`/`RequestBodyPeek` that only existed to support it.
-- [ ] Tests: remove/rework `StickySessionTests` (the generic-session scenarios no longer apply once the
-  mechanism is gone); `ResponsesApiAffinityTests` continues to pass unchanged since Responses API behavior is
-  the same, just no longer gated by a flag — add a regression test proving that a deployment needs no special
-  configuration for `previous_response_id` chaining to work.
+- [x] Api: config API request/response bodies for model-deployments drop `stickySessionEnabled`.
+- [x] `ProxyRoutingService`: affinity lookup applies **only** to `OperationType.ResponsesApi` via
+  `PreviousResponseId` — unconditionally, no deployment flag gate (fixes the latent bug described above). The
+  generic body-`session`/`X-Session-Id` header lookup path (`ResolveSessionKey`) is deleted, along with the
+  now-dead `RequestBodyFields.SessionId`/its extraction in `RequestBodyPeek`.
+- [x] Tests: deleted `StickySessionTests` (the generic-session scenarios it covered no longer apply); its one
+  still-relevant scenario ("a failed sticky endpoint fails fast, no silent reroute") was ported into
+  `ResponsesApiAffinityTests` using `previous_response_id` instead of a generic session id.
 
 ## Phase 3 — Realtime (voice) API via WebSocket proxy
 

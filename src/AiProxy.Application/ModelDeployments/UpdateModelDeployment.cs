@@ -6,7 +6,7 @@ using FluentValidation;
 
 namespace AiProxy.Application.ModelDeployments;
 
-public sealed record UpdateModelDeploymentCommand(string Name, bool StickySessionEnabled, RoutingStrategy Strategy);
+public sealed record UpdateModelDeploymentCommand(string Name, RoutingStrategy Strategy);
 
 public sealed class UpdateModelDeploymentValidator : AbstractValidator<UpdateModelDeploymentCommand>
 {
@@ -29,7 +29,6 @@ public sealed class UpdateModelDeploymentHandler(
         var deployment = await repository.GetByNameAsync(command.Name, cancellationToken)
             ?? throw new NotFoundException($"Model deployment '{command.Name}' was not found.");
 
-        deployment.SetStickySessionEnabled(command.StickySessionEnabled);
         deployment.SetStrategy(command.Strategy);
 
         await repository.UpdateAsync(deployment, cancellationToken);

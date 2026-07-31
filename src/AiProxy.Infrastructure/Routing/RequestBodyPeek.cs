@@ -6,7 +6,6 @@ namespace AiProxy.Infrastructure.Routing;
 /// <summary>Fields the router needs from the request body without fully parsing/understanding the payload (§9).</summary>
 public sealed record RequestBodyFields(
     string? Model,
-    string? SessionId,
     string? PreviousResponseId,
     bool StoreFalse,
     bool ClientRequestedUsage,
@@ -32,7 +31,7 @@ public static class RequestBodyPeek
     {
         if (string.IsNullOrWhiteSpace(jsonBody))
         {
-            return new RequestBodyFields(null, null, null, false, false, false);
+            return new RequestBodyFields(null, null, false, false, false);
         }
 
         try
@@ -41,7 +40,6 @@ public static class RequestBodyPeek
             var root = document.RootElement;
 
             var model = TryGetString(root, "model");
-            var sessionId = TryGetString(root, "session");
             var previousResponseId = TryGetString(root, "previous_response_id");
             var storeFalse = root.TryGetProperty("store", out var storeProp) && storeProp.ValueKind == JsonValueKind.False;
             var streaming = root.TryGetProperty("stream", out var streamProp) && streamProp.ValueKind == JsonValueKind.True;
@@ -51,11 +49,11 @@ public static class RequestBodyPeek
                 streamOptions.TryGetProperty("include_usage", out var includeUsage) &&
                 includeUsage.ValueKind == JsonValueKind.True;
 
-            return new RequestBodyFields(model, sessionId, previousResponseId, storeFalse, clientRequestedUsage, streaming);
+            return new RequestBodyFields(model, previousResponseId, storeFalse, clientRequestedUsage, streaming);
         }
         catch (JsonException)
         {
-            return new RequestBodyFields(null, null, null, false, false, false);
+            return new RequestBodyFields(null, null, false, false, false);
         }
     }
 
