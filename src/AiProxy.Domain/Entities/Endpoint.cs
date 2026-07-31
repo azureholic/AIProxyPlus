@@ -10,13 +10,13 @@ public sealed class Endpoint
     public Guid ModelDeploymentId { get; }
     public string BaseUrl { get; }
     public ApiFamily ApiFamily { get; }
-    public int Priority { get; }
+    public int Priority { get; private set; }
     public AuthMode AuthMode { get; }
     public string? SecretRef { get; }
     public string? ManagedIdentityScope { get; }
     public bool Enabled { get; private set; }
-    public int TimeoutSeconds { get; }
-    public int MaxRetries { get; }
+    public int TimeoutSeconds { get; private set; }
+    public int MaxRetries { get; private set; }
     public EndpointHealthState Health { get; private set; }
 
     private Endpoint(
@@ -110,4 +110,35 @@ public sealed class Endpoint
     public void Disable() => Enabled = false;
 
     public void Enable() => Enabled = true;
+
+    /// <summary>Changes this endpoint's priority. Cross-endpoint uniqueness is enforced by <see cref="ModelDeployment.ChangeEndpointPriority"/>.</summary>
+    internal void UpdatePriority(int priority)
+    {
+        if (priority < 1)
+        {
+            throw new DomainException("Endpoint.Priority must be 1 or greater (lower is tried first).");
+        }
+
+        Priority = priority;
+    }
+
+    public void UpdateTimeoutSeconds(int timeoutSeconds)
+    {
+        if (timeoutSeconds < 1)
+        {
+            throw new DomainException("Endpoint.TimeoutSeconds must be at least 1.");
+        }
+
+        TimeoutSeconds = timeoutSeconds;
+    }
+
+    public void UpdateMaxRetries(int maxRetries)
+    {
+        if (maxRetries < 0)
+        {
+            throw new DomainException("Endpoint.MaxRetries must not be negative.");
+        }
+
+        MaxRetries = maxRetries;
+    }
 }

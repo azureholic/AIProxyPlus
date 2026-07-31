@@ -71,6 +71,21 @@ public sealed class ModelDeployment
         Touch();
     }
 
+    /// <summary>Changes an endpoint's priority, enforcing uniqueness across the deployment's other endpoints.</summary>
+    public void ChangeEndpointPriority(Guid endpointId, int newPriority)
+    {
+        var endpoint = _endpoints.FirstOrDefault(e => e.Id == endpointId)
+            ?? throw new DomainException($"Endpoint '{endpointId}' does not belong to this ModelDeployment.");
+
+        if (_endpoints.Any(e => e.Id != endpointId && e.Priority == newPriority))
+        {
+            throw new DomainException($"Priority {newPriority} is already used by another endpoint on this deployment.");
+        }
+
+        endpoint.UpdatePriority(newPriority);
+        Touch();
+    }
+
     public void SetStickySessionEnabled(bool enabled)
     {
         StickySessionEnabled = enabled;

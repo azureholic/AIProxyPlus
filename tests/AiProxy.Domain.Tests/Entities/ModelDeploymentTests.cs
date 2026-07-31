@@ -74,4 +74,41 @@ public class ModelDeploymentTests
         deployment.Endpoints.Should().BeEmpty();
         deployment.HasUsableEndpoint.Should().BeFalse();
     }
+
+    [Fact]
+    public void ChangeEndpointPriority_WithUnusedPriority_Succeeds()
+    {
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-prod");
+        var endpoint = CreateEndpoint(deployment.Id, priority: 1);
+        deployment.AddEndpoint(endpoint);
+
+        deployment.ChangeEndpointPriority(endpoint.Id, 5);
+
+        endpoint.Priority.Should().Be(5);
+    }
+
+    [Fact]
+    public void ChangeEndpointPriority_WithPriorityUsedByAnotherEndpoint_Throws()
+    {
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-prod");
+        var first = CreateEndpoint(deployment.Id, priority: 1);
+        var second = CreateEndpoint(deployment.Id, priority: 2);
+        deployment.AddEndpoint(first);
+        deployment.AddEndpoint(second);
+
+        var act = () => deployment.ChangeEndpointPriority(second.Id, 1);
+
+        act.Should().Throw<DomainException>().WithMessage("*Priority*");
+        second.Priority.Should().Be(2);
+    }
+
+    [Fact]
+    public void ChangeEndpointPriority_ForUnknownEndpoint_Throws()
+    {
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-prod");
+
+        var act = () => deployment.ChangeEndpointPriority(Guid.NewGuid(), 2);
+
+        act.Should().Throw<DomainException>();
+    }
 }

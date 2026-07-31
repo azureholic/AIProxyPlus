@@ -89,4 +89,44 @@ public class EndpointTests
         endpoint.Enable();
         endpoint.Enabled.Should().BeTrue();
     }
+
+    [Fact]
+    public void UpdateTimeoutSeconds_WithValidValue_Succeeds()
+    {
+        var endpoint = CreateValidApiKeyEndpoint();
+
+        endpoint.UpdateTimeoutSeconds(30);
+
+        endpoint.TimeoutSeconds.Should().Be(30);
+    }
+
+    [Fact]
+    public void UpdateTimeoutSeconds_WithZero_Throws()
+    {
+        var endpoint = CreateValidApiKeyEndpoint();
+
+        var act = () => endpoint.UpdateTimeoutSeconds(0);
+
+        act.Should().Throw<DomainException>().WithMessage("*TimeoutSeconds*");
+    }
+
+    [Fact]
+    public void UpdateMaxRetries_WithValidValue_Succeeds()
+    {
+        var endpoint = CreateValidApiKeyEndpoint();
+
+        endpoint.UpdateMaxRetries(5);
+
+        endpoint.MaxRetries.Should().Be(5);
+    }
+
+    [Fact]
+    public void UpdateMaxRetries_WithNegativeValue_Throws()
+    {
+        var endpoint = CreateValidApiKeyEndpoint();
+
+        var act = () => endpoint.UpdateMaxRetries(-1);
+
+        act.Should().Throw<DomainException>().WithMessage("*MaxRetries*");
+    }
 }

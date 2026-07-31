@@ -62,18 +62,18 @@ Definition of Done for this iteration:
 
 ## Phase 2 — Application layer
 
-- [ ] Define ports: `IModelDeploymentRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
+- [x] Define ports: `IModelDeploymentRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
   `ISecretResolver`, `ICredentialProvider`, `IEndpointHealthTracker`, `IConsumerRepository`,
   `IConsumerAuthenticator` (hashes an incoming API key and looks up the matching enabled `Consumer`),
   `IUsageExtractor` (extracts token counts and/or `UsageMetrics` from a request/response for one
   `ApiFamily`+`OperationType` pair) and `IUsageExtractorResolver` (picks the right `IUsageExtractor` per request).
-- [ ] Implement configuration use cases: create/update/delete `ModelDeployment`, add/update/remove `Endpoint`,
+- [x] Implement configuration use cases: create/update/delete `ModelDeployment`, add/update/remove `Endpoint`,
   set-endpoint-secret command (delegates to `ISecretResolver`, never stores secret material itself); create
   `Consumer` (generates a random API key, persists only its hash, returns the plaintext key once), rotate
   `Consumer` key, revoke `Consumer`.
-- [ ] Implement usage query use case (filter by deployment name, consumer name, operation type, and date range,
+- [x] Implement usage query use case (filter by deployment name, consumer name, operation type, and date range,
   paged). Add FluentValidation validators for all commands (unique name, valid URL, valid priority, enum values).
-- [ ] Unit tests (`AiProxy.Application.Tests`) for every use case with mocked ports (NSubstitute), including
+- [x] Unit tests (`AiProxy.Application.Tests`) for every use case with mocked ports (NSubstitute), including
   validation failure paths, consumer create/rotate/revoke/authenticate behavior, and extractor-resolver dispatch
   (right extractor chosen per `ApiFamily`+`OperationType`, sensible failure when none registered).
 
