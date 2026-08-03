@@ -475,23 +475,27 @@ configurable migration/break-glass fallback and is disabled by default after mig
 continue to use Consumer API keys.
 
 OIDC-backed inference resolves the authenticated identity to a `Consumer`. API-key Consumers have an API-key hash
-and no OIDC identity; OIDC Consumers have an immutable normalized `(issuer, subject)` pair and no API-key hash. The
+and no OIDC identity; OIDC Consumers have an immutable canonical issuer plus exact, case-sensitive, opaque `sub`
+pair and no API-key hash. The
 database enforces this exclusive choice and uniqueness of `(issuer, subject)`. The configured username claim is
 required as mutable display/chargeback metadata, not identity. First inference atomically provisions the OIDC
 Consumer. A username collision with another identity is rejected explicitly and never merged or silently suffixed.
 Local disable/revoke remains a kill switch but does not revoke the upstream provider account.
 
 The session cookie is `Secure`, `HttpOnly`, host-scoped, and uses the strictest `SameSite` mode compatible with the
-OIDC callback. Session fixation is prevented by issuing a new ticket after a validated callback. Unsafe
+OIDC callback. Its configured lifetime is absolute rather than sliding so an active or stolen administrator session
+cannot renew indefinitely. Session fixation is prevented by issuing a new ticket after a validated callback. Unsafe
 cookie-authenticated requests require an antiforgery cookie/header pair; API-key requests remain header-authenticated
 and do not use browser CSRF mechanics. API requests return `401`/`403` instead of HTML redirects. Login return paths
-are restricted to validated same-origin relative paths. Authentication material and raw claim sets are redacted
+are restricted to validated same-origin relative paths. Login, logout, and Realtime ticket requests reject
+cross-origin `Origin`/Fetch Metadata values. Authentication material and raw claim sets are redacted
 from logs, telemetry, browser history, and error responses.
 
 Native browser WebSockets cannot set authentication headers, so the Voice Playground exchanges its authenticated
 session for a cryptographically random, short-lived, single-use ticket. Only the ticket appears in the WebSocket
 query string; its hash, Consumer identity, route binding, expiry, and consumption state are stored server-side and
-consumed atomically before upgrade. Existing Consumer API-key header/query behavior remains for non-frontend clients.
+consumed atomically before upgrade. Browser handshakes with an `Origin` must match the request origin; an absent
+`Origin` remains valid for non-browser clients. Existing Consumer API-key header/query behavior remains for them.
 
 `AiProxy.AppHost` is the only deploy-time configuration owner. It binds provider-neutral `Authentication:Oidc`
 settings, resolves the client credential from an Aspire secret parameter, and forwards only required values to the
@@ -505,9 +509,13 @@ endpoints. One authority/issuer and client are supported per running deployment.
   - `api` (the .NET 10 API project resource)
   - `postgres` (official `postgres` image, with a named volume)
   - `vault` (official `hashicorp/vault` image, dev mode for local, config-file mode for anything shared)
+  - `keycloak` (pinned Keycloak 26.3.1 image with the development-only `ai-proxy-local` realm and `proxy-admin`)
   - the **Aspire dashboard**, which receives OTLP traces/metrics/logs from the API via service-discovery-injected
     `OTEL_EXPORTER_OTLP_ENDPOINT`.
   - `AiProxy.ServiceDefaults` wires health checks, resilience, and OpenTelemetry consistently for the API project.
+  Postgres, Vault, and Keycloak use Aspire persistent container lifetimes. Postgres and Keycloak use named data
+  volumes. Dev-mode Vault stores secrets in memory: persistence keeps that container alive across AppHost restarts,
+  but deleting/recreating it or restarting Docker does not preserve its secret data.
 - **Container-only (no Aspire)**: `docker-compose.yml` at the repo root stands up the same three containers for
   environments where Aspire isn't used (e.g. CI, or a simple `docker compose up` for manual testing), with an
   external OTLP collector endpoint configurable via env var.

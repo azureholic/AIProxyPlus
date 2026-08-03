@@ -13,6 +13,8 @@ public sealed class AiProxyDbContext(DbContextOptions<AiProxyDbContext> options)
 
     public DbSet<SessionAffinityEntry> SessionAffinityEntries => Set<SessionAffinityEntry>();
 
+    public DbSet<RealtimeTicket> RealtimeTickets => Set<RealtimeTicket>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AiProxyDbContext).Assembly);

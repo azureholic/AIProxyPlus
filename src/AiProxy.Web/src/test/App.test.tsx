@@ -5,8 +5,13 @@ import App from '../App';
 
 describe('App shell + navigation', () => {
   beforeEach(() => {
-    // Model Deployments/Consumers fetch on mount — stub fetch so this suite tests navigation, not data loading.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 })));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const path = input.toString();
+      const body = path === '/api/v1/auth/session'
+        ? { authenticated: true, username: 'proxy-admin', issuer: 'http://localhost:8080/realms/ai-proxy' }
+        : [];
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    }));
   });
 
   afterEach(() => {
@@ -30,9 +35,9 @@ describe('App shell + navigation', () => {
       ['Images', 'Generate'],
       ['Voice', 'Connect'],
       ['Usage', 'Apply filters'],
-      ['Settings', /placeholder for real authentication/],
+      ['Settings', 'proxy-admin'],
     ] as const) {
-      await user.click(screen.getByText(navLabel));
+      await user.click(await screen.findByText(navLabel));
       expect(await screen.findByText(pageBodyText)).toBeInTheDocument();
     }
   });

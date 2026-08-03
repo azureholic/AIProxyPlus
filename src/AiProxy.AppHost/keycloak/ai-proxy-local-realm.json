@@ -1,0 +1,56 @@
+{
+  "realm": "ai-proxy-local",
+  "enabled": true,
+  "displayName": "AI Proxy Local Development",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 28800,
+  "clients": [
+    {
+      "clientId": "ai-proxy-web",
+      "name": "AI Proxy Web",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${AI_PROXY_OIDC_CLIENT_SECRET}",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/signin-oidc",
+        "http://localhost:5205/signin-oidc",
+        "https://localhost:7194/signin-oidc"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:5205",
+        "https://localhost:7194"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/##http://localhost:5205/##https://localhost:7194/"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"]
+    }
+  ],
+  "users": [
+    {
+      "username": "proxy-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${AI_PROXY_ADMIN_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

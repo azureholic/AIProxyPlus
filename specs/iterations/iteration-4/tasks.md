@@ -1,7 +1,8 @@
 # Iteration 4 — Tasks
 
-Companion to [specs/architecture/architecture.md](../../architecture/architecture.md). This iteration is planning
-only at present: every task below is intentionally unchecked, and no authentication behavior is changed yet.
+Companion to [specs/architecture/architecture.md](../../architecture/architecture.md). Implementation is complete
+for the core OIDC BFF, Consumer identity, frontend session, Realtime ticket, and local AppHost paths. External
+provider conformance and Docker-backed end-to-end verification remain open and are intentionally unchecked below.
 
 ## Motivation
 
@@ -131,65 +132,65 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
 
 ## Phase 1 — API authentication and authorization foundation
 
-- [ ] Add ASP.NET Core OpenID Connect and cookie authentication in `AiProxy.Api` using standards-based
+- [x] Add ASP.NET Core OpenID Connect and cookie authentication in `AiProxy.Api` using standards-based
   discovery/JWKS metadata; bind and validate options at startup, resolve the client secret through the existing
   secret boundary, fail fast on incomplete or unsafe production configuration, and keep all protocol wiring in Api.
-- [ ] Add an `AdminAccess` authorization policy for Config and Usage routes. A valid token from the configured
+- [x] Add an `AdminAccess` authorization policy for Config and Usage routes. A valid token from the configured
   OIDC server session satisfies the policy because every admitted frontend user is an administrator.
-- [ ] Add composite inference authentication: Consumer API Key for non-interactive clients or OIDC server session
+- [x] Add composite inference authentication: Consumer API Key for non-interactive clients or OIDC server session
   for frontend users. Both paths must produce one shared authenticated-caller result containing Consumer ID and
   name before routing begins; inference API keys must not satisfy `AdminAccess`.
-- [ ] Introduce an Application-layer OIDC Consumer resolver keyed by normalized issuer + subject. Keep ASP.NET
+- [x] Introduce an Application-layer OIDC Consumer resolver keyed by normalized issuer + subject. Keep ASP.NET
   `ClaimsPrincipal` and claim parsing in the Api/Infrastructure boundary.
-- [ ] Extend `Consumer` and persistence to distinguish API-key and OIDC identities: API-key hash is required only
+- [x] Extend `Consumer` and persistence to distinguish API-key and OIDC identities: API-key hash is required only
   for API-key Consumers; OIDC issuer/subject are required and unique only for OIDC Consumers. Add an EF migration
   and preserve existing API-key Consumer rows without data rewriting.
-- [ ] Implement race-safe just-in-time OIDC Consumer creation and lookup. Resolve concurrent first requests to one
+- [x] Implement race-safe just-in-time OIDC Consumer creation and lookup. Resolve concurrent first requests to one
   row, reject username collisions without identity merging, and preserve `Enabled` as a local kill switch.
-- [ ] Update Consumer config responses and UI to show authentication type. Disable key rotation for OIDC Consumers;
+- [x] Update Consumer config responses and UI to show authentication type. Disable key rotation for OIDC Consumers;
   revocation/disable behavior must not pretend to revoke the upstream OIDC account.
-- [ ] Replace `AdminAuthEndpointFilter` with policy-based composition where practical without changing route
+- [x] Replace `AdminAuthEndpointFilter` with policy-based composition where practical without changing route
   behavior beyond the configured cookie/Admin API Key migration schemes.
-- [ ] Keep Admin API Key fallback behind an explicit configuration switch; use a separate authentication scheme
+- [x] Keep Admin API Key fallback behind an explicit configuration switch; use a separate authentication scheme
   and policy composition so cookie and API-key behavior can be tested independently.
-- [ ] Add antiforgery token issuance and validation for cookie-authenticated unsafe HTTP methods, including
+- [x] Add antiforgery token issuance and validation for cookie-authenticated unsafe HTTP methods, including
   Playground inference. API-key requests remain header-authenticated and must not be forced through browser CSRF
   mechanics. Validate allowed `Origin` values for login initiation, logout, and WebSocket ticket flows.
-- [ ] Return standards-correct `401` challenges for missing/invalid tokens and `403` for authenticated callers
+- [x] Return standards-correct `401` challenges for missing/invalid tokens and `403` for authenticated callers
   whose OIDC Consumer is locally disabled. Browser navigation may redirect to login, but API requests must return
   status codes rather than HTML redirects. Return an explicit conflict for unsafe username collisions.
-- [ ] Document cookie session, antiforgery, Admin API Key fallback, and Consumer API Key requirements in OpenAPI
+- [x] Document cookie session, antiforgery, Admin API Key fallback, and Consumer API Key requirements in OpenAPI
   without implying that every scheme is accepted by every route.
 
 ## Phase 2 — Frontend login and session lifecycle
 
-- [ ] Add same-origin login, callback, logout, session-status, and antiforgery endpoints. Keep OIDC configuration,
+- [x] Add same-origin login, callback, logout, session-status, and antiforgery endpoints. Keep OIDC configuration,
   callback processing, tokens, and client credentials on the server; the frontend receives only minimal user and
   session metadata.
-- [ ] Add authenticated app state, loading/error/expired-session states, and restore the intended route after
+- [x] Add authenticated app state, loading/error/expired-session states, and restore the intended route after
   successful login using only validated same-origin return paths.
-- [ ] Replace the Settings page's Admin API Key field with signed-in user/session information. Show the fallback
+- [x] Replace the Settings page's Admin API Key field with signed-in user/session information. Show the fallback
   key control only when migration mode is enabled; remove the Consumer API Key field from the normal frontend flow;
   do not expose or retain provider tokens in browser storage or JavaScript state.
-- [ ] Update the API client to send same-origin credentials and the antiforgery header on unsafe methods, handle
+- [x] Update the API client to send same-origin credentials and the antiforgery header on unsafe methods, handle
   session expiry without retry loops, and redirect to login when reauthentication is required.
-- [ ] Keep the deployment picker backed by the admin-protected model-deployment list. A logged-in administrator can
+- [x] Keep the deployment picker backed by the admin-protected model-deployment list. A logged-in administrator can
   select any enabled deployment and invoke Chat or Images with the same session, without entering a key.
-- [ ] Show the resolved Consumer username in Playground results and usage views so the administrator can verify
+- [x] Show the resolved Consumer username in Playground results and usage views so the administrator can verify
   that inference was attributed to their own identity.
-- [ ] Ensure frontend and server telemetry, error rendering, browser history, and console output never expose
+- [x] Ensure frontend and server telemetry, error rendering, browser history, and console output never expose
   cookies, tokens, client credentials, authorization codes, PKCE verifier values, or raw claim sets.
 
 ## Phase 3 — Realtime browser authentication
 
-- [ ] Add a session-authenticated, antiforgery-protected endpoint that resolves/provisions the OIDC Consumer and issues a cryptographically
+- [x] Add a session-authenticated, antiforgery-protected endpoint that resolves/provisions the OIDC Consumer and issues a cryptographically
   random, single-use, short-lived WebSocket ticket stored only as a hash with Consumer identity and expiry.
-- [ ] Accept the ticket on `/openai/v1/realtime`, consume it atomically before upgrading, and place the resolved
+- [x] Accept the ticket on `/openai/v1/realtime`, consume it atomically before upgrading, and place the resolved
   Consumer ID/name into the same routing context as HTTP inference. Reject reuse, expiry, wrong route, malformed
   tickets, API-key Consumers, and disabled Consumers.
-- [ ] Update the Voice Playground to request a ticket immediately before opening the WebSocket and pass only that
+- [x] Update the Voice Playground to request a ticket immediately before opening the WebSocket and pass only that
   ticket in the query string.
-- [ ] Keep the existing Consumer API Key query fallback for non-frontend compatibility, with header precedence;
+- [x] Keep the existing Consumer API Key query fallback for non-frontend compatibility, with header precedence;
   never permit session cookies or provider tokens to be copied into WebSocket query strings.
 
 ## Phase 4 — Tests and security verification
@@ -213,7 +214,7 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
   Chat/Images inference, Realtime ticket inference, username attribution, logout, and unauthenticated redirect.
 - [ ] Publish and exercise a provider-onboarding conformance checklist that operators can run against their chosen
   provider without source changes. Keep CI deterministic with Keycloak; do not make CI depend on a cloud tenant.
-- [ ] Run the focused test projects first, then `dotnet test AiProxy.sln`, `npm test`, and `npm run build`; include
+- [x] Run the focused test projects first, then `dotnet test AiProxy.sln`, `npm test`, and `npm run build`; include
   architecture tests because authentication responsibilities and dependencies cross Api/Application/Infrastructure.
 - [ ] Perform a security review before enabling session authentication by default, including dependency audit and
   inspection of application, reverse-proxy, and browser logs for credential leakage, CSRF, cookie scope, session
@@ -221,7 +222,7 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
 
 ## Phase 5 — Deployment and documentation
 
-- [ ] Add a vendor-neutral provider example to `src/AiProxy.AppHost/appsettings.json` using this intended shape
+- [x] Add a vendor-neutral provider example to `src/AiProxy.AppHost/appsettings.json` using this intended shape
   (illustrative values only; the task implementation may refine names once the options type is finalized):
 
   ```json
@@ -244,38 +245,38 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
   Keep the actual client secret in an Aspire secret parameter/user secret, never in JSON. Add capability-based
   recipes for ID-token username claims, UserInfo fallback, optional provider logout, and validated additional
   authorization parameters without introducing vendor-specific configuration sections.
-- [ ] Bind and validate `Authentication:Oidc` in AppHost, then map it explicitly to the API resource using .NET
+- [x] Bind and validate `Authentication:Oidc` in AppHost, then map it explicitly to the API resource using .NET
   configuration environment-variable names such as `Authentication__Oidc__Authority`,
   `Authentication__Oidc__ClientId`, `Authentication__Oidc__Scopes__0`, and
   `Authentication__Oidc__UsernameClaim`. Resolve `ClientSecretParameter` to the secret value and pass that value as
   `Authentication__Oidc__ClientSecret`; never forward the parameter name as though it were a credential.
-- [ ] Keep environment propagation least-privileged: only the API receives OIDC authority, client ID, client
+- [x] Keep environment propagation least-privileged: only the API receives OIDC authority, client ID, client
   secret, scopes, claim mapping, and callback settings. The frontend receives no provider configuration or secret;
   under the BFF design it calls same-origin login/session/antiforgery endpoints. If future frontend runtime settings
   are needed, AppHost must supply them through its resource environment and an explicit runtime-config mechanism,
   not through duplicated `AiProxy.Web` configuration files or Vite build-time constants.
-- [ ] Add a pinned Keycloak container to `AiProxy.AppHost` for local OIDC testing. Run it in development/import
+- [x] Add a pinned Keycloak container to `AiProxy.AppHost` for local OIDC testing. Run it in development/import
   mode, expose a stable HTTP endpoint, persist its data in a named volume, use
   `WithLifetime(ContainerLifetime.Persistent)`, and make the API wait for Keycloak readiness. Pass Keycloak's
   issuer/authority, client ID, and server-side client-secret reference to the API from the same source so
   AppHost-assigned endpoints do not drift from OIDC configuration.
-- [ ] Add an importable `ai-proxy-local` development realm configuration containing:
+- [x] Add an importable `ai-proxy-local` development realm configuration containing:
   - a confidential `ai-proxy-web` client using Authorization Code flow + PKCE (`S256`), with direct-access grants,
     implicit flow, and service accounts disabled and client authentication enabled;
   - exact local callback and post-logout redirect URIs for both the Vite proxy development path and the SPA served
     by `AiProxy.Api`, with no wildcard origins or redirects;
   - ID-token claims `iss`, `aud`, `sub`, and `preferred_username` satisfying the generic validation contract; and
   - short development ID-token and application-session lifetimes suitable for exercising expiry behavior.
-- [ ] Supply the local Keycloak client credential through an Aspire secret parameter/user secret or idempotent
+- [x] Supply the local Keycloak client credential through an Aspire secret parameter/user secret or idempotent
   post-import bootstrap, never in committed realm JSON. Verify rotation by changing the secret source without
   rebuilding the frontend.
-- [ ] Seed one enabled local user named `proxy-admin`. Supply its initial development-only password through a
+- [x] Seed one enabled local user named `proxy-admin`. Supply its initial development-only password through a
   secret Aspire parameter/user secret or a post-import bootstrap command, not in the committed realm JSON. Require
   no password change on first login so the account can immediately access the frontend, make Config/Usage changes,
   select any model in the Playground, and run session-authenticated inference attributed to Consumer
   `proxy-admin`. Document the local username and how to set/reset the password; label the account as development
   only and never reuse its credentials outside local testing.
-- [ ] Make Keycloak bootstrap idempotent: a fresh environment imports the realm and creates `proxy-admin`; an
+- [x] Make Keycloak bootstrap idempotent: a fresh environment imports the realm and creates `proxy-admin`; an
   existing persistent Keycloak volume is reused without duplicate users/clients or overwriting a deliberately
   changed password. Document an explicit reset procedure that removes only the local Keycloak volume and then
   reimports the realm.
@@ -291,12 +292,12 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
   memory. Either document that Vault data survives only while the persistent container itself exists, or switch
   local Vault to a file-storage configuration if secrets must also survive container deletion/recreation and Docker
   restarts.
-- [ ] Update container and reverse-proxy guidance for HTTPS, forwarded headers, exact redirect URIs, issuer URL
+- [x] Update container and reverse-proxy guidance for HTTPS, forwarded headers, exact redirect URIs, issuer URL
   reachability, discovery/JWKS caching, and key rotation.
-- [ ] Update `README.md` with login setup, provider registration and user-admission checklists, username-claim
+- [x] Update `README.md` with login setup, provider registration and user-admission checklists, username-claim
   selection, OIDC Consumer lifecycle/collision handling, migration from Admin API Key, API-key client coexistence,
   the provider conformance check, and troubleshooting for issuer/client/callback/claim/cookie mismatches.
-- [ ] Update `specs/architecture/architecture.md`, the relevant draw.io sources/exports, API surface, security
+- [x] Update `specs/architecture/architecture.md`, the relevant draw.io sources/exports, API surface, security
   boundaries, data model, frontend auth section, assumptions, and non-goals to reflect implemented behavior.
 - [ ] Mark this task plan complete only after the provider compatibility matrix and all required validation pass.
 

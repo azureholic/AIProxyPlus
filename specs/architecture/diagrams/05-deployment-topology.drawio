@@ -18,11 +18,15 @@
       <mxGeometry x="380" y="240" width="140" height="90" as="geometry" />
     </mxCell>
     <mxCell id="dash" value="Aspire Dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
-      <mxGeometry x="620" y="255" width="140" height="60" as="geometry" />
+      <mxGeometry x="620" y="275" width="140" height="60" as="geometry" />
+    </mxCell>
+    <mxCell id="keycloak" value="Keycloak 26.3.1&#10;ai-proxy-local realm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+      <mxGeometry x="620" y="120" width="140" height="70" as="geometry" />
     </mxCell>
 
     <mxCell id="e1" value="Npgsql" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="api" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="e2" value="VaultSharp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="api" target="vault"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e3" value="OTLP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="api" target="dash"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e3" value="OTLP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.8;entryX=0;entryY=0.5;" edge="1" parent="1" source="api" target="dash"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="575" y="148" /><mxPoint x="575" y="305" /></Array></mxGeometry></mxCell>
+    <mxCell id="e4" value="OIDC discovery + callback" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="api" target="keycloak"><mxGeometry relative="1" as="geometry" /></mxCell>
   </root>
 </mxGraphModel>

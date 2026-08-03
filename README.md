@@ -36,8 +36,21 @@ phase-by-phase build log in [specs/iterations/iteration-1/tasks.md](specs/iterat
 dotnet run --project src/AiProxy.AppHost
 ```
 
-This starts Postgres and a dev-mode Vault container, then the API, and prints an Aspire dashboard URL
-(traces/metrics/logs for every service). On first run:
+This starts persistent Postgres, dev-mode Vault, and Keycloak containers, then the API, and prints an Aspire
+dashboard URL (traces/metrics/logs for every service). Before the first run, set the local OIDC secrets:
+
+```powershell
+dotnet user-secrets set "Parameters:oidc-client-secret" "<random-development-secret>" --project src/AiProxy.AppHost
+dotnet user-secrets set "Parameters:keycloak-admin-password" "<local-keycloak-admin-password>" --project src/AiProxy.AppHost
+dotnet user-secrets set "Parameters:proxy-admin-password" "<local-proxy-admin-password>" --project src/AiProxy.AppHost
+```
+
+Open the API or Vite URL and sign in to the `ai-proxy-local` realm as the development-only user `proxy-admin`.
+Keycloak imports the realm only into a fresh `keycloak-data` volume; later starts reuse it without overwriting
+changed credentials. To reset only local identity data, remove the `keycloak-data` Docker volume and restart the
+AppHost. Never reuse these development credentials outside local testing.
+
+On first run:
 
 - The database schema is **not** auto-migrated — apply it once with:
   ```powershell
@@ -48,6 +61,11 @@ This starts Postgres and a dev-mode Vault container, then the API, and prints an
   (`No admin API key existed in the secret store; generated a new one...`) — save it, it can't be retrieved
   again (only its hash is stored).
 - `GET /health/live` is always healthy; `GET /health/ready` reports Postgres/Vault reachability individually.
+
+Aspire keeps the Postgres, Vault, and Keycloak containers running across AppHost restarts. Postgres and Keycloak
+also use named storage volumes. Vault runs in dev mode and stores secrets in memory, so its data survives an
+AppHost restart only while that persistent container still exists; deleting/recreating the container or restarting
+Docker loses those dev-mode secrets.
 
 ### Option B — Docker Compose
 
@@ -84,11 +102,38 @@ container as the API — no separate frontend host/deployment.
   ```
   Open the printed Vite URL (not the API's own port) — `vite.config.ts`'s dev proxy forwards backend calls so
   the frontend never needs its own copy of the auth/CORS story.
-- On first load, open **Settings** and paste an **Admin API Key** (for Config + Usage) and a **Consumer API
-  Key** (for the Playground — create one under Config → Consumers first). Both are kept in the browser tab's
-  `sessionStorage` only; this is a stand-in for real auth, matching the backend's own placeholder admin-key
-  posture (architecture.md §17).
+- On first load, sign in through the configured OIDC provider. React receives only minimal session metadata;
+  provider tokens and the confidential-client credential remain on the server. Config, Usage, Chat, and Images
+  use the encrypted same-origin session. Voice exchanges that session for a 30-second, single-use Realtime ticket.
 - Frontend tests: `cd src/AiProxy.Web && npm test` (Vitest + React Testing Library).
+
+## OIDC provider setup
+
+AI Proxy uses generic OIDC discovery and a server-side Authorization Code + PKCE flow. Register one confidential
+web client per deployment with exact callback and post-logout URIs. The provider must supply stable `iss` + `sub`,
+the configured client ID in `aud`, and the configured username claim in the ID token or UserInfo response. Restrict
+who may sign in to this client at the provider: every admitted browser user is an AI Proxy administrator.
+
+Configure the provider only in `src/AiProxy.AppHost/appsettings.json`. AppHost resolves
+`ClientSecretParameter` from an Aspire secret parameter and passes `Authentication__Oidc__*` values only to the
+API. The frontend receives no provider settings. `Authority` must be HTTPS except for loopback development,
+`Scopes` must contain `openid`, and `AllowedSigningAlgorithms` is an explicit asymmetric allow-list.
+
+OIDC users become Consumers on their first inference request. Their immutable identity is exact issuer + subject;
+the username claim is mutable display and chargeback metadata. A username collision is rejected rather than merged.
+Disabling an OIDC Consumer blocks local inference but does not disable the upstream identity. OIDC Consumers have no
+Consumer API key and cannot rotate one. External clients continue to authenticate with Consumer API keys.
+
+The static Admin API Key is a disabled-by-default migration/break-glass path. Set
+`Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration. Browser sessions require the
+antiforgery header on unsafe requests; API-key clients do not. Before onboarding another provider, verify discovery,
+exact issuer, confidential Code + PKCE support, JWKS/signing-algorithm overlap, client audience, username source,
+callback URIs, key rotation, session expiry, and optional logout behavior. Providers without discovery/JWKS, stable
+`iss` + `sub`, or a usable username source require a separately designed adapter.
+
+Common failures are usually exact-value mismatches: compare the discovery `issuer`, registered client ID, callback
+URI including scheme/host/port/path, username claim location, and secure-cookie behavior at the TLS-terminating
+proxy. Production reverse proxies must preserve the external HTTPS scheme and host through forwarded headers.
 
 ## Example requests
 

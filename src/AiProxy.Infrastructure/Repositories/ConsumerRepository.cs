@@ -2,6 +2,7 @@ using AiProxy.Application.Abstractions;
 using AiProxy.Domain.Entities;
 using AiProxy.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AiProxy.Infrastructure.Repositories;
 
@@ -13,6 +14,14 @@ public sealed class ConsumerRepository(AiProxyDbContext dbContext) : IConsumerRe
     public Task<Consumer?> GetByApiKeyHashAsync(string apiKeyHash, CancellationToken cancellationToken = default) =>
         dbContext.Consumers.FirstOrDefaultAsync(c => c.ApiKeyHash == apiKeyHash, cancellationToken);
 
+    public Task<Consumer?> GetByOidcIdentityAsync(
+        string oidcIssuer,
+        string oidcSubject,
+        CancellationToken cancellationToken = default) =>
+        dbContext.Consumers.FirstOrDefaultAsync(
+            c => c.OidcIssuer == oidcIssuer && c.OidcSubject == oidcSubject,
+            cancellationToken);
+
     public async Task<IReadOnlyList<Consumer>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await dbContext.Consumers.OrderBy(c => c.Name).ToListAsync(cancellationToken);
 
@@ -23,6 +32,23 @@ public sealed class ConsumerRepository(AiProxyDbContext dbContext) : IConsumerRe
     {
         dbContext.Consumers.Add(consumer);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<bool> TryAddAsync(Consumer consumer, CancellationToken cancellationToken = default)
+    {
+        dbContext.Consumers.Add(consumer);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException exception)
+            when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            dbContext.Entry(consumer).State = EntityState.Detached;
+            return false;
+        }
     }
 
     public async Task UpdateAsync(Consumer consumer, CancellationToken cancellationToken = default)

@@ -32,6 +32,11 @@ public sealed class RotateConsumerKeyHandler(
         var consumer = await repository.GetByNameAsync(command.Name, cancellationToken)
             ?? throw new NotFoundException($"Consumer '{command.Name}' was not found.");
 
+        if (consumer.IsOidc)
+        {
+            throw new ConflictException("OIDC consumers do not have API keys to rotate.");
+        }
+
         var plaintextApiKey = keyGenerator.Generate();
         consumer.RotateKey(hasher.Hash(plaintextApiKey));
 

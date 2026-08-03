@@ -28,6 +28,8 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public FakeConsumerRepository Consumers { get; } = new();
 
+    public FakeRealtimeTicketService RealtimeTickets { get; } = new();
+
     public FakeSecretResolver Secrets { get; } = new();
 
     public Consumer DefaultConsumer { get; }
@@ -46,6 +48,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
     {
         // Development so /openapi/v1.json (and the Scalar UI) are mapped for OpenApiDocument_IsGeneratedSuccessfully.
         builder.UseEnvironment("Development");
+        builder.UseSetting("Authentication:AdminApiKeyFallbackEnabled", "true");
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IModelDeploymentRepository>(Deployments);
@@ -53,6 +56,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             services.AddSingleton<ICredentialProvider, FakeCredentialProvider>();
             services.AddSingleton<IUsageRecordRepository>(UsageRecords);
             services.AddSingleton<IConsumerRepository>(Consumers);
+            services.AddSingleton<IRealtimeTicketService>(RealtimeTickets);
             services.AddSingleton<ISecretResolver>(Secrets);
         });
     }

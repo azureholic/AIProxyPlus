@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using AiProxy.Api.Tests.Infrastructure;
 using FluentAssertions;
 
@@ -102,7 +103,18 @@ public class AuthorizationTests : IDisposable
         var response = await client.GetAsync("/openapi/v1.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("openapi");
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var schemes = body.GetProperty("components").GetProperty("securitySchemes");
+        schemes.TryGetProperty("BrowserSession", out _).Should().BeTrue();
+        schemes.TryGetProperty("AdminApiKey", out _).Should().BeTrue();
+        schemes.TryGetProperty("ConsumerApiKey", out _).Should().BeTrue();
+        schemes.TryGetProperty("RealtimeTicket", out _).Should().BeTrue();
+
+        var configSecurity = body.GetProperty("paths")
+            .GetProperty("/api/v1/config/consumers")
+            .GetProperty("get")
+            .GetProperty("security");
+        configSecurity.EnumerateArray().Any(item => item.TryGetProperty("BrowserSession", out _)).Should().BeTrue();
+        configSecurity.EnumerateArray().Any(item => item.TryGetProperty("AdminApiKey", out _)).Should().BeTrue();
     }
 }

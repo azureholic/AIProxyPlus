@@ -3,6 +3,7 @@ using AiProxy.Application.Abstractions;
 using AiProxy.Application.Consumers;
 using AiProxy.Application.ModelDeployments;
 using AiProxy.Application.Usage;
+using AiProxy.Api.Authentication;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
 using AiProxy.Infrastructure.Observability;
@@ -15,14 +16,22 @@ using AiProxy.Infrastructure.Usage;
 using Azure.Core;
 using Azure.Identity;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Enrichers.Span;
 using VaultSharp;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var oidcOptions = builder.Configuration.GetSection(OidcAuthenticationOptions.SectionName)
+    .Get<OidcAuthenticationOptions>() ?? new OidcAuthenticationOptions();
+oidcOptions.Validate();
 
 builder.AddServiceDefaults();
 
@@ -108,6 +117,70 @@ builder.Services.AddSingleton(sp =>
         .GetAwaiter().GetResult());
 builder.Services.AddSingleton<IApiKeyGenerator, ApiKeyGenerator>();
 builder.Services.AddScoped<IConsumerAuthenticator, ConsumerAuthenticator>();
+builder.Services.AddScoped<IOidcConsumerResolver, OidcConsumerResolver>();
+builder.Services.AddScoped<IRealtimeTicketService, RealtimeTicketService>();
+
+var authentication = builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+    {
+        options.Cookie.Name = "__Host-AiProxy.Session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.SlidingExpiration = false;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(oidcOptions.SessionLifetimeMinutes);
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, AdminApiKeyAuthenticationHandler>(
+        AdminApiKeyAuthenticationHandler.SchemeName,
+        _ => { });
+
+if (oidcOptions.Enabled)
+{
+    authentication.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+    {
+        options.Authority = oidcOptions.Authority.TrimEnd('/');
+        options.ClientId = oidcOptions.ClientId;
+        options.ClientSecret = oidcOptions.ClientSecret;
+        options.ResponseType = "code";
+        options.UsePkce = true;
+        options.MapInboundClaims = false;
+        options.GetClaimsFromUserInfoEndpoint = oidcOptions.GetClaimsFromUserInfo;
+        options.CallbackPath = oidcOptions.CallbackPath;
+        options.SignedOutCallbackPath = oidcOptions.SignedOutCallbackPath;
+        options.SaveTokens = false;
+        options.Scope.Clear();
+        foreach (var scope in oidcOptions.Scopes)
+        {
+            options.Scope.Add(scope);
+        }
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            NameClaimType = oidcOptions.UsernameClaim,
+            ValidAlgorithms = oidcOptions.AllowedSigningAlgorithms,
+        };
+    });
+}
+
+builder.Services.AddAuthorization(options => options.AddPolicy("AdminAccess", policy =>
+{
+    policy.AddAuthenticationSchemes(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        AdminApiKeyAuthenticationHandler.SchemeName);
+    policy.RequireAuthenticatedUser();
+}));
+builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 
 // Configuration REST API use cases (§7.2)
 builder.Services.AddSingleton<IValidator<CreateModelDeploymentCommand>, CreateModelDeploymentValidator>();
@@ -134,7 +207,7 @@ builder.Services.AddScoped<RotateConsumerKeyHandler>();
 builder.Services.AddScoped<RevokeConsumerHandler>();
 builder.Services.AddScoped<QueryUsageRecordsHandler>();
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddDocumentTransformer<AuthenticationOpenApiTransformer>());
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -160,6 +233,8 @@ app.UseSerilogRequestLogging();
 app.UseWebSockets();
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
@@ -170,7 +245,9 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", HealthChecks.CheckReadyAsync);
 
-var ingress = app.MapGroup("").AddEndpointFilter<ConsumerAuthEndpointFilter>();
+var ingress = app.MapGroup("")
+    .AddEndpointFilter<SessionAntiforgeryEndpointFilter>()
+    .AddEndpointFilter<ConsumerAuthEndpointFilter>();
 
 ingress.MapPost("/openai/v1/chat/completions", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ChatCompletion, ct));
@@ -195,9 +272,11 @@ ingress.MapGet("/openai/v1/realtime", async (HttpContext ctx, RealtimeProxyServi
     {
         await WriteRoutingFailureAsync(ctx, failure);
     }
-});
+}).AddEndpointFilter<SameOriginEndpointFilter>();
 
-var config = app.MapGroup("/api/v1/config").AddEndpointFilter<AdminAuthEndpointFilter>();
+var config = app.MapGroup("/api/v1/config")
+    .RequireAuthorization("AdminAccess")
+    .AddEndpointFilter<SessionAntiforgeryEndpointFilter>();
 
 config.MapGet("/model-deployments", async (IModelDeploymentRepository repository, CancellationToken ct) =>
     Results.Ok(await repository.GetAllAsync(ct)));
@@ -284,7 +363,7 @@ config.MapDelete("/consumers/{name}", async (string name, RevokeConsumerHandler 
 });
 
 app.MapGroup("/api/v1")
-    .AddEndpointFilter<AdminAuthEndpointFilter>()
+    .RequireAuthorization("AdminAccess")
     .MapGet("/usage", async (
         string? modelDeploymentName, string? consumerName, OperationType? operationType, DateTimeOffset? from, DateTimeOffset? to,
         int? page, int? pageSize, QueryUsageRecordsHandler handler, CancellationToken ct) =>
@@ -292,6 +371,96 @@ app.MapGroup("/api/v1")
         var query = new UsageRecordQuery(modelDeploymentName, consumerName, operationType, from, to, page ?? 1, pageSize ?? 50);
         return Results.Ok(await handler.HandleAsync(query, ct));
     });
+
+var authenticationEndpoints = app.MapGroup("/api/v1/auth");
+
+authenticationEndpoints.MapGet("/session", (HttpContext context) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true)
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(new
+    {
+        authenticated = true,
+        username = context.User.FindFirst(oidcOptions.UsernameClaim)?.Value ?? context.User.Identity.Name,
+        issuer = context.User.FindFirst("iss")?.Value,
+    });
+});
+
+authenticationEndpoints.MapGet("/antiforgery", (HttpContext context, IAntiforgery antiforgery) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true)
+    {
+        return Results.Unauthorized();
+    }
+
+    var tokens = antiforgery.GetAndStoreTokens(context);
+    return Results.Ok(new { token = tokens.RequestToken });
+});
+
+authenticationEndpoints.MapPost("/realtime-ticket", async (
+    HttpContext context,
+    IOidcConsumerResolver consumerResolver,
+    IRealtimeTicketService ticketService,
+    CancellationToken cancellationToken) =>
+{
+    var issuer = context.User.FindFirst("iss")?.Value;
+    var subject = context.User.FindFirst("sub")?.Value;
+    var username = context.User.Identity?.Name;
+    if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(username))
+    {
+        return Results.Unauthorized();
+    }
+
+    var consumer = await consumerResolver.ResolveAsync(
+        new OidcConsumerIdentity(issuer, subject, username),
+        cancellationToken);
+    if (!consumer.Enabled)
+    {
+        return Results.Json(new { error = "This consumer is disabled." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var ticket = await ticketService.IssueAsync(
+        consumer,
+        RealtimeTicketRoutes.OpenAiRealtime,
+        TimeSpan.FromSeconds(30),
+        cancellationToken);
+    return Results.Ok(new RealtimeTicketResponse(ticket, 30));
+})
+    .RequireAuthorization(new Microsoft.AspNetCore.Authorization.AuthorizeAttribute
+    {
+        AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme,
+    })
+    .AddEndpointFilter<SameOriginEndpointFilter>()
+    .AddEndpointFilter<SessionAntiforgeryEndpointFilter>();
+
+authenticationEndpoints.MapGet("/login", (string? returnUrl) =>
+{
+    if (!oidcOptions.Enabled)
+    {
+        return Results.Problem("OIDC authentication is not configured.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var destination = IsSafeReturnUrl(returnUrl) ? returnUrl! : "/";
+    return Results.Challenge(
+        new Microsoft.AspNetCore.Authentication.AuthenticationProperties { RedirectUri = destination },
+        [OpenIdConnectDefaults.AuthenticationScheme]);
+}).AddEndpointFilter<SameOriginEndpointFilter>();
+
+authenticationEndpoints.MapPost("/logout", (string? returnUrl) =>
+{
+    var destination = IsSafeReturnUrl(returnUrl) ? returnUrl! : "/";
+    var schemes = oidcOptions.Enabled
+        ? new[] { CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme }
+        : new[] { CookieAuthenticationDefaults.AuthenticationScheme };
+    return Results.SignOut(
+        new Microsoft.AspNetCore.Authentication.AuthenticationProperties { RedirectUri = destination },
+        schemes);
+})
+    .AddEndpointFilter<SameOriginEndpointFilter>()
+    .AddEndpointFilter<SessionAntiforgeryEndpointFilter>();
 
 // Frontend (Iteration 3, architecture.md §19): a built React app in wwwroot owns "/" and every client-side
 // route via this fallback; falls back to a plain-text hint instead of a bare 404 if it hasn't been built yet.
@@ -346,6 +515,15 @@ static async Task WriteRoutingFailureAsync(HttpContext httpContext, RoutingFailu
     await httpContext.Response.WriteAsJsonAsync(new { error = failure.Message });
 }
 
+static bool IsSafeReturnUrl(string? returnUrl) =>
+    !string.IsNullOrWhiteSpace(returnUrl) &&
+    returnUrl.StartsWith('/') &&
+    !returnUrl.StartsWith("//", StringComparison.Ordinal) &&
+    !returnUrl.Contains('\\');
+
+/// <summary>A short-lived credential for one Realtime WebSocket handshake.</summary>
+sealed record RealtimeTicketResponse(string Ticket, int ExpiresInSeconds);
+
 /// <summary>Probes Postgres/Vault reachability via the registered ports (architecture.md §12).</summary>
 static class HealthChecks
 {
@@ -393,9 +571,21 @@ public sealed record UpdateEndpointBody(int? Priority = null, bool? Enabled = nu
 
 public sealed record SetEndpointSecretBody(string ApiKeyPlaintext);
 
-public sealed record ConsumerResponse(Guid Id, string Name, bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt)
+public sealed record ConsumerResponse(
+    Guid Id,
+    string Name,
+    string AuthenticationType,
+    bool Enabled,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? RevokedAt)
 {
-    public static ConsumerResponse From(Consumer consumer) => new(consumer.Id, consumer.Name, consumer.Enabled, consumer.CreatedAt, consumer.RevokedAt);
+    public static ConsumerResponse From(Consumer consumer) => new(
+        consumer.Id,
+        consumer.Name,
+        consumer.IsOidc ? "oidc" : "apiKey",
+        consumer.Enabled,
+        consumer.CreatedAt,
+        consumer.RevokedAt);
 }
 
 /// <summary>Exposes the top-level program to <c>WebApplicationFactory&lt;Program&gt;</c> in tests.</summary>

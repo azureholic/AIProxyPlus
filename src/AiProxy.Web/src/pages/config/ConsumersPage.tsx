@@ -109,6 +109,7 @@ export function ConsumersPage() {
           <TableHeader>
             <TableRow>
               <TableHeaderCell>Name</TableHeaderCell>
+              <TableHeaderCell>Authentication</TableHeaderCell>
               <TableHeaderCell>Status</TableHeaderCell>
               <TableHeaderCell>Created</TableHeaderCell>
               <TableHeaderCell>Actions</TableHeaderCell>
@@ -120,6 +121,7 @@ export function ConsumersPage() {
                 <TableCell>
                   <TableCellLayout>{consumer.name}</TableCellLayout>
                 </TableCell>
+                <TableCell>{consumer.authenticationType === 'oidc' ? 'OIDC' : 'API key'}</TableCell>
                 <TableCell>
                   <Badge color={consumer.revokedAt ? 'danger' : consumer.enabled ? 'success' : 'warning'}>
                     {consumer.revokedAt ? 'Revoked' : consumer.enabled ? 'Enabled' : 'Disabled'}
@@ -132,7 +134,7 @@ export function ConsumersPage() {
                     icon={<ArrowRotateClockwiseRegular />}
                     aria-label={`Rotate API key for ${consumer.name}`}
                     title="Rotate API key"
-                    disabled={consumer.revokedAt !== null}
+                    disabled={consumer.revokedAt !== null || consumer.authenticationType === 'oidc'}
                     onClick={async () => {
                       try {
                         const result = await rotateConsumerKey(consumer.name);
@@ -152,8 +154,10 @@ export function ConsumersPage() {
                       />
                     }
                     title={`Revoke '${consumer.name}'?`}
-                    message="This immediately invalidates the consumer's API key. Historical usage records are preserved."
-                    confirmLabel="Revoke"
+                    message={consumer.authenticationType === 'oidc'
+                      ? "This disables local access without changing the user's identity-provider account. Historical usage records are preserved."
+                      : "This immediately invalidates the consumer's API key. Historical usage records are preserved."}
+                    confirmLabel={consumer.authenticationType === 'oidc' ? 'Disable' : 'Revoke'}
                     onConfirm={async () => {
                       await revokeConsumer(consumer.name);
                       reload();

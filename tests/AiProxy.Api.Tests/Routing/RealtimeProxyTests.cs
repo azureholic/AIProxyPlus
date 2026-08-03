@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using System.Text;
+using AiProxy.Application.Abstractions;
 using AiProxy.Api.Tests.Infrastructure;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
@@ -83,6 +84,54 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
         _backend1.AcceptedConnectionCount.Should().Be(1);
 
         await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task TicketHandshake_ConsumesTicketOnce_AndRejectsReplay()
+    {
+        var deploymentName = $"realtime-{Guid.NewGuid():N}";
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
+        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
+        _factory.Deployments.Seed(deployment);
+        var consumer = Consumer.CreateOidc(
+            Guid.NewGuid(),
+            "proxy-admin",
+            "https://identity.example.com/realms/ai-proxy",
+            "subject-1");
+        _factory.Consumers.Seed(consumer);
+        var ticket = await _factory.RealtimeTickets.IssueAsync(
+            consumer,
+            RealtimeTicketRoutes.OpenAiRealtime,
+            TimeSpan.FromSeconds(30));
+        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={deploymentName}&ticket={ticket}");
+
+        using (var socket = await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None))
+        {
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+        }
+
+        var replay = async () => await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None);
+        await replay.Should().ThrowAsync<InvalidOperationException>().WithMessage("*401*");
+    }
+
+    [Fact]
+    public async Task TicketHandshake_WhenConsumerDisabled_IsRejectedBeforeUpgrade()
+    {
+        var consumer = Consumer.CreateOidc(
+            Guid.NewGuid(),
+            "disabled-admin",
+            "https://identity.example.com/realms/ai-proxy",
+            "subject-disabled");
+        var ticket = await _factory.RealtimeTickets.IssueAsync(
+            consumer,
+            RealtimeTicketRoutes.OpenAiRealtime,
+            TimeSpan.FromSeconds(30));
+        consumer.Revoke();
+        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model=unused&ticket={ticket}");
+
+        var connect = async () => await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None);
+
+        await connect.Should().ThrowAsync<InvalidOperationException>().WithMessage("*401*");
     }
 
     [Fact]

@@ -56,6 +56,61 @@ public class ConsumerTests
     }
 
     [Fact]
+    public void CreateOidc_SetsExclusiveOidcIdentity()
+    {
+        var consumer = Consumer.CreateOidc(
+            Guid.NewGuid(),
+            "proxy-admin",
+            "https://identity.example.com/realms/ai-proxy/",
+            "subject-1");
+
+        consumer.ApiKeyHash.Should().BeNull();
+        consumer.OidcIssuer.Should().Be("https://identity.example.com/realms/ai-proxy");
+        consumer.OidcSubject.Should().Be("subject-1");
+        consumer.IsOidc.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CreateOidc_WithEmptySubject_Throws(string subject)
+    {
+        var act = () => Consumer.CreateOidc(
+            Guid.NewGuid(),
+            "proxy-admin",
+            "https://identity.example.com/realms/ai-proxy",
+            subject);
+
+        act.Should().Throw<DomainException>().WithMessage("*OidcSubject*");
+    }
+
+    [Fact]
+    public void CreateOidc_PreservesOpaqueSubjectExactly()
+    {
+        var consumer = Consumer.CreateOidc(
+            Guid.NewGuid(),
+            "proxy-admin",
+            "https://identity.example.com/realms/ai-proxy",
+            " subject-1 ");
+
+        consumer.OidcSubject.Should().Be(" subject-1 ");
+    }
+
+    [Fact]
+    public void RotateKey_ForOidcConsumer_Throws()
+    {
+        var consumer = Consumer.CreateOidc(
+            Guid.NewGuid(),
+            "proxy-admin",
+            "https://identity.example.com/realms/ai-proxy",
+            "subject-1");
+
+        var act = () => consumer.RotateKey("hash-2");
+
+        act.Should().Throw<DomainException>().WithMessage("*do not have API keys*");
+    }
+
+    [Fact]
     public void Revoke_DisablesConsumer_And_SetsRevokedAt()
     {
         var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");

@@ -33,7 +33,7 @@ public class ConsumerRepositoryTests(PostgresContainerFixture fixture)
         await new ConsumerRepository(writeContext).AddAsync(consumer);
 
         await using var readContext = fixture.CreateDbContext();
-        var loaded = await new ConsumerRepository(readContext).GetByApiKeyHashAsync(consumer.ApiKeyHash);
+        var loaded = await new ConsumerRepository(readContext).GetByApiKeyHashAsync(consumer.ApiKeyHash!);
 
         loaded.Should().NotBeNull();
         loaded!.Name.Should().Be(consumer.Name);
@@ -47,6 +47,45 @@ public class ConsumerRepositoryTests(PostgresContainerFixture fixture)
         var result = await new ConsumerRepository(dbContext).GetByApiKeyHashAsync($"missing-{Guid.NewGuid():N}");
 
         result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetByOidcIdentityAsync_FindsMatchingConsumer()
+    {
+        var consumer = Consumer.CreateOidc(
+            Guid.NewGuid(),
+            $"user-{Guid.NewGuid():N}",
+            "https://identity.example.com/realms/ai-proxy",
+            $"subject-{Guid.NewGuid():N}");
+
+        await using var writeContext = fixture.CreateDbContext();
+        await new ConsumerRepository(writeContext).AddAsync(consumer);
+
+        await using var readContext = fixture.CreateDbContext();
+        var loaded = await new ConsumerRepository(readContext).GetByOidcIdentityAsync(
+            consumer.OidcIssuer!,
+            consumer.OidcSubject!);
+
+        loaded.Should().NotBeNull();
+        loaded!.Name.Should().Be(consumer.Name);
+        loaded.ApiKeyHash.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AddAsync_WithDuplicateOidcIdentity_ThrowsDueToUniqueIndex()
+    {
+        var issuer = "https://identity.example.com/realms/ai-proxy";
+        var subject = $"subject-{Guid.NewGuid():N}";
+
+        await using var context1 = fixture.CreateDbContext();
+        await new ConsumerRepository(context1).AddAsync(
+            Consumer.CreateOidc(Guid.NewGuid(), $"user-{Guid.NewGuid():N}", issuer, subject));
+
+        await using var context2 = fixture.CreateDbContext();
+        var act = () => new ConsumerRepository(context2).AddAsync(
+            Consumer.CreateOidc(Guid.NewGuid(), $"user-{Guid.NewGuid():N}", issuer, subject));
+
+        await act.Should().ThrowAsync<DbUpdateException>();
     }
 
     [Fact]

@@ -43,6 +43,7 @@ export interface ModelDeployment {
 export interface Consumer {
   id: string;
   name: string;
+  authenticationType: 'apiKey' | 'oidc';
   enabled: boolean;
   createdAt: string;
   revokedAt: string | null;

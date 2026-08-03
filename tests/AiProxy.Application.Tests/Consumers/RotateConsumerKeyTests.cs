@@ -43,4 +43,20 @@ public class RotateConsumerKeyTests
 
         await act.Should().ThrowAsync<NotFoundException>();
     }
+
+    [Fact]
+    public async Task HandleAsync_WithOidcConsumer_ThrowsWithoutGeneratingKey()
+    {
+        var consumer = Consumer.CreateOidc(
+            Guid.NewGuid(),
+            "proxy-admin",
+            "https://identity.example.com/realms/ai-proxy",
+            "subject-1");
+        _repository.GetByNameAsync("proxy-admin", Arg.Any<CancellationToken>()).Returns(consumer);
+
+        var act = () => _handler.HandleAsync(new RotateConsumerKeyCommand("proxy-admin"));
+
+        await act.Should().ThrowAsync<ConflictException>();
+        _keyGenerator.DidNotReceive().Generate();
+    }
 }

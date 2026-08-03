@@ -4,14 +4,12 @@ import {
   Body1,
   Button,
   Card,
-  Field,
-  Input,
   Spinner,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
 import { PageContainer, PageHeader } from '../components/PageLayout';
-import { getAdminApiKey, getConsumerApiKey, setAdminApiKey, setConsumerApiKey } from '../api/settingsStore';
+import { useAuth } from '../auth/AuthContext';
 
 const useStyles = makeStyles({
   card: {
@@ -32,8 +30,7 @@ type ConnectionStatus = 'checking' | 'reachable' | 'unreachable';
 
 export function SettingsPage() {
   const styles = useStyles();
-  const [adminKey, setAdminKeyState] = useState(getAdminApiKey());
-  const [consumerKey, setConsumerKeyState] = useState(getConsumerApiKey());
+  const { session, logout } = useAuth();
   const [status, setStatus] = useState<ConnectionStatus>('checking');
 
   useEffect(() => {
@@ -58,12 +55,6 @@ export function SettingsPage() {
   return (
     <PageContainer>
       <PageHeader title="Settings" />
-      <Body1>
-        These keys are stored only in this browser tab's session storage — they are cleared when the tab
-        closes and are never sent anywhere except this same-origin API. This is a placeholder for real
-        authentication (architecture.md §17).
-      </Body1>
-
       <Card className={styles.card}>
         <div className={styles.status}>
           {status === 'checking' && <Spinner size="tiny" label="Checking API connection…" />}
@@ -71,33 +62,9 @@ export function SettingsPage() {
           {status === 'unreachable' && <Badge color="danger">API unreachable — check the dev proxy/same-origin setup</Badge>}
         </div>
 
-        <Field label="Admin API Key" hint="Used for Config (Model Deployments, Consumers) and the Usage dashboard.">
-          <Input
-            type="password"
-            value={adminKey}
-            onChange={(_, data) => setAdminKeyState(data.value)}
-            placeholder="X-Admin-Api-Key"
-          />
-        </Field>
-
-        <Field label="Consumer API Key" hint="Used for the Playground (chat/images/voice) — create one under Config → Consumers.">
-          <Input
-            type="password"
-            value={consumerKey}
-            onChange={(_, data) => setConsumerKeyState(data.value)}
-            placeholder="X-Api-Key"
-          />
-        </Field>
-
-        <Button
-          appearance="primary"
-          onClick={() => {
-            setAdminApiKey(adminKey);
-            setConsumerApiKey(consumerKey);
-          }}
-        >
-          Save
-        </Button>
+        <Body1>{session?.username}</Body1>
+        <Body1>{session?.issuer}</Body1>
+        <Button onClick={() => void logout()}>Sign out</Button>
       </Card>
     </PageContainer>
   );

@@ -18,6 +18,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': apiDevServerUrl,
+      '/signin-oidc': apiDevServerUrl,
+      '/signout-callback-oidc': apiDevServerUrl,
       // ws: true — /openai/v1/realtime is a WebSocket upgrade (architecture.md §6.5/§9).
       '/openai': { target: apiDevServerUrl, ws: true },
       '/anthropic': apiDevServerUrl,

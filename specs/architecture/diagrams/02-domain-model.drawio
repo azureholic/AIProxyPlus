@@ -15,8 +15,12 @@
       <mxGeometry x="60" y="320" width="340" height="320" as="geometry" />
     </mxCell>
 
-    <mxCell id="cons" value="&lt;b&gt;Consumer&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;Name: string (unique)&lt;br&gt;ApiKeyHash: string (salted hash)&lt;br&gt;Enabled: bool&lt;br&gt;CreatedAt: DateTimeOffset&lt;br&gt;RevokedAt: DateTimeOffset?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
-      <mxGeometry x="440" y="340" width="260" height="170" as="geometry" />
+    <mxCell id="cons" value="&lt;b&gt;Consumer&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;Name: string (unique)&lt;br&gt;ApiKeyHash: string? (API-key identity)&lt;br&gt;OidcIssuer: string? (OIDC identity)&lt;br&gt;OidcSubject: string? (OIDC identity)&lt;br&gt;Enabled: bool&lt;br&gt;CreatedAt: DateTimeOffset&lt;br&gt;RevokedAt: DateTimeOffset?&lt;br&gt;&lt;i&gt;Exactly one identity type&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="440" y="320" width="260" height="230" as="geometry" />
+    </mxCell>
+
+    <mxCell id="rt" value="&lt;b&gt;RealtimeTicket&lt;/b&gt;&lt;hr size=1&gt;TicketHash: string&lt;br&gt;ConsumerId: Guid&lt;br&gt;Route: string&lt;br&gt;ExpiresAt: DateTimeOffset&lt;br&gt;ConsumedAt: DateTimeOffset?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="760" y="600" width="260" height="150" as="geometry" />
     </mxCell>
 
     <mxCell id="sa" value="&lt;b&gt;SessionAffinityEntry&lt;/b&gt;&lt;hr size=1&gt;SessionId: string&lt;br&gt;ModelDeploymentId: Guid&lt;br&gt;EndpointId: Guid&lt;br&gt;LastUsedAt: DateTimeOffset&lt;br&gt;ExpiresAt: DateTimeOffset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
@@ -34,6 +38,9 @@
     </mxCell>
     <mxCell id="e4" value="1 : many" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;startArrow=diamondThin;startFill=1;endArrow=none;labelBackgroundColor=#ffffff;exitX=0;exitY=0.3;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;" edge="1" parent="1" source="cons" target="ur">
       <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e5" value="1 : many" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;startArrow=diamondThin;startFill=1;endArrow=none;labelBackgroundColor=#ffffff;exitX=0.7;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="cons" target="rt">
+      <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="622" y="575" /><mxPoint x="680" y="675" /></Array></mxGeometry>
     </mxCell>
   </root>
 </mxGraphModel>

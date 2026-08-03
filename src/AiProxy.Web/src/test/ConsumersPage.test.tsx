@@ -13,7 +13,7 @@ describe('ConsumersPage', () => {
   });
 
   it('creates a consumer and reveals the plaintext API key exactly once', async () => {
-    const consumer = { id: '1', name: 'my-team', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
+    const consumer = { id: '1', name: 'my-team', authenticationType: 'apiKey', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
         return jsonResponse({ consumer, apiKey: 'sk-plaintext-secret' }, 201);
@@ -39,7 +39,7 @@ describe('ConsumersPage', () => {
   });
 
   it('revokes a consumer only after the confirm dialog is accepted', async () => {
-    const consumer = { id: '1', name: 'my-team', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
+    const consumer = { id: '1', name: 'my-team', authenticationType: 'apiKey', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'DELETE') {
         return jsonResponse({ ...consumer, revokedAt: new Date().toISOString() });
@@ -63,5 +63,22 @@ describe('ConsumersPage', () => {
         expect.objectContaining({ method: 'DELETE' }),
       ),
     );
+  });
+
+  it('shows OIDC consumers without an API key rotation action', async () => {
+    const consumer = {
+      id: '1',
+      name: 'proxy-admin',
+      authenticationType: 'oidc',
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      revokedAt: null,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([consumer])));
+
+    render(<ConsumersPage />);
+
+    expect(await screen.findByText('OIDC')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rotate API key for proxy-admin' })).toBeDisabled();
   });
 });

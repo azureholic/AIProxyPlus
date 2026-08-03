@@ -1,5 +1,3 @@
-import { getAdminApiKey, getConsumerApiKey } from './settingsStore';
-
 /** Thrown for any non-2xx response; carries the backend's own error body/headers (architecture.md §9). */
 export class ApiError extends Error {
   readonly status: number;
@@ -30,24 +28,57 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 /** Same-origin always — the frontend is served by the same host as the API in every deployment target. */
-function buildInit(init: RequestInit | undefined, headerName: string, headerValue: string): RequestInit {
+let antiforgeryToken: string | undefined;
+export const sessionExpiredEvent = 'aiproxy:session-expired';
+
+function isUnsafe(method: string | undefined): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes((method ?? 'GET').toUpperCase());
+}
+
+async function getAntiforgeryToken(): Promise<string> {
+  if (antiforgeryToken) {
+    return antiforgeryToken;
+  }
+
+  const response = await fetch('/api/v1/auth/antiforgery', { credentials: 'include' });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+
+  const body = (await response.json()) as { token: string };
+  antiforgeryToken = body.token;
+  return antiforgeryToken;
+}
+
+async function buildInit(init: RequestInit | undefined): Promise<RequestInit> {
   const headers = new Headers(init?.headers);
-  headers.set(headerName, headerValue);
   if (init?.body !== undefined && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  return { ...init, headers };
+  if (isUnsafe(init?.method)) {
+    headers.set('X-CSRF-TOKEN', await getAntiforgeryToken());
+  }
+
+  return { ...init, headers, credentials: 'include' };
 }
 
-/** Low-level fetch attaching the admin key (Config + Usage routes) — returns the raw Response. */
+async function sessionFetch(path: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(path, await buildInit(init));
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(sessionExpiredEvent));
+  }
+  return response;
+}
+
+/** Config and Usage requests use the same-origin server session. */
 export async function adminFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, buildInit(init, 'X-Admin-Api-Key', getAdminApiKey()));
+  return sessionFetch(path, init);
 }
 
-/** Low-level fetch attaching the consumer key (ingress/playground routes) — returns the raw Response. */
+/** Playground requests resolve the signed-in user to a Consumer on the server. */
 export async function consumerFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, buildInit(init, 'X-Api-Key', getConsumerApiKey()));
+  return sessionFetch(path, init);
 }
 
 async function asJson<T>(response: Response): Promise<T> {

@@ -17,6 +17,13 @@ public sealed class FakeConsumerRepository : IConsumerRepository
     public Task<Consumer?> GetByApiKeyHashAsync(string apiKeyHash, CancellationToken cancellationToken = default) =>
         Task.FromResult(_byName.Values.FirstOrDefault(c => c.ApiKeyHash == apiKeyHash));
 
+    public Task<Consumer?> GetByOidcIdentityAsync(
+        string oidcIssuer,
+        string oidcSubject,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(_byName.Values.FirstOrDefault(
+            c => c.OidcIssuer == oidcIssuer && c.OidcSubject == oidcSubject));
+
     public Task<IReadOnlyList<Consumer>> GetAllAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<Consumer>>(_byName.Values.ToList());
 
@@ -28,6 +35,9 @@ public sealed class FakeConsumerRepository : IConsumerRepository
         _byName[consumer.Name] = consumer;
         return Task.CompletedTask;
     }
+
+    public Task<bool> TryAddAsync(Consumer consumer, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_byName.TryAdd(consumer.Name, consumer));
 
     public Task UpdateAsync(Consumer consumer, CancellationToken cancellationToken = default)
     {

@@ -4,7 +4,7 @@ import { PlugConnectedRegular, PlugDisconnectedRegular, SendRegular } from '@flu
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
 import { DeploymentPicker } from '../../components/DeploymentPicker';
-import { getConsumerApiKey } from '../../api/settingsStore';
+import { adminJson } from '../../api/client';
 
 const useStyles = makeStyles({
   controls: {
@@ -52,26 +52,30 @@ export function VoicePlaygroundPage() {
 
   const appendLog = (line: string) => setLog((prev) => [...prev, `${new Date().toLocaleTimeString()}  ${line}`]);
 
-  const connect = () => {
+  const connect = async () => {
     setError(null);
     setState('connecting');
-    // Browser WebSocket can't set custom headers, so the Consumer key travels as ?api_key= for this one
-    // route (architecture.md §6.5/§13) — the backend falls back to it only when X-Api-Key is absent.
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}/openai/v1/realtime?model=${encodeURIComponent(deployment)}&api_key=${encodeURIComponent(getConsumerApiKey())}`;
-    const socket = new WebSocket(url);
-    socketRef.current = socket;
+    try {
+      const { ticket } = await adminJson<{ ticket: string }>('/api/v1/auth/realtime-ticket', { method: 'POST' });
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${protocol}//${window.location.host}/openai/v1/realtime?model=${encodeURIComponent(deployment)}&ticket=${encodeURIComponent(ticket)}`;
+      const socket = new WebSocket(url);
+      socketRef.current = socket;
 
-    socket.onopen = () => {
-      setState('connected');
-      appendLog('[connected]');
-    };
-    socket.onmessage = (event) => appendLog(`< ${event.data}`);
-    socket.onerror = () => setError(new Error('WebSocket connection failed — check the deployment/API key.'));
-    socket.onclose = (event) => {
+      socket.onopen = () => {
+        setState('connected');
+        appendLog('[connected]');
+      };
+      socket.onmessage = (event) => appendLog(`< ${event.data}`);
+      socket.onerror = () => setError(new Error('WebSocket connection failed.'));
+      socket.onclose = (event) => {
+        setState('disconnected');
+        appendLog(`[closed] code=${event.code}`);
+      };
+    } catch (reason) {
       setState('disconnected');
-      appendLog(`[closed] code=${event.code}`);
-    };
+      setError(reason);
+    }
   };
 
   const disconnect = () => socketRef.current?.close();
@@ -96,7 +100,7 @@ export function VoicePlaygroundPage() {
           {state}
         </Badge>
         {state === 'disconnected' ? (
-          <Button appearance="primary" icon={<PlugConnectedRegular />} disabled={!deployment} onClick={connect}>
+          <Button appearance="primary" icon={<PlugConnectedRegular />} disabled={!deployment} onClick={() => void connect()}>
             Connect
           </Button>
         ) : (

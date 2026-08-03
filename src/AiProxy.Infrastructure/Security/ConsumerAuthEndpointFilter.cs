@@ -1,4 +1,5 @@
 using AiProxy.Application.Abstractions;
+using AiProxy.Application.Consumers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,17 +21,79 @@ public sealed class ConsumerAuthEndpointFilter : IEndpointFilter
     {
         var httpContext = context.HttpContext;
 
-        var apiKey = ResolveApiKey(httpContext);
-        if (apiKey is null)
+        var headerApiKey = ResolveHeaderApiKey(httpContext);
+        if (headerApiKey is not null)
         {
+            return await AuthenticateApiKeyAsync(httpContext, headerApiKey, context, next);
+        }
+
+        if (httpContext.Request.Path.Equals(RealtimeTicketRoutes.OpenAiRealtime))
+        {
+            if (httpContext.Request.Query.TryGetValue("ticket", out var ticketValues) &&
+                ticketValues.Count > 0 &&
+                !string.IsNullOrWhiteSpace(ticketValues[0]))
+            {
+                var ticketService = httpContext.RequestServices.GetRequiredService<IRealtimeTicketService>();
+                var ticketConsumer = await ticketService.ConsumeAsync(
+                    ticketValues[0]!,
+                    RealtimeTicketRoutes.OpenAiRealtime,
+                    httpContext.RequestAborted);
+                if (ticketConsumer is null)
+                {
+                    return Results.Json(new { error = "Invalid, expired, or already consumed Realtime ticket." },
+                        statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                SetConsumer(httpContext, ticketConsumer);
+                return await next(context);
+            }
+
+            var queryApiKey = ResolveQueryApiKey(httpContext);
+            if (queryApiKey is not null)
+            {
+                return await AuthenticateApiKeyAsync(httpContext, queryApiKey, context, next);
+            }
+
             return Results.Json(
-                new { error = "Missing X-Api-Key header (or 'api_key' query parameter for WebSocket routes)." },
+                new { error = "Missing X-Api-Key header, Realtime ticket, or 'api_key' query parameter." },
                 statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        // Resolved per-request (not constructor-injected): this filter instance is built once from the app's
-        // root provider when routes are constructed, so a scoped dependency like IConsumerAuthenticator must
-        // come from the current request's DI scope instead.
+        if (httpContext.User.Identity?.IsAuthenticated == true)
+        {
+            var issuer = httpContext.User.FindFirst("iss")?.Value;
+            var subject = httpContext.User.FindFirst("sub")?.Value;
+            var username = httpContext.User.Identity.Name;
+
+            if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(username))
+            {
+                return Results.Json(new { error = "The authenticated session is missing required identity claims." },
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            var resolver = httpContext.RequestServices.GetRequiredService<IOidcConsumerResolver>();
+            var sessionConsumer = await resolver.ResolveAsync(
+                new OidcConsumerIdentity(issuer, subject, username),
+                httpContext.RequestAborted);
+
+            if (!sessionConsumer.Enabled)
+            {
+                return Results.Json(new { error = "This consumer is disabled." }, statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            SetConsumer(httpContext, sessionConsumer);
+            return await next(context);
+        }
+
+        return Results.Json(new { error = "Missing X-Api-Key header." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    private static async ValueTask<object?> AuthenticateApiKeyAsync(
+        HttpContext httpContext,
+        string apiKey,
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
         var authenticator = httpContext.RequestServices.GetRequiredService<IConsumerAuthenticator>();
         var consumer = await authenticator.AuthenticateAsync(apiKey, httpContext.RequestAborted);
         if (consumer is null)
@@ -38,10 +101,15 @@ public sealed class ConsumerAuthEndpointFilter : IEndpointFilter
             return Results.Json(new { error = "Invalid or revoked API key." }, statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        httpContext.Items[ConsumerIdItemKey] = consumer.Id;
-        httpContext.Items[ConsumerNameItemKey] = consumer.Name;
+        SetConsumer(httpContext, consumer);
 
         return await next(context);
+    }
+
+    private static void SetConsumer(HttpContext httpContext, Domain.Entities.Consumer consumer)
+    {
+        httpContext.Items[ConsumerIdItemKey] = consumer.Id;
+        httpContext.Items[ConsumerNameItemKey] = consumer.Name;
     }
 
     /// <summary>
@@ -50,13 +118,18 @@ public sealed class ConsumerAuthEndpointFilter : IEndpointFilter
     /// other way to authenticate. Query strings can end up in server/proxy access logs, so this is
     /// deliberately a fallback, not the primary mechanism, for every other route.
     /// </summary>
-    private static string? ResolveApiKey(HttpContext httpContext)
+    private static string? ResolveHeaderApiKey(HttpContext httpContext)
     {
         if (httpContext.Request.Headers.TryGetValue("X-Api-Key", out var header) && header.Count > 0 && !string.IsNullOrEmpty(header[0]))
         {
             return header[0];
         }
 
+        return null;
+    }
+
+    private static string? ResolveQueryApiKey(HttpContext httpContext)
+    {
         if (httpContext.Request.Query.TryGetValue("api_key", out var query) && query.Count > 0 && !string.IsNullOrEmpty(query[0]))
         {
             return query[0];
