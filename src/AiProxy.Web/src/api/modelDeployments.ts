@@ -34,6 +34,7 @@ export interface AddEndpointInput {
   authMode: AuthMode;
   apiKeyPlaintext?: string;
   managedIdentityScope?: string;
+  managedIdentityTenantId?: string;
   enabled: boolean;
   timeoutSeconds: number;
   maxRetries: number;
@@ -49,6 +50,7 @@ export function addEndpoint(deploymentName: string, input: AddEndpointInput): Pr
 export interface UpdateEndpointInput {
   baseUrl?: string;
   managedIdentityScope?: string;
+  managedIdentityTenantId?: string;
   priority?: number;
   enabled?: boolean;
   timeoutSeconds?: number;

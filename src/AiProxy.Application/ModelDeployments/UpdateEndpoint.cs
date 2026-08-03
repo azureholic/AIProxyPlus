@@ -13,7 +13,8 @@ public sealed record UpdateEndpointCommand(
     int? Priority = null,
     bool? Enabled = null,
     int? TimeoutSeconds = null,
-    int? MaxRetries = null);
+    int? MaxRetries = null,
+    string? ManagedIdentityTenantId = null);
 
 public sealed class UpdateEndpointValidator : AbstractValidator<UpdateEndpointCommand>
 {
@@ -25,6 +26,10 @@ public sealed class UpdateEndpointValidator : AbstractValidator<UpdateEndpointCo
             .WithMessage("Endpoint.BaseUrl must be an absolute https:// URL (http:// is only allowed for localhost).")
             .When(c => c.BaseUrl is not null);
         RuleFor(c => c.ManagedIdentityScope!).NotEmpty().When(c => c.ManagedIdentityScope is not null);
+        RuleFor(c => c.ManagedIdentityTenantId!)
+            .Must(tenantId => string.IsNullOrWhiteSpace(tenantId) || Guid.TryParse(tenantId, out _))
+            .WithMessage("ManagedIdentityTenantId must be a valid tenant GUID.")
+            .When(c => c.ManagedIdentityTenantId is not null);
         RuleFor(c => c.Priority!.Value).GreaterThanOrEqualTo(1).When(c => c.Priority.HasValue);
         RuleFor(c => c.TimeoutSeconds!.Value).GreaterThanOrEqualTo(1).When(c => c.TimeoutSeconds.HasValue);
         RuleFor(c => c.MaxRetries!.Value).GreaterThanOrEqualTo(0).When(c => c.MaxRetries.HasValue);
@@ -53,6 +58,11 @@ public sealed class UpdateEndpointHandler(
         if (command.ManagedIdentityScope is { } managedIdentityScope)
         {
             endpoint.UpdateManagedIdentityScope(managedIdentityScope);
+        }
+
+        if (command.ManagedIdentityTenantId is not null)
+        {
+            endpoint.UpdateManagedIdentityTenantId(command.ManagedIdentityTenantId);
         }
 
         if (command.Priority is { } priority)

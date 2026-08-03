@@ -16,7 +16,8 @@ public sealed record AddEndpointCommand(
     string? ManagedIdentityScope = null,
     bool Enabled = true,
     int TimeoutSeconds = 100,
-    int MaxRetries = 2);
+    int MaxRetries = 2,
+    string? ManagedIdentityTenantId = null);
 
 public sealed class AddEndpointValidator : AbstractValidator<AddEndpointCommand>
 {
@@ -41,6 +42,15 @@ public sealed class AddEndpointValidator : AbstractValidator<AddEndpointCommand>
             .NotEmpty()
             .WithMessage("A ManagedIdentity-mode endpoint requires ManagedIdentityScope.")
             .When(c => c.AuthMode == AuthMode.ManagedIdentity);
+
+        RuleFor(c => c.ManagedIdentityTenantId)
+            .Must(tenantId => string.IsNullOrWhiteSpace(tenantId) || Guid.TryParse(tenantId, out _))
+            .WithMessage("ManagedIdentityTenantId must be a valid tenant GUID.");
+
+        RuleFor(c => c.ManagedIdentityTenantId)
+            .Empty()
+            .WithMessage("ManagedIdentityTenantId is only valid for ManagedIdentity auth mode.")
+            .When(c => c.AuthMode != AuthMode.ManagedIdentity);
     }
 
     internal static bool BeAllowedUrl(string baseUrl)
@@ -86,7 +96,8 @@ public sealed class AddEndpointHandler(
             command.ManagedIdentityScope,
             command.Enabled,
             command.TimeoutSeconds,
-            command.MaxRetries);
+            command.MaxRetries,
+            command.ManagedIdentityTenantId);
 
         deployment.AddEndpoint(endpoint);
         await repository.UpdateAsync(deployment, cancellationToken);

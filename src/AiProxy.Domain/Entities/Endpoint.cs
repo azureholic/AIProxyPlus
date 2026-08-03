@@ -14,6 +14,7 @@ public sealed class Endpoint
     public AuthMode AuthMode { get; private set; }
     public string? SecretRef { get; private set; }
     public string? ManagedIdentityScope { get; private set; }
+    public string? ManagedIdentityTenantId { get; private set; }
     public bool Enabled { get; private set; }
     public int TimeoutSeconds { get; private set; }
     public int MaxRetries { get; private set; }
@@ -34,6 +35,7 @@ public sealed class Endpoint
         AuthMode authMode,
         string? secretRef,
         string? managedIdentityScope,
+        string? managedIdentityTenantId,
         bool enabled,
         int timeoutSeconds,
         int maxRetries)
@@ -46,6 +48,7 @@ public sealed class Endpoint
         AuthMode = authMode;
         SecretRef = secretRef;
         ManagedIdentityScope = managedIdentityScope;
+        ManagedIdentityTenantId = managedIdentityTenantId;
         Enabled = enabled;
         TimeoutSeconds = timeoutSeconds;
         MaxRetries = maxRetries;
@@ -63,7 +66,8 @@ public sealed class Endpoint
         string? managedIdentityScope = null,
         bool enabled = true,
         int timeoutSeconds = 100,
-        int maxRetries = 2)
+        int maxRetries = 2,
+        string? managedIdentityTenantId = null)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
@@ -95,6 +99,16 @@ public sealed class Endpoint
             throw new DomainException("A ManagedIdentity-mode endpoint must have a non-empty ManagedIdentityScope.");
         }
 
+        if (authMode != AuthMode.ManagedIdentity && !string.IsNullOrWhiteSpace(managedIdentityTenantId))
+        {
+            throw new DomainException("Only ManagedIdentity-mode endpoints have a ManagedIdentityTenantId.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(managedIdentityTenantId) && !Guid.TryParse(managedIdentityTenantId, out _))
+        {
+            throw new DomainException("Endpoint.ManagedIdentityTenantId must be a valid tenant GUID.");
+        }
+
         return new Endpoint(
             id,
             modelDeploymentId,
@@ -104,6 +118,7 @@ public sealed class Endpoint
             authMode,
             secretRef,
             managedIdentityScope,
+            string.IsNullOrWhiteSpace(managedIdentityTenantId) ? null : managedIdentityTenantId,
             enabled,
             timeoutSeconds,
             maxRetries);
@@ -171,5 +186,20 @@ public sealed class Endpoint
         }
 
         ManagedIdentityScope = managedIdentityScope;
+    }
+
+    public void UpdateManagedIdentityTenantId(string? managedIdentityTenantId)
+    {
+        if (AuthMode != AuthMode.ManagedIdentity)
+        {
+            throw new DomainException("Only ManagedIdentity-mode endpoints have a ManagedIdentityTenantId.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(managedIdentityTenantId) && !Guid.TryParse(managedIdentityTenantId, out _))
+        {
+            throw new DomainException("Endpoint.ManagedIdentityTenantId must be a valid tenant GUID.");
+        }
+
+        ManagedIdentityTenantId = string.IsNullOrWhiteSpace(managedIdentityTenantId) ? null : managedIdentityTenantId;
     }
 }

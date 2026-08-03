@@ -151,4 +151,53 @@ public class EndpointTests
 
         endpoint.ManagedIdentityScope.Should().Be("https://ai.azure.com/.default");
     }
+
+    [Fact]
+    public void Create_WithValidManagedIdentityTenantId_Succeeds()
+    {
+        const string tenantId = "72f988bf-86f1-41af-91ab-2d7cd011db47";
+
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default",
+            managedIdentityTenantId: tenantId);
+
+        endpoint.ManagedIdentityTenantId.Should().Be(tenantId);
+    }
+
+    [Fact]
+    public void Create_WithInvalidManagedIdentityTenantId_Throws()
+    {
+        var act = () => Endpoint.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default",
+            managedIdentityTenantId: "not-a-guid");
+
+        act.Should().Throw<DomainException>().WithMessage("*ManagedIdentityTenantId*");
+    }
+
+    [Fact]
+    public void UpdateManagedIdentityTenantId_WithManagedIdentityEndpoint_UpdatesTenantId()
+    {
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default");
+
+        endpoint.UpdateManagedIdentityTenantId("72f988bf-86f1-41af-91ab-2d7cd011db47");
+
+        endpoint.ManagedIdentityTenantId.Should().Be("72f988bf-86f1-41af-91ab-2d7cd011db47");
+    }
+
+    [Fact]
+    public void UpdateManagedIdentityTenantId_WithEmptyValue_ClearsTenantId()
+    {
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default",
+            managedIdentityTenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47");
+
+        endpoint.UpdateManagedIdentityTenantId(string.Empty);
+
+        endpoint.ManagedIdentityTenantId.Should().BeNull();
+    }
 }

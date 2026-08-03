@@ -334,7 +334,7 @@ config.MapPost("/model-deployments/{name}/endpoints", async (
     var endpoint = await handler.HandleAsync(
         new AddEndpointCommand(
             name, body.BaseUrl, body.ApiFamily, body.Priority, body.AuthMode, body.ApiKeyPlaintext,
-            body.ManagedIdentityScope, body.Enabled, body.TimeoutSeconds, body.MaxRetries),
+            body.ManagedIdentityScope, body.Enabled, body.TimeoutSeconds, body.MaxRetries, body.ManagedIdentityTenantId),
         ct);
     return Results.Created($"/api/v1/config/model-deployments/{name}/endpoints/{endpoint.Id}", endpoint);
 });
@@ -345,7 +345,7 @@ config.MapPut("/model-deployments/{name}/endpoints/{id:guid}", async (
     var endpoint = await handler.HandleAsync(
         new UpdateEndpointCommand(
             name, id, body.BaseUrl, body.ManagedIdentityScope, body.Priority, body.Enabled, body.TimeoutSeconds,
-            body.MaxRetries), ct);
+            body.MaxRetries, body.ManagedIdentityTenantId), ct);
     return Results.Ok(endpoint);
 });
 
@@ -589,7 +589,8 @@ public sealed record AddEndpointBody(
     string? ManagedIdentityScope = null,
     bool Enabled = true,
     int TimeoutSeconds = 100,
-    int MaxRetries = 2);
+    int MaxRetries = 2,
+    string? ManagedIdentityTenantId = null);
 
 public sealed record UpdateEndpointBody(
     string? BaseUrl = null,
@@ -597,7 +598,8 @@ public sealed record UpdateEndpointBody(
     int? Priority = null,
     bool? Enabled = null,
     int? TimeoutSeconds = null,
-    int? MaxRetries = null);
+    int? MaxRetries = null,
+    string? ManagedIdentityTenantId = null);
 
 public sealed record SetEndpointSecretBody(string ApiKeyPlaintext);
 

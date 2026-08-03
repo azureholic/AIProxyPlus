@@ -49,6 +49,7 @@ const emptyNewEndpoint: AddEndpointInput = {
   authMode: 'ApiKey',
   apiKeyPlaintext: '',
   managedIdentityScope: '',
+  managedIdentityTenantId: '',
   enabled: true,
   timeoutSeconds: 100,
   maxRetries: 2,
@@ -68,6 +69,7 @@ export function ModelDeploymentDetailPage() {
   const [editValue, setEditValue] = useState({
     baseUrl: '',
     managedIdentityScope: '',
+    managedIdentityTenantId: '',
     priority: 1,
     enabled: true,
     timeoutSeconds: 100,
@@ -174,12 +176,20 @@ export function ModelDeploymentDetailPage() {
                         </Field>
                       )}
                       {newEndpoint.authMode === 'ManagedIdentity' && (
-                        <Field label="Managed identity scope">
-                          <Input
-                            value={newEndpoint.managedIdentityScope}
-                            onChange={(_, data) => setNewEndpoint({ ...newEndpoint, managedIdentityScope: data.value })}
-                          />
-                        </Field>
+                        <>
+                          <Field label="Managed identity scope">
+                            <Input
+                              value={newEndpoint.managedIdentityScope}
+                              onChange={(_, data) => setNewEndpoint({ ...newEndpoint, managedIdentityScope: data.value })}
+                            />
+                          </Field>
+                          <Field label="Managed identity tenant ID">
+                            <Input
+                              value={newEndpoint.managedIdentityTenantId}
+                              onChange={(_, data) => setNewEndpoint({ ...newEndpoint, managedIdentityTenantId: data.value })}
+                            />
+                          </Field>
+                        </>
                       )}
                       <Field label="Timeout (seconds)">
                         <Input
@@ -263,6 +273,7 @@ export function ModelDeploymentDetailPage() {
                       setEditValue({
                         baseUrl: endpoint.baseUrl,
                         managedIdentityScope: endpoint.managedIdentityScope ?? '',
+                        managedIdentityTenantId: endpoint.managedIdentityTenantId ?? '',
                         priority: endpoint.priority,
                         enabled: endpoint.enabled,
                         timeoutSeconds: endpoint.timeoutSeconds,
@@ -292,12 +303,20 @@ export function ModelDeploymentDetailPage() {
               <Field label="API family"><Input value={editDialogEndpoint?.apiFamily ?? ''} disabled /></Field>
               <Field label="Auth mode"><Input value={editDialogEndpoint?.authMode ?? ''} disabled /></Field>
               {editDialogEndpoint?.authMode === 'ManagedIdentity' && (
-                <Field label="Managed identity scope">
-                  <Input
-                    value={editValue.managedIdentityScope}
-                    onChange={(_, data) => setEditValue(current => ({ ...current, managedIdentityScope: data.value }))}
-                  />
-                </Field>
+                <>
+                  <Field label="Managed identity scope">
+                    <Input
+                      value={editValue.managedIdentityScope}
+                      onChange={(_, data) => setEditValue(current => ({ ...current, managedIdentityScope: data.value }))}
+                    />
+                  </Field>
+                  <Field label="Managed identity tenant ID">
+                    <Input
+                      value={editValue.managedIdentityTenantId}
+                      onChange={(_, data) => setEditValue(current => ({ ...current, managedIdentityTenantId: data.value }))}
+                    />
+                  </Field>
+                </>
               )}
               <Field label="Priority" hint="Endpoints sharing the lowest priority round-robin together.">
                 <Input type="number" value={String(editValue.priority)} onChange={(_, data) => setEditValue(current => ({ ...current, priority: Number(data.value) || 0 }))} />
@@ -331,6 +350,7 @@ export function ModelDeploymentDetailPage() {
                     await updateEndpoint(name, editDialogEndpoint.id, {
                       ...editValue,
                       managedIdentityScope: editDialogEndpoint.authMode === 'ManagedIdentity' ? editValue.managedIdentityScope : undefined,
+                      managedIdentityTenantId: editDialogEndpoint.authMode === 'ManagedIdentity' ? editValue.managedIdentityTenantId : undefined,
                     });
                     setEditDialogEndpoint(null);
                     reload();

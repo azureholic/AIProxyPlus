@@ -187,7 +187,7 @@ exists for future use, but no `IUsageExtractor` reads a Realtime session yet).
 | Table | Purpose | Key columns |
 |---|---|---|
 | `model_deployments` | Routing key + policy | `id`, `name` (unique), `strategy` |
-| `endpoints` | Backend targets per deployment | `id`, `model_deployment_id`, `base_url`, `api_family`, `priority`, `auth_mode`, `secret_ref`, `enabled` |
+| `endpoints` | Backend targets per deployment | `id`, `model_deployment_id`, `base_url`, `api_family`, `priority`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `enabled` |
 | `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), `api_key_hash`, `enabled`, `created_at`, `revoked_at` |
 | `usage_records` | Usage log (append-only) | `id`, `timestamp`, `model_deployment_name`, `consumer_id`, `consumer_name`, `endpoint_id`, `operation_type`, `prompt_tokens?`, `completion_tokens?`, `total_tokens?`, `usage_metrics` (jsonb), `streaming`, `status_code`, `duration_ms` |
 | `session_affinity` | Sticky session map | `session_id`, `model_deployment_id`, `endpoint_id`, `expires_at` |
@@ -219,7 +219,7 @@ schema migration.
 | PUT | `/api/v1/config/model-deployments/{name}` | Update deployment (policy fields) |
 | DELETE | `/api/v1/config/model-deployments/{name}` | Delete deployment (cascades endpoints) |
 | POST | `/api/v1/config/model-deployments/{name}/endpoints` | Add endpoint |
-| PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Update endpoint base URL, managed-identity scope, priority, enabled state, timeout, and retries |
+| PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Update endpoint base URL, managed-identity scope/tenant ID, priority, enabled state, timeout, and retries |
 | DELETE | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Remove endpoint |
 | PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}/secret` | Set/replace the API key (writes to Vault, never returned by GET) |
 | GET | `/api/v1/config/consumers` | List consumers (name, enabled, created/revoked — never the key or its hash) |
@@ -253,8 +253,10 @@ with a well-known root token confined to the dev environment is acceptable.
 - `Endpoint.SecretRef` in Postgres stores only the Vault **path**, never the secret value.
 - `ManagedIdentity`-mode endpoints have no Vault entry; the proxy instead acquires an Entra ID access token via
   `Azure.Identity` (`DefaultAzureCredential`/`ManagedIdentityCredential`) scoped to the target resource
-  (e.g. Azure AI Foundry / Cognitive Services scope) and attaches it as a bearer token. This is the **only**
-  place the solution touches an Azure SDK, and it's opt-in per endpoint.
+  (e.g. Azure AI Foundry / Cognitive Services scope) and attaches it as a bearer token. An endpoint may also
+  specify `ManagedIdentityTenantId` to request the token from the target resource's Entra tenant; when omitted,
+  the credential chain's default tenant behavior is preserved. The tenant ID is configuration, not secret
+  material. This is the **only** place the solution touches an Azure SDK, and it's opt-in per endpoint.
 - Resolved secrets are cached in-memory with a short TTL (e.g. 5 minutes) to avoid a Vault round trip per request,
   and are never logged (Serilog destructuring policies + explicit redaction for auth headers).
 - **Scope note**: Vault holds secrets the proxy must *present outbound* (endpoint credentials, the admin key hash).

@@ -104,6 +104,10 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("ManagedIdentityTenantId")
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)");
+
                     b.Property<int>("MaxRetries")
                         .HasColumnType("integer");
 

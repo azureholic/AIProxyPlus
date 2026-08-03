@@ -65,3 +65,22 @@ deleting and recreating the endpoint.
 - [x] Add an endpoint edit dialog while keeping API-key rotation in its separate write-only flow.
 - [x] Add domain, application, and frontend API-contract regression coverage.
 - [x] Run the full .NET solution in Release configuration, all frontend tests, and the frontend production build.
+
+## Bug 4 — Managed-identity token uses the wrong tenant
+
+### Symptom
+
+Azure rejects an upstream request with `400 Token tenant ... does not match resource tenant` when the local
+developer credential's default tenant differs from the Azure AI resource tenant.
+
+### Root cause and fix
+
+- [x] Confirm managed-identity endpoint configuration contains a resource scope but no tenant selector, so token
+  acquisition inherits the credential chain's default tenant.
+- [x] Add an optional validated `ManagedIdentityTenantId` to the endpoint aggregate, persistence model, create and
+  update contracts, and configuration UI.
+- [x] Pass the configured tenant ID through `TokenRequestContext` while preserving default behavior when omitted.
+- [x] Add domain, application, infrastructure, and frontend API-contract regression coverage.
+- [x] Run the full .NET solution, architecture and persistence tests, frontend tests and production build; apply
+  the migration locally and verify the edit dialog exposes tenant ID while keeping API family and auth mode
+  immutable, then cancel without changing the endpoint.

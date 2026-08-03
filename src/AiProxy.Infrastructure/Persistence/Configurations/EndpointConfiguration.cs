@@ -18,6 +18,7 @@ public sealed class EndpointConfiguration : IEntityTypeConfiguration<Endpoint>
         builder.Property(e => e.Health).HasConversion<string>().HasMaxLength(50);
         builder.Property(e => e.SecretRef).HasMaxLength(500);
         builder.Property(e => e.ManagedIdentityScope).HasMaxLength(500);
+        builder.Property(e => e.ManagedIdentityTenantId).HasMaxLength(36);
 
         // Defense in depth: the domain aggregate already enforces this, but a unique index protects
         // against concurrent writers from multiple proxy instances racing past the in-memory check.

@@ -19,7 +19,10 @@ public sealed class ManagedIdentityCredentialProvider(TokenCredential tokenCrede
         }
 
         var token = await tokenCredential.GetTokenAsync(
-            new TokenRequestContext([endpoint.ManagedIdentityScope]), cancellationToken);
+            new TokenRequestContext(
+                [endpoint.ManagedIdentityScope],
+                tenantId: endpoint.ManagedIdentityTenantId),
+            cancellationToken);
 
         return new EndpointCredential("Authorization", $"Bearer {token.Token}");
     }

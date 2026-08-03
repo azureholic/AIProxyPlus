@@ -22,6 +22,7 @@ describe('model deployments API', () => {
     await updateEndpoint('gpt-5.4-mini', 'endpoint-id', {
       baseUrl: 'https://example.openai.azure.com',
       managedIdentityScope: 'https://ai.azure.com/.default',
+      managedIdentityTenantId: '72f988bf-86f1-41af-91ab-2d7cd011db47',
       priority: 1,
       enabled: true,
       timeoutSeconds: 100,
@@ -33,6 +34,7 @@ describe('model deployments API', () => {
     expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
       baseUrl: 'https://example.openai.azure.com',
       managedIdentityScope: 'https://ai.azure.com/.default',
+      managedIdentityTenantId: '72f988bf-86f1-41af-91ab-2d7cd011db47',
     });
   });
 });

@@ -25,6 +25,7 @@ export interface Endpoint {
   authMode: AuthMode;
   secretRef: string | null;
   managedIdentityScope: string | null;
+  managedIdentityTenantId: string | null;
   enabled: boolean;
   timeoutSeconds: number;
   maxRetries: number;

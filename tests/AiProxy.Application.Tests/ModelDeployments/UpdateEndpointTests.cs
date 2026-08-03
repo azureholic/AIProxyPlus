@@ -93,4 +93,37 @@ public class UpdateEndpointTests
 
         result.ManagedIdentityScope.Should().Be("https://ai.azure.com/.default");
     }
+
+    [Fact]
+    public async Task HandleAsync_WithManagedIdentityTenantId_UpdatesTenantId()
+    {
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-foundry");
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), deployment.Id, "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default");
+        deployment.AddEndpoint(endpoint);
+        _repository.GetByNameAsync(deployment.Name, Arg.Any<CancellationToken>()).Returns(deployment);
+
+        var result = await _handler.HandleAsync(new UpdateEndpointCommand(
+            deployment.Name, endpoint.Id, ManagedIdentityTenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47"));
+
+        result.ManagedIdentityTenantId.Should().Be("72f988bf-86f1-41af-91ab-2d7cd011db47");
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithEmptyManagedIdentityTenantId_ClearsTenantId()
+    {
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-foundry");
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), deployment.Id, "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default",
+            managedIdentityTenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47");
+        deployment.AddEndpoint(endpoint);
+        _repository.GetByNameAsync(deployment.Name, Arg.Any<CancellationToken>()).Returns(deployment);
+
+        var result = await _handler.HandleAsync(new UpdateEndpointCommand(
+            deployment.Name, endpoint.Id, ManagedIdentityTenantId: string.Empty));
+
+        result.ManagedIdentityTenantId.Should().BeNull();
+    }
 }

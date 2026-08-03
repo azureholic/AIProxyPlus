@@ -9,10 +9,12 @@ namespace AiProxy.Infrastructure.Tests.Secrets;
 
 public class ManagedIdentityCredentialProviderTests
 {
-    private static Endpoint NewEndpoint(string? scope = "https://cognitiveservices.azure.com/.default") =>
+    private static Endpoint NewEndpoint(
+        string? scope = "https://cognitiveservices.azure.com/.default",
+        string? tenantId = null) =>
         Endpoint.Create(
             Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
-            AuthMode.ManagedIdentity, managedIdentityScope: scope);
+            AuthMode.ManagedIdentity, managedIdentityScope: scope, managedIdentityTenantId: tenantId);
 
     [Fact]
     public async Task GetCredentialAsync_ReturnsBearerTokenFromCredential()
@@ -42,6 +44,23 @@ public class ManagedIdentityCredentialProviderTests
 
         await tokenCredential.Received(1).GetTokenAsync(
             Arg.Is<TokenRequestContext>(c => c.Scopes.Contains("https://my-scope/.default")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetCredentialAsync_WithTenantId_RequestsTokenForEndpointTenant()
+    {
+        const string tenantId = "72f988bf-86f1-41af-91ab-2d7cd011db47";
+        var tokenCredential = Substitute.For<TokenCredential>();
+        tokenCredential
+            .GetTokenAsync(Arg.Any<TokenRequestContext>(), Arg.Any<CancellationToken>())
+            .Returns(new AccessToken("t", DateTimeOffset.UtcNow.AddHours(1)));
+        var provider = new ManagedIdentityCredentialProvider(tokenCredential);
+
+        await provider.GetCredentialAsync(NewEndpoint(tenantId: tenantId));
+
+        await tokenCredential.Received(1).GetTokenAsync(
+            Arg.Is<TokenRequestContext>(context => context.TenantId == tenantId),
             Arg.Any<CancellationToken>());
     }
 }
