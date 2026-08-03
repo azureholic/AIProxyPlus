@@ -5,7 +5,7 @@ bugs found through live use, their root cause, regression coverage, and validati
 
 ## Bug 1 — Local OIDC username collision after Keycloak reset
 
-### Symptom
+### Observed symptom
 
 Chat, Images, or Realtime ticket provisioning returns `409 Conflict`:
 
@@ -30,3 +30,20 @@ The OIDC username 'proxy-admin' is already assigned to another consumer.
   collision. Browser acceptance reached upstream forwarding; the configured deployment returned a separate
   `404 Not Found`.
 - [x] Run focused architecture tests, the full solution tests, frontend tests, and frontend production build.
+
+## Bug 2 — Structured provider errors render as objects
+
+### Symptom
+
+Chat and Images display `Error [object Object]` when an OpenAI-compatible provider returns a structured error.
+
+### Root cause and fix
+
+- [x] Capture the live response and confirm the provider returned
+  `{"error":{"code":"404","message":"Resource not found"}}`.
+- [x] Extend the shared API error parser to support string errors, OpenAI-compatible structured errors, and
+  Problem Details messages.
+- [x] Route Chat and Images through the shared parser so status, message, headers, and retry metadata are
+  preserved consistently.
+- [x] Add regression coverage and rebuild the frontend static assets.
+- [x] Verify the same live response renders as `Error 404 Resource not found`.

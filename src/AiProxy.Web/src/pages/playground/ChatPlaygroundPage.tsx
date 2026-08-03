@@ -13,7 +13,7 @@ import { SendRegular } from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
 import { DeploymentPicker } from '../../components/DeploymentPicker';
-import { consumerFetch } from '../../api/client';
+import { consumerFetch, toApiError } from '../../api/client';
 import { readSseEvents } from '../../api/sse';
 
 const useStyles = makeStyles({
@@ -82,8 +82,7 @@ export function ChatPlaygroundPage() {
       });
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Request failed with status ${response.status}`);
+        throw await toApiError(response);
       }
 
       if (streaming) {

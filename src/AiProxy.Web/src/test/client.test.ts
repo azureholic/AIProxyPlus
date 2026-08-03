@@ -79,4 +79,19 @@ describe('api client', () => {
       message: 'Model deployment was not found.',
     } satisfies Partial<ApiError>);
   });
+
+  it('surfaces an OpenAI-compatible structured error as a thrown ApiError', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: '404', message: 'Resource not found' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(adminJson('/openai/v1/chat/completions')).rejects.toMatchObject({
+      status: 404,
+      message: 'Resource not found',
+    } satisfies Partial<ApiError>);
+  });
 });

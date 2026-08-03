@@ -11,13 +11,16 @@ export class ApiError extends Error {
   }
 }
 
-async function toApiError(response: Response): Promise<ApiError> {
+export async function toApiError(response: Response): Promise<ApiError> {
   const contentType = response.headers.get('content-type') ?? '';
   if (contentType.includes('application/json')) {
     try {
-      const body = (await response.json()) as { error?: string };
-      if (body.error) {
-        return new ApiError(response.status, body.error, response.headers);
+      const body = (await response.json()) as { error?: string | { message?: string }; detail?: string; title?: string };
+      const message = typeof body.error === 'string'
+        ? body.error
+        : body.error?.message ?? body.detail ?? body.title;
+      if (message) {
+        return new ApiError(response.status, message, response.headers);
       }
     } catch {
       // fall through to the generic message below
