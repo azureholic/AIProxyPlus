@@ -219,7 +219,7 @@ schema migration.
 | PUT | `/api/v1/config/model-deployments/{name}` | Update deployment (policy fields) |
 | DELETE | `/api/v1/config/model-deployments/{name}` | Delete deployment (cascades endpoints) |
 | POST | `/api/v1/config/model-deployments/{name}/endpoints` | Add endpoint |
-| PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Update endpoint (priority, enabled, timeout...) |
+| PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Update endpoint base URL, managed-identity scope, priority, enabled state, timeout, and retries |
 | DELETE | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Remove endpoint |
 | PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}/secret` | Set/replace the API key (writes to Vault, never returned by GET) |
 | GET | `/api/v1/config/consumers` | List consumers (name, enabled, created/revoked — never the key or its hash) |

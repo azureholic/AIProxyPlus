@@ -43,7 +43,7 @@ public sealed class AddEndpointValidator : AbstractValidator<AddEndpointCommand>
             .When(c => c.AuthMode == AuthMode.ManagedIdentity);
     }
 
-    private static bool BeAllowedUrl(string baseUrl)
+    internal static bool BeAllowedUrl(string baseUrl)
     {
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         {

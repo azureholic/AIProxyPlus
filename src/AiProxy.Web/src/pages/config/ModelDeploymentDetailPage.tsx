@@ -25,7 +25,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowLeftRegular, DeleteRegular, KeyRegular } from '@fluentui/react-icons';
+import { AddRegular, ArrowLeftRegular, DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -64,6 +64,15 @@ export function ModelDeploymentDetailPage() {
   const [busy, setBusy] = useState(false);
   const [secretDialogEndpoint, setSecretDialogEndpoint] = useState<Endpoint | null>(null);
   const [secretValue, setSecretValue] = useState('');
+  const [editDialogEndpoint, setEditDialogEndpoint] = useState<Endpoint | null>(null);
+  const [editValue, setEditValue] = useState({
+    baseUrl: '',
+    managedIdentityScope: '',
+    priority: 1,
+    enabled: true,
+    timeoutSeconds: 100,
+    maxRetries: 2,
+  });
 
   const reload = () => {
     if (!name) return;
@@ -249,6 +258,17 @@ export function ModelDeploymentDetailPage() {
                     deploymentName={name}
                     onChanged={reload}
                     onError={setError}
+                    onEdit={() => {
+                      setEditDialogEndpoint(endpoint);
+                      setEditValue({
+                        baseUrl: endpoint.baseUrl,
+                        managedIdentityScope: endpoint.managedIdentityScope ?? '',
+                        priority: endpoint.priority,
+                        enabled: endpoint.enabled,
+                        timeoutSeconds: endpoint.timeoutSeconds,
+                        maxRetries: endpoint.maxRetries,
+                      });
+                    }}
                     onSetSecret={() => {
                       setSecretDialogEndpoint(endpoint);
                       setSecretValue('');
@@ -260,6 +280,71 @@ export function ModelDeploymentDetailPage() {
           )}
         </>
       )}
+
+      <Dialog open={editDialogEndpoint !== null} onOpenChange={(_, data) => !data.open && setEditDialogEndpoint(null)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Edit endpoint</DialogTitle>
+            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="Base URL">
+                <Input value={editValue.baseUrl} onChange={(_, data) => setEditValue(current => ({ ...current, baseUrl: data.value }))} />
+              </Field>
+              <Field label="API family"><Input value={editDialogEndpoint?.apiFamily ?? ''} disabled /></Field>
+              <Field label="Auth mode"><Input value={editDialogEndpoint?.authMode ?? ''} disabled /></Field>
+              {editDialogEndpoint?.authMode === 'ManagedIdentity' && (
+                <Field label="Managed identity scope">
+                  <Input
+                    value={editValue.managedIdentityScope}
+                    onChange={(_, data) => setEditValue(current => ({ ...current, managedIdentityScope: data.value }))}
+                  />
+                </Field>
+              )}
+              <Field label="Priority" hint="Endpoints sharing the lowest priority round-robin together.">
+                <Input type="number" value={String(editValue.priority)} onChange={(_, data) => setEditValue(current => ({ ...current, priority: Number(data.value) || 0 }))} />
+              </Field>
+              <Field label="Timeout (seconds)">
+                <Input type="number" value={String(editValue.timeoutSeconds)} onChange={(_, data) => setEditValue(current => ({ ...current, timeoutSeconds: Number(data.value) || 0 }))} />
+              </Field>
+              <Field label="Max retries">
+                <Input type="number" value={String(editValue.maxRetries)} onChange={(_, data) => setEditValue(current => ({ ...current, maxRetries: Number(data.value) || 0 }))} />
+              </Field>
+              <Switch checked={editValue.enabled} onChange={(_, data) => setEditValue(current => ({ ...current, enabled: data.checked }))} label="Enabled" />
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setEditDialogEndpoint(null)}>Cancel</Button>
+              <Button
+                appearance="primary"
+                disabled={
+                  busy ||
+                  !editValue.baseUrl.trim() ||
+                  editValue.priority < 1 ||
+                  editValue.timeoutSeconds < 1 ||
+                  editValue.maxRetries < 0 ||
+                  (editDialogEndpoint?.authMode === 'ManagedIdentity' && !editValue.managedIdentityScope.trim())
+                }
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+                onClick={async () => {
+                  if (!editDialogEndpoint) return;
+                  setBusy(true);
+                  setError(null);
+                  try {
+                    await updateEndpoint(name, editDialogEndpoint.id, {
+                      ...editValue,
+                      managedIdentityScope: editDialogEndpoint.authMode === 'ManagedIdentity' ? editValue.managedIdentityScope : undefined,
+                    });
+                    setEditDialogEndpoint(null);
+                    reload();
+                  } catch (err) {
+                    setError(err);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >Save changes</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       <Dialog open={secretDialogEndpoint !== null} onOpenChange={(_, data) => !data.open && setSecretDialogEndpoint(null)}>
         <DialogSurface>
@@ -307,12 +392,14 @@ function EndpointRow({
   deploymentName,
   onChanged,
   onError,
+  onEdit,
   onSetSecret,
 }: {
   endpoint: Endpoint;
   deploymentName: string;
   onChanged: () => void;
   onError: (error: unknown) => void;
+  onEdit: () => void;
   onSetSecret: () => void;
 }) {
   return (
@@ -344,7 +431,16 @@ function EndpointRow({
       <TableCell>{endpoint.timeoutSeconds}s</TableCell>
       <TableCell>{endpoint.maxRetries}</TableCell>
       <TableCell>
-        <Button appearance="subtle" icon={<KeyRegular />} onClick={onSetSecret} title="Set / replace API key" />
+        <Button appearance="subtle" icon={<EditRegular />} title="Edit endpoint" aria-label="Edit endpoint" onClick={onEdit} />
+        {endpoint.authMode === 'ApiKey' && (
+          <Button
+            appearance="subtle"
+            icon={<KeyRegular />}
+            onClick={onSetSecret}
+            title="Set / replace API key"
+            aria-label="Set / replace API key"
+          />
+        )}
         <ConfirmDialog
           trigger={<Button appearance="subtle" icon={<DeleteRegular />} />}
           title="Remove endpoint?"

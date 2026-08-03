@@ -343,7 +343,9 @@ config.MapPut("/model-deployments/{name}/endpoints/{id:guid}", async (
     string name, Guid id, UpdateEndpointBody body, UpdateEndpointHandler handler, CancellationToken ct) =>
 {
     var endpoint = await handler.HandleAsync(
-        new UpdateEndpointCommand(name, id, body.Priority, body.Enabled, body.TimeoutSeconds, body.MaxRetries), ct);
+        new UpdateEndpointCommand(
+            name, id, body.BaseUrl, body.ManagedIdentityScope, body.Priority, body.Enabled, body.TimeoutSeconds,
+            body.MaxRetries), ct);
     return Results.Ok(endpoint);
 });
 
@@ -589,7 +591,13 @@ public sealed record AddEndpointBody(
     int TimeoutSeconds = 100,
     int MaxRetries = 2);
 
-public sealed record UpdateEndpointBody(int? Priority = null, bool? Enabled = null, int? TimeoutSeconds = null, int? MaxRetries = null);
+public sealed record UpdateEndpointBody(
+    string? BaseUrl = null,
+    string? ManagedIdentityScope = null,
+    int? Priority = null,
+    bool? Enabled = null,
+    int? TimeoutSeconds = null,
+    int? MaxRetries = null);
 
 public sealed record SetEndpointSecretBody(string ApiKeyPlaintext);
 

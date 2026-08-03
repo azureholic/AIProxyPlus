@@ -8,6 +8,8 @@ namespace AiProxy.Application.ModelDeployments;
 public sealed record UpdateEndpointCommand(
     string ModelDeploymentName,
     Guid EndpointId,
+    string? BaseUrl = null,
+    string? ManagedIdentityScope = null,
     int? Priority = null,
     bool? Enabled = null,
     int? TimeoutSeconds = null,
@@ -18,6 +20,11 @@ public sealed class UpdateEndpointValidator : AbstractValidator<UpdateEndpointCo
     public UpdateEndpointValidator()
     {
         RuleFor(c => c.ModelDeploymentName).NotEmpty();
+        RuleFor(c => c.BaseUrl!)
+            .Must(AddEndpointValidator.BeAllowedUrl)
+            .WithMessage("Endpoint.BaseUrl must be an absolute https:// URL (http:// is only allowed for localhost).")
+            .When(c => c.BaseUrl is not null);
+        RuleFor(c => c.ManagedIdentityScope!).NotEmpty().When(c => c.ManagedIdentityScope is not null);
         RuleFor(c => c.Priority!.Value).GreaterThanOrEqualTo(1).When(c => c.Priority.HasValue);
         RuleFor(c => c.TimeoutSeconds!.Value).GreaterThanOrEqualTo(1).When(c => c.TimeoutSeconds.HasValue);
         RuleFor(c => c.MaxRetries!.Value).GreaterThanOrEqualTo(0).When(c => c.MaxRetries.HasValue);
@@ -37,6 +44,16 @@ public sealed class UpdateEndpointHandler(
 
         var endpoint = deployment.Endpoints.FirstOrDefault(e => e.Id == command.EndpointId)
             ?? throw new NotFoundException($"Endpoint '{command.EndpointId}' was not found on deployment '{command.ModelDeploymentName}'.");
+
+        if (command.BaseUrl is { } baseUrl)
+        {
+            endpoint.UpdateBaseUrl(baseUrl);
+        }
+
+        if (command.ManagedIdentityScope is { } managedIdentityScope)
+        {
+            endpoint.UpdateManagedIdentityScope(managedIdentityScope);
+        }
 
         if (command.Priority is { } priority)
         {

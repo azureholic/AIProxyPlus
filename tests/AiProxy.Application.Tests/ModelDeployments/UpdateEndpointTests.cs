@@ -29,13 +29,15 @@ public class UpdateEndpointTests
     }
 
     [Fact]
-    public async Task HandleAsync_UpdatesPriorityEnabledTimeoutAndRetries()
+    public async Task HandleAsync_WithEditableFields_UpdatesEndpoint()
     {
         var (deployment, endpoint) = GivenDeploymentWithEndpoint();
 
         var result = await _handler.HandleAsync(new UpdateEndpointCommand(
-            deployment.Name, endpoint.Id, Priority: 3, Enabled: false, TimeoutSeconds: 30, MaxRetries: 5));
+            deployment.Name, endpoint.Id, BaseUrl: "https://updated.openai.azure.com", Priority: 3, Enabled: false,
+            TimeoutSeconds: 30, MaxRetries: 5));
 
+        result.BaseUrl.Should().Be("https://updated.openai.azure.com");
         result.Priority.Should().Be(3);
         result.Enabled.Should().BeFalse();
         result.TimeoutSeconds.Should().Be(30);
@@ -74,5 +76,21 @@ public class UpdateEndpointTests
         var result = await _handler.HandleAsync(new UpdateEndpointCommand(deployment.Name, endpoint.Id, Priority: 2));
 
         result.Priority.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithManagedIdentityScope_UpdatesScope()
+    {
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-foundry");
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), deployment.Id, "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://cognitiveservices.azure.com/.default");
+        deployment.AddEndpoint(endpoint);
+        _repository.GetByNameAsync(deployment.Name, Arg.Any<CancellationToken>()).Returns(deployment);
+
+        var result = await _handler.HandleAsync(new UpdateEndpointCommand(
+            deployment.Name, endpoint.Id, ManagedIdentityScope: "https://ai.azure.com/.default"));
+
+        result.ManagedIdentityScope.Should().Be("https://ai.azure.com/.default");
     }
 }

@@ -47,6 +47,8 @@ export function addEndpoint(deploymentName: string, input: AddEndpointInput): Pr
 }
 
 export interface UpdateEndpointInput {
+  baseUrl?: string;
+  managedIdentityScope?: string;
   priority?: number;
   enabled?: boolean;
   timeoutSeconds?: number;

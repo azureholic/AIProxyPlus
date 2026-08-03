@@ -147,4 +147,29 @@ public sealed class Endpoint
 
         MaxRetries = maxRetries;
     }
+
+    public void UpdateBaseUrl(string baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new DomainException("Endpoint.BaseUrl must not be empty.");
+        }
+
+        BaseUrl = baseUrl;
+    }
+
+    public void UpdateManagedIdentityScope(string managedIdentityScope)
+    {
+        if (AuthMode != AuthMode.ManagedIdentity)
+        {
+            throw new DomainException("Only ManagedIdentity-mode endpoints have a ManagedIdentityScope.");
+        }
+
+        if (string.IsNullOrWhiteSpace(managedIdentityScope))
+        {
+            throw new DomainException("A ManagedIdentity-mode endpoint must have a non-empty ManagedIdentityScope.");
+        }
+
+        ManagedIdentityScope = managedIdentityScope;
+    }
 }

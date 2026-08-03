@@ -129,4 +129,26 @@ public class EndpointTests
 
         act.Should().Throw<DomainException>().WithMessage("*MaxRetries*");
     }
+
+    [Fact]
+    public void UpdateBaseUrl_WithValidValue_UpdatesBaseUrl()
+    {
+        var endpoint = CreateValidApiKeyEndpoint();
+
+        endpoint.UpdateBaseUrl("https://updated.openai.azure.com");
+
+        endpoint.BaseUrl.Should().Be("https://updated.openai.azure.com");
+    }
+
+    [Fact]
+    public void UpdateManagedIdentityScope_WithManagedIdentityEndpoint_UpdatesScope()
+    {
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            AuthMode.ManagedIdentity, managedIdentityScope: "https://cognitiveservices.azure.com/.default");
+
+        endpoint.UpdateManagedIdentityScope("https://ai.azure.com/.default");
+
+        endpoint.ManagedIdentityScope.Should().Be("https://ai.azure.com/.default");
+    }
 }

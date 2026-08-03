@@ -47,3 +47,21 @@ Chat and Images display `Error [object Object]` when an OpenAI-compatible provid
   preserved consistently.
 - [x] Add regression coverage and rebuild the frontend static assets.
 - [x] Verify the same live response renders as `Error 404 Resource not found`.
+
+## Bug 3 — Existing endpoint configuration cannot be corrected
+
+### Symptom
+
+The model-deployment detail page permits adding, enabling, rotating, and removing endpoints, but offers no way to
+correct an existing base URL or managed-identity scope. A malformed Azure OpenAI base URL therefore requires
+deleting and recreating the endpoint.
+
+### Root cause and fix
+
+- [x] Confirm the limitation exists throughout the update path: the domain aggregate, application command, API
+  body, frontend client, and detail page support only priority, enabled state, timeout, and retries.
+- [x] Add validated aggregate mutations and extend the existing update use case with base URL and managed-identity
+  scope. Preserve immutable API-family and authentication-mode boundaries.
+- [x] Add an endpoint edit dialog while keeping API-key rotation in its separate write-only flow.
+- [x] Add domain, application, and frontend API-contract regression coverage.
+- [x] Run the full .NET solution in Release configuration, all frontend tests, and the frontend production build.
