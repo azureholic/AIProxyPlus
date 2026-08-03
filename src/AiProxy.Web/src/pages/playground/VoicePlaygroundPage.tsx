@@ -3,7 +3,7 @@ import { Badge, Button, Textarea, makeStyles, tokens } from '@fluentui/react-com
 import { PlugConnectedRegular, PlugDisconnectedRegular, SendRegular } from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
-import { DeploymentPicker } from '../../components/DeploymentPicker';
+import { ModelPicker } from '../../components/ModelPicker';
 import { adminJson } from '../../api/client';
 
 const useStyles = makeStyles({
@@ -41,7 +41,7 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected';
 
 export function VoicePlaygroundPage() {
   const styles = useStyles();
-  const [deployment, setDeployment] = useState('');
+  const [model, setModel] = useState('');
   const [state, setState] = useState<ConnectionState>('disconnected');
   const [error, setError] = useState<unknown>(null);
   const [eventText, setEventText] = useState(exampleEvent);
@@ -58,7 +58,7 @@ export function VoicePlaygroundPage() {
     try {
       const { ticket } = await adminJson<{ ticket: string }>('/api/v1/auth/realtime-ticket', { method: 'POST' });
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${protocol}//${window.location.host}/openai/v1/realtime?model=${encodeURIComponent(deployment)}&ticket=${encodeURIComponent(ticket)}`;
+      const url = `${protocol}//${window.location.host}/openai/v1/realtime?model=${encodeURIComponent(model)}&ticket=${encodeURIComponent(ticket)}`;
       const socket = new WebSocket(url);
       socketRef.current = socket;
 
@@ -95,12 +95,12 @@ export function VoicePlaygroundPage() {
       <PageHeader title="Voice Playground" />
 
       <div className={styles.controls}>
-        <DeploymentPicker value={deployment} onChange={setDeployment} />
+        <ModelPicker value={model} onChange={setModel} />
         <Badge color={state === 'connected' ? 'success' : state === 'connecting' ? 'warning' : 'informative'}>
           {state}
         </Badge>
         {state === 'disconnected' ? (
-          <Button appearance="primary" icon={<PlugConnectedRegular />} disabled={!deployment} onClick={() => void connect()}>
+          <Button appearance="primary" icon={<PlugConnectedRegular />} disabled={!model} onClick={() => void connect()}>
             Connect
           </Button>
         ) : (

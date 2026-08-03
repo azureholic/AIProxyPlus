@@ -16,7 +16,7 @@ namespace AiProxy.Infrastructure.Routing;
 /// client-visible error, never silently retried on a different endpoint.
 /// </summary>
 public sealed class RealtimeProxyService(
-    IModelDeploymentRepository modelDeploymentRepository,
+    IModelRepository modelRepository,
     IEndpointHealthTracker endpointHealthTracker,
     IEndpointRoundRobinCounter roundRobinCounter,
     ICredentialProvider credentialProvider)
@@ -26,31 +26,31 @@ public sealed class RealtimeProxyService(
         using var rootActivity = AiProxyActivitySource.Instance.StartActivity("ai_proxy.request");
         rootActivity?.SetTag("operation_type", OperationType.RealtimeVoice.ToString());
 
-        var model = httpContext.Request.Query["model"].ToString();
-        if (string.IsNullOrWhiteSpace(model))
+        var modelName = httpContext.Request.Query["model"].ToString();
+        if (string.IsNullOrWhiteSpace(modelName))
         {
-            return new RoutingFailure(RoutingFailureReason.DeploymentNotFound, "Request must include a 'model' query parameter.");
+            return new RoutingFailure(RoutingFailureReason.ModelNotFound, "Request must include a 'model' query parameter.");
         }
 
-        ModelDeployment? deployment;
-        using (AiProxyActivitySource.Instance.StartActivity("deployment_resolution"))
+        Model? model;
+        using (AiProxyActivitySource.Instance.StartActivity("model_resolution"))
         {
-            deployment = await modelDeploymentRepository.GetByNameAsync(model, cancellationToken);
+            model = await modelRepository.GetByNameAsync(modelName, cancellationToken);
         }
 
-        if (deployment is null)
+        if (model is null)
         {
-            return new RoutingFailure(RoutingFailureReason.DeploymentNotFound, $"Model deployment '{model}' was not found.");
+            return new RoutingFailure(RoutingFailureReason.ModelNotFound, $"Model '{modelName}' was not found.");
         }
 
-        rootActivity?.SetTag("deployment", deployment.Name);
+        rootActivity?.SetTag("model", model.Name);
 
-        var roundRobinSeed = roundRobinCounter.Next(deployment.Id);
+        var roundRobinSeed = roundRobinCounter.Next(model.Id);
         var excludedEndpointIds = new HashSet<Guid>();
 
         while (true)
         {
-            var selection = EndpointSelector.SelectEndpoint(deployment.Endpoints, excludedEndpointIds: excludedEndpointIds, roundRobinCounter: roundRobinSeed);
+            var selection = EndpointSelector.SelectEndpoint(model.Endpoints, excludedEndpointIds: excludedEndpointIds, roundRobinCounter: roundRobinSeed);
             if (!selection.IsSuccess)
             {
                 return new RoutingFailure(RoutingFailureReason.NoHealthyEndpoint, selection.FailureReason!);

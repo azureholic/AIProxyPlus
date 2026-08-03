@@ -32,23 +32,23 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority)
+    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl, int priority)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"responses-affinity-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
     }
 
     [Fact]
     public async Task FollowUpTurn_WithPreviousResponseId_PinsToOriginatingBackend()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
 
         const string responseId = "resp_abc123";
         _backend1.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
@@ -58,11 +58,11 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
 
         var client = _factory.CreateClient();
 
-        var first = await client.PostAsJsonAsync("/openai/v1/responses", new { model = deploymentName, input = "hello" });
+        var first = await client.PostAsJsonAsync("/openai/v1/responses", new { model = modelName, input = "hello" });
         first.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var second = await client.PostAsJsonAsync(
-            "/openai/v1/responses", new { model = deploymentName, previous_response_id = responseId, input = "and then?" });
+            "/openai/v1/responses", new { model = modelName, previous_response_id = responseId, input = "and then?" });
 
         second.StatusCode.Should().Be(HttpStatusCode.OK);
         _backend1.LogEntries.Should().HaveCount(2);
@@ -74,16 +74,16 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
     {
         // An unrecognized (e.g. expired/evicted) previous_response_id has no affinity entry, so there is no
         // sticky endpoint to pin to or fail over from — the request is simply routed like a fresh one.
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        _factory.Models.Seed(model);
 
         _backend1.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp_fresh" }));
 
         var response = await _factory.CreateClient().PostAsJsonAsync(
-            "/openai/v1/responses", new { model = deploymentName, previous_response_id = "resp_never-seen", input = "hi" });
+            "/openai/v1/responses", new { model = modelName, previous_response_id = "resp_never-seen", input = "hi" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -91,17 +91,17 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task WithStoreFalse_DoesNotPersistAffinityForFollowUp()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        _factory.Models.Seed(model);
 
         const string responseId = "resp_no-store";
         _backend1.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = responseId }));
 
         var response = await _factory.CreateClient().PostAsJsonAsync(
-            "/openai/v1/responses", new { model = deploymentName, input = "hi", store = false });
+            "/openai/v1/responses", new { model = modelName, input = "hi", store = false });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await _factory.Affinity.GetAsync(responseId)).Should().BeNull();
@@ -110,20 +110,20 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task WhenOriginatingEndpointFailsOnFollowUp_FailsFast_WithoutFallingBackToOtherEndpoint()
     {
-        // Responses API affinity is unconditional (no deployment config needed) and, like any sticky session,
+        // Responses API affinity is unconditional (no model config needed) and, like any sticky session,
         // must fail fast rather than silently reroute a stateful conversation to a different backend.
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
 
         const string responseId = "resp_flaky";
         _backend1.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = responseId }));
 
         var client = _factory.CreateClient();
-        var first = await client.PostAsJsonAsync("/openai/v1/responses", new { model = deploymentName, input = "hi" });
+        var first = await client.PostAsJsonAsync("/openai/v1/responses", new { model = modelName, input = "hi" });
         first.StatusCode.Should().Be(HttpStatusCode.OK);
 
         _backend1.Reset();
@@ -133,7 +133,7 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "should-not-be-called" }));
 
         var second = await client.PostAsJsonAsync(
-            "/openai/v1/responses", new { model = deploymentName, previous_response_id = responseId, input = "and then?" });
+            "/openai/v1/responses", new { model = modelName, previous_response_id = responseId, input = "and then?" });
 
         second.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         _backend2.LogEntries.Should().BeEmpty("a failed sticky endpoint must fail fast, not silently reroute a stateful conversation");

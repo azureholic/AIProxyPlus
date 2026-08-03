@@ -13,7 +13,7 @@ describe('ChatPlaygroundPage', () => {
   });
 
   it('sends a non-streaming chat message and renders the reply + token usage', async () => {
-    const deployment = {
+    const model = {
       id: '1',
       name: 'gpt-4o',
       strategy: 'Priority',
@@ -28,15 +28,15 @@ describe('ChatPlaygroundPage', () => {
           usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
         });
       }
-      return jsonResponse(url.includes('model-deployments') ? [deployment] : []);
+      return jsonResponse(url.includes('models') ? [model] : []);
     });
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
     render(<ChatPlaygroundPage />);
 
-    // Open the deployment combobox and pick the only option.
-    await user.click(screen.getByPlaceholderText('Select a deployment…'));
+    // Open the model combobox and pick the only option.
+    await user.click(screen.getByPlaceholderText('Select a model…'));
     await user.click(await screen.findByRole('option', { name: 'gpt-4o' }));
 
     // Turn off streaming so this test asserts the simpler JSON-response code path.

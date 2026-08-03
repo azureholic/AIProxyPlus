@@ -18,11 +18,11 @@ describe('App shell + navigation', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the app title and lands on the default (Model Deployments) route', async () => {
+  it('renders the app title and lands on the default (Models) route', async () => {
     render(<App />);
 
     expect(await screen.findByText('AI Proxy')).toBeInTheDocument();
-    expect(await screen.findByText('New deployment')).toBeInTheDocument();
+    expect(await screen.findByText('New model')).toBeInTheDocument();
   });
 
   it('navigates to each top-level page via the sidebar', async () => {

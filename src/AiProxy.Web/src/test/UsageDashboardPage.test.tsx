@@ -15,7 +15,7 @@ describe('UsageDashboardPage', () => {
     const record = {
       id: '1',
       timestamp: new Date().toISOString(),
-      modelDeploymentName: 'gpt-4o',
+      modelName: 'gpt-4o',
       consumerId: 'c1',
       consumerName: 'my-team',
       endpointId: 'e1',

@@ -8,7 +8,7 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 - Sticky sessions should not need an explicit per-deployment config flag. The Responses API already proved a
   better pattern: affinity that's *inherent to the protocol* (`previous_response_id`), not an admin toggle. The
   current code actually has a latent bug from this half-transition — `ProxyRoutingService` persists Responses
-  API affinity unconditionally but only *looks it up* when `ModelDeployment.StickySessionEnabled` is true,
+  API affinity unconditionally but only *looks it up* when `Model.StickySessionEnabled` is true,
   so a deployment with the flag off silently breaks its own `previous_response_id` chaining.
 - The only remaining case that genuinely needs connection-level stickiness is the Realtime (voice) API, and
   that's inherent too — a WebSocket is a single long-lived connection to one backend for its lifetime; there is
@@ -37,11 +37,11 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
   `Priority`, pick the lowest surviving priority tier, and round-robin within that tier using a caller-supplied
   counter (keeps the selector a pure function — no I/O/state in Domain). Single-endpoint and
   single-priority-tier cases keep working unchanged; multi-endpoint-same-priority now rotates instead of
-  always picking the same one. Also removed `ModelDeployment`'s priority-uniqueness invariant
+  always picking the same one. Also removed `Model`'s priority-uniqueness invariant
   (`AddEndpoint`/`ChangeEndpointPriority` used to throw on a duplicate priority) — ties are now the whole
   point, not an error.
 - [x] New `IEndpointRoundRobinCounter` port (Application) + in-memory `EndpointRoundRobinCounter` impl
-  (Infrastructure, `ConcurrentDictionary<Guid,int>` + `Interlocked.Increment`, keyed by `ModelDeploymentId`) —
+  (Infrastructure, `ConcurrentDictionary<Guid,int>` + `Interlocked.Increment`, keyed by `ModelId`) —
   same pattern as the existing `IEndpointHealthTracker`. `ProxyRoutingService` increments once per incoming
   request (not per retry) and passes the snapshot into `EndpointSelector` for that request's whole
   selection/failover loop.
@@ -55,14 +55,14 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 
 ## Phase 2 — Remove generic sticky-session config; Responses API affinity becomes unconditional
 
-- [x] Domain: remove `ModelDeployment.StickySessionEnabled` (property, constructor parameter,
+- [x] Domain: remove `Model.StickySessionEnabled` (property, constructor parameter,
   `SetStickySessionEnabled`/equivalent mutator). Also removed the priority-uniqueness invariant while touching
   this file (folded into Phase 1 since it was the same `AddEndpoint`/`ChangeEndpointPriority` code path).
 - [x] EF Core: migration (`RemoveStickySessionEnabled`) dropping the `sticky_session_enabled` column from
-  `model_deployments`.
-- [x] Application: `CreateModelDeploymentCommand`/`UpdateModelDeploymentCommand` (+ validators) drop
+  `models`.
+- [x] Application: `CreateModelCommand`/`UpdateModelCommand` (+ validators) drop
   `StickySessionEnabled`.
-- [x] Api: config API request/response bodies for model-deployments drop `stickySessionEnabled`.
+- [x] Api: config API request/response bodies for models drop `stickySessionEnabled`.
 - [x] `ProxyRoutingService`: affinity lookup applies **only** to `OperationType.ResponsesApi` via
   `PreviousResponseId` — unconditionally, no deployment flag gate (fixes the latent bug described above). The
   generic body-`session`/`X-Session-Id` header lookup path (`ResolveSessionKey`) is deleted, along with the
@@ -76,7 +76,7 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 - [x] Domain: add `OperationType.RealtimeVoice`.
 - [x] Infrastructure: `RealtimeProxyService` — accepts the inbound WebSocket
   (`HttpContext.WebSockets.AcceptWebSocketAsync`), resolves `model` from the **query string** (no body to peek
-  on a WebSocket handshake), resolves the `ModelDeployment`, selects an endpoint via the same
+  on a WebSocket handshake), resolves the `Model`, selects an endpoint via the same
   `EndpointSelector` (priority + round-robin — no affinity/stickiness needed, the connection itself is the
   affinity), resolves the credential via the existing `ICredentialProvider`, and opens an outbound
   `ClientWebSocket` to the backend (`Authorization: Bearer` header set via `ClientWebSocket.Options` before

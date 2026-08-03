@@ -17,9 +17,9 @@ public sealed class UsageRecordRepository(AiProxyDbContext dbContext) : IUsageRe
     {
         var filtered = dbContext.UsageRecords.AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(query.ModelDeploymentName))
+        if (!string.IsNullOrWhiteSpace(query.ModelName))
         {
-            filtered = filtered.Where(u => u.ModelDeploymentName == query.ModelDeploymentName);
+            filtered = filtered.Where(u => u.ModelName == query.ModelName);
         }
 
         if (!string.IsNullOrWhiteSpace(query.ConsumerName))

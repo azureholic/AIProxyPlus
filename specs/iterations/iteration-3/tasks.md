@@ -5,13 +5,13 @@ Phase 6 to describe these changes (not left as an Iteration-1/2-only description
 
 ## Motivation (from planning discussion)
 
-The proxy has been API-only through Iterations 1–2 — every configuration change (model deployments,
+The proxy has been API-only through Iterations 1–2 — every configuration change (models,
 endpoints) and every diagnostic query (usage) requires hand-crafted `curl`/Postman calls against
 `/api/v1/config/*` and `/api/v1/usage`, and there is no way to exercise the ingress routes (chat, images,
 realtime) without a separate client. Iteration 3 adds a small admin/ops **frontend** — served from the *same*
 container as the API (no separate frontend host/deployment) — covering:
 
-1. **Config**: model deployments + their endpoints (consumers get a minimal CRUD surface too, purely as
+1. **Config**: models + their endpoints (consumers get a minimal CRUD surface too, purely as
    supporting infrastructure — see Decisions).
 2. **Playground**: manual exercising of the ingress routes — chat (streaming + non-streaming), image
    generation, and a basic Realtime (voice) connectivity test.
@@ -77,7 +77,7 @@ container as the API (no separate frontend host/deployment) — covering:
 - [x] `src/AiProxy.Web/`: Vite + React + TypeScript project (`npm create vite@latest`), FluentUI v9 installed
   (`@fluentui/react-components`, `@fluentui/react-icons`), `react-router-dom`.
 - [x] App shell (`layout/AppShell.tsx`): `FluentProvider` (light theme), left `NavDrawer` sidebar with the
-  top-level sections — Config (Model Deployments, Consumers), Playground (Chat, Images, Voice), Dashboard
+  top-level sections — Config (Models, Consumers), Playground (Chat, Images, Voice), Dashboard
   (Usage), Settings — driving a `react-router-dom` `<Routes>` tree (single source of truth in `routes/routes.tsx`,
   shared by both the sidebar and the router). Note: `NavItem`s must be direct children of `NavDrawerBody` —
   `NavDrawer` already provides the `Nav` context via `onNavItemSelect`/`selectedValue` on itself, and wrapping
@@ -108,7 +108,7 @@ container as the API (no separate frontend host/deployment) — covering:
   registered last, falling back to a plain-text `MapFallback` hint when `wwwroot/index.html` doesn't exist yet.
   New `FrontendFallbackTests.cs` (3 tests) confirms `/` and an arbitrary client-side route both 200, **and**
   that the fallback does not shadow `/health/live`, unauthenticated `/openai/v1/chat/completions` (still 401),
-  or unauthenticated `/api/v1/config/model-deployments` (still 401) — verified, not assumed.
+  or unauthenticated `/api/v1/config/models` (still 401) — verified, not assumed.
 - [x] `Dockerfile`: added a `frontend-build` (`node:22-alpine`) stage running `npm ci && npm run build`.
   **The "publish picks wwwroot up automatically" assumption did not hold** — each Docker stage is an isolated
   filesystem, so the `build` stage needs an explicit `COPY --from=frontend-build /src/AiProxy.Api/wwwroot
@@ -124,12 +124,12 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 3 — Config pages
 
-- [x] **Model Deployments** (`pages/config/ModelDeploymentsPage.tsx`): list (name, strategy, endpoint health
+- [x] **Models** (`pages/config/ModelsPage.tsx`): list (name, strategy, endpoint health
   summary badge), create (name — strategy omitted from the form since `RoutingStrategy` has only one value
   today, hardcoded to `Priority`), delete (`ConfirmDialog`, cascades endpoints per §7.2, called out in the
   dialog copy). Edit-strategy skipped for the same single-value reason (see Decisions). Row click navigates to
-  a detail page (`/config/model-deployments/:name`, not in the sidebar).
-- [x] **Endpoints** (`pages/config/ModelDeploymentDetailPage.tsx`): list (base URL, API family, priority, auth
+  a detail page (`/config/models/:name`, not in the sidebar).
+- [x] **Endpoints** (`pages/config/ModelDetailPage.tsx`): list (base URL, API family, priority, auth
   mode, enabled toggle, health badge, timeout, max retries), add (all `AddEndpointInput` fields incl. the
   conditional API-key/managed-identity-scope input based on auth mode), inline enabled toggle
   (`PUT .../endpoints/{id}`), remove (`ConfirmDialog`), set/replace secret (separate dialog calling
@@ -145,7 +145,7 @@ container as the API (no separate frontend host/deployment) — covering:
   name is entered); the backend's FluentValidation remains the source of truth — errors surface verbatim via
   `ErrorBanner` (`ApiError.message`, plus any `Retry-After` header — Iteration 2 Phase 5), never swallowed.
 - [x] Component tests: `ConsumersPage.test.tsx` (create + one-time-reveal, revoke-only-after-confirm) and
-  `ModelDeploymentsPage.test.tsx` (delete-only-after-confirm) — 4 new tests, all passing. Found and fixed two
+  `ModelsPage.test.tsx` (delete-only-after-confirm) — 4 new tests, all passing. Found and fixed two
   real testing-infrastructure bugs along the way (now in repo memory): jsdom lacks `ResizeObserver`
   (`MessageBar` crashes without a stub in `src/test/setup.ts`), and `userEvent.type()` on a FluentUI `Input`
   inside a `Dialog` breaks subsequent `getByRole` queries in the same dialog — worked around with
@@ -154,7 +154,7 @@ container as the API (no separate frontend host/deployment) — covering:
 ## Phase 4 — Playground
 
 - [x] **Deployment picker** (`components/DeploymentPicker.tsx`): shared `Combobox` across all three tabs —
-  fetches `GET /api/v1/config/model-deployments` (admin key) and lets the operator pick which deployment to
+  fetches `GET /api/v1/config/models` (admin key) and lets the operator pick which deployment to
   send test traffic to.
 - [x] **Chat tab** (`ChatPlaygroundPage.tsx`): message list + input, streaming toggle. Streaming reads the SSE
   body via `api/sse.ts`'s `readSseEvents` (Fetch API `ReadableStream`, no `EventSource` since that can't POST/
@@ -186,7 +186,7 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 5 — Usage dashboard
 
-- [x] Filter bar (`UsageDashboardPage.tsx`): model deployment, consumer (free-text — both filter
+- [x] Filter bar (`UsageDashboardPage.tsx`): model, consumer (free-text — both filter
   server-side by exact/partial name via the existing query params), operation type (`Combobox` over all
   `OperationType` values + "Any"), date range (plain HTML `<input type="date">`, not a FluentUI DatePicker
   package — avoids a new dependency for two simple date fields), pagination (Previous/Next, fixed page size

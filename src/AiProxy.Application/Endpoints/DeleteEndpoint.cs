@@ -29,7 +29,7 @@ public sealed class DeleteEndpointHandler(
 
         if (await repository.IsAssignedAsync(endpoint.Id, cancellationToken))
         {
-            throw new ConflictException($"Endpoint '{endpoint.Name}' cannot be deleted while it is assigned to a model deployment.");
+            throw new ConflictException($"Endpoint '{endpoint.Name}' cannot be deleted while it is assigned to a model.");
         }
 
         await repository.DeleteAsync(endpoint.Id, cancellationToken);

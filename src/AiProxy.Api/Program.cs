@@ -2,7 +2,7 @@ using System.Net;
 using AiProxy.Application.Abstractions;
 using AiProxy.Application.Consumers;
 using AiProxy.Application.Endpoints;
-using AiProxy.Application.ModelDeployments;
+using AiProxy.Application.Models;
 using AiProxy.Application.Usage;
 using AiProxy.Api.Authentication;
 using AiProxy.Domain.Entities;
@@ -66,7 +66,7 @@ builder.Services.AddSingleton<AiProxyMetrics>();
 // Postgres (architecture.md §7.1) — the Aspire client integration resolves the "aiproxydb" connection string
 // (injected by AiProxy.AppHost via WithReference) and wires resiliency/health checks/OTel automatically.
 builder.AddNpgsqlDbContext<AiProxyDbContext>("aiproxydb");
-builder.Services.AddScoped<IModelDeploymentRepository, ModelDeploymentRepository>();
+builder.Services.AddScoped<IModelRepository, ModelRepository>();
 builder.Services.AddScoped<IEndpointRepository, EndpointRepository>();
 builder.Services.AddScoped<IConsumerRepository, ConsumerRepository>();
 builder.Services.AddScoped<ISessionAffinityStore, SessionAffinityStore>();
@@ -207,9 +207,9 @@ builder.Services.AddAuthorization(options => options.AddPolicy("AdminAccess", po
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 
 // Configuration REST API use cases (§7.2)
-builder.Services.AddSingleton<IValidator<CreateModelDeploymentCommand>, CreateModelDeploymentValidator>();
-builder.Services.AddSingleton<IValidator<UpdateModelDeploymentCommand>, UpdateModelDeploymentValidator>();
-builder.Services.AddSingleton<IValidator<DeleteModelDeploymentCommand>, DeleteModelDeploymentValidator>();
+builder.Services.AddSingleton<IValidator<CreateModelCommand>, CreateModelValidator>();
+builder.Services.AddSingleton<IValidator<UpdateModelCommand>, UpdateModelValidator>();
+builder.Services.AddSingleton<IValidator<DeleteModelCommand>, DeleteModelValidator>();
 builder.Services.AddSingleton<IValidator<AddEndpointCommand>, AddEndpointValidator>();
 builder.Services.AddSingleton<IValidator<UpdateEndpointCommand>, UpdateEndpointValidator>();
 builder.Services.AddSingleton<IValidator<RemoveEndpointCommand>, RemoveEndpointValidator>();
@@ -222,9 +222,9 @@ builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsum
 builder.Services.AddSingleton<IValidator<RevokeConsumerCommand>, RevokeConsumerValidator>();
 builder.Services.AddSingleton<IValidator<UsageRecordQuery>, UsageRecordQueryValidator>();
 
-builder.Services.AddScoped<CreateModelDeploymentHandler>();
-builder.Services.AddScoped<UpdateModelDeploymentHandler>();
-builder.Services.AddScoped<DeleteModelDeploymentHandler>();
+builder.Services.AddScoped<CreateModelHandler>();
+builder.Services.AddScoped<UpdateModelHandler>();
+builder.Services.AddScoped<DeleteModelHandler>();
 builder.Services.AddScoped<AddEndpointHandler>();
 builder.Services.AddScoped<UpdateEndpointHandler>();
 builder.Services.AddScoped<RemoveEndpointHandler>();
@@ -308,44 +308,44 @@ var config = app.MapGroup("/api/v1/config")
     .RequireAuthorization("AdminAccess")
     .AddEndpointFilter<SessionAntiforgeryEndpointFilter>();
 
-config.MapGet("/model-deployments", async (IModelDeploymentRepository repository, CancellationToken ct) =>
+config.MapGet("/models", async (IModelRepository repository, CancellationToken ct) =>
     Results.Ok(await repository.GetAllAsync(ct)));
 
-config.MapGet("/model-deployments/{name}", async (string name, IModelDeploymentRepository repository, CancellationToken ct) =>
+config.MapGet("/models/{name}", async (string name, IModelRepository repository, CancellationToken ct) =>
 {
-    var deployment = await repository.GetByNameAsync(name, ct);
-    return deployment is null ? Results.NotFound(new { error = $"Model deployment '{name}' was not found." }) : Results.Ok(deployment);
+    var model = await repository.GetByNameAsync(name, ct);
+    return model is null ? Results.NotFound(new { error = $"Model '{name}' was not found." }) : Results.Ok(model);
 });
 
-config.MapPost("/model-deployments", async (CreateModelDeploymentCommand command, CreateModelDeploymentHandler handler, CancellationToken ct) =>
+config.MapPost("/models", async (CreateModelCommand command, CreateModelHandler handler, CancellationToken ct) =>
 {
-    var deployment = await handler.HandleAsync(command, ct);
-    return Results.Created($"/api/v1/config/model-deployments/{deployment.Name}", deployment);
+    var model = await handler.HandleAsync(command, ct);
+    return Results.Created($"/api/v1/config/models/{model.Name}", model);
 });
 
-config.MapPut("/model-deployments/{name}", async (
-    string name, UpdateModelDeploymentBody body, UpdateModelDeploymentHandler handler, CancellationToken ct) =>
+config.MapPut("/models/{name}", async (
+    string name, UpdateModelBody body, UpdateModelHandler handler, CancellationToken ct) =>
 {
-    var deployment = await handler.HandleAsync(new UpdateModelDeploymentCommand(name, body.Strategy), ct);
-    return Results.Ok(deployment);
+    var model = await handler.HandleAsync(new UpdateModelCommand(name, body.Strategy), ct);
+    return Results.Ok(model);
 });
 
-config.MapDelete("/model-deployments/{name}", async (string name, DeleteModelDeploymentHandler handler, CancellationToken ct) =>
+config.MapDelete("/models/{name}", async (string name, DeleteModelHandler handler, CancellationToken ct) =>
 {
-    await handler.HandleAsync(new DeleteModelDeploymentCommand(name), ct);
+    await handler.HandleAsync(new DeleteModelCommand(name), ct);
     return Results.NoContent();
 });
 
-config.MapPost("/model-deployments/{name}/endpoints", async (
+config.MapPost("/models/{name}/endpoints", async (
     string name, AddEndpointBody body, AddEndpointHandler handler, CancellationToken ct) =>
 {
     var endpoint = await handler.HandleAsync(
         new AddEndpointCommand(name, body.EndpointId, body.Priority, body.Enabled),
         ct);
-    return Results.Created($"/api/v1/config/model-deployments/{name}/endpoints/{endpoint.Id}", endpoint);
+    return Results.Created($"/api/v1/config/models/{name}/endpoints/{endpoint.Id}", endpoint);
 });
 
-config.MapPut("/model-deployments/{name}/endpoints/{id:guid}", async (
+config.MapPut("/models/{name}/endpoints/{id:guid}", async (
     string name, Guid id, UpdateEndpointBody body, UpdateEndpointHandler handler, CancellationToken ct) =>
 {
     var endpoint = await handler.HandleAsync(
@@ -353,7 +353,7 @@ config.MapPut("/model-deployments/{name}/endpoints/{id:guid}", async (
     return Results.Ok(endpoint);
 });
 
-config.MapDelete("/model-deployments/{name}/endpoints/{id:guid}", async (
+config.MapDelete("/models/{name}/endpoints/{id:guid}", async (
     string name, Guid id, RemoveEndpointHandler handler, CancellationToken ct) =>
 {
     await handler.HandleAsync(new RemoveEndpointCommand(name, id), ct);
@@ -432,10 +432,10 @@ config.MapDelete("/consumers/{name}", async (string name, RevokeConsumerHandler 
 app.MapGroup("/api/v1")
     .RequireAuthorization("AdminAccess")
     .MapGet("/usage", async (
-        string? modelDeploymentName, string? consumerName, OperationType? operationType, DateTimeOffset? from, DateTimeOffset? to,
+        string? modelName, string? consumerName, OperationType? operationType, DateTimeOffset? from, DateTimeOffset? to,
         int? page, int? pageSize, QueryUsageRecordsHandler handler, CancellationToken ct) =>
     {
-        var query = new UsageRecordQuery(modelDeploymentName, consumerName, operationType, from, to, page ?? 1, pageSize ?? 50);
+        var query = new UsageRecordQuery(modelName, consumerName, operationType, from, to, page ?? 1, pageSize ?? 50);
         return Results.Ok(await handler.HandleAsync(query, ct));
     });
 
@@ -574,7 +574,7 @@ static async Task WriteRoutingFailureAsync(HttpContext httpContext, RoutingFailu
 
     httpContext.Response.StatusCode = failure.Reason switch
     {
-        RoutingFailureReason.DeploymentNotFound => StatusCodes.Status404NotFound,
+        RoutingFailureReason.ModelNotFound => StatusCodes.Status404NotFound,
         RoutingFailureReason.NoHealthyEndpoint => StatusCodes.Status503ServiceUnavailable,
         RoutingFailureReason.StickyEndpointUnavailable => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status500InternalServerError,
@@ -600,7 +600,7 @@ static class HealthChecks
         {
             ["vault"] = await ProbeAsync(() =>
                 services.GetRequiredService<ISecretResolver>().TryResolveAsync("__health_check__", cancellationToken)),
-            ["postgres"] = await ProbeAsync(() => services.GetRequiredService<IModelDeploymentRepository>().GetAllAsync(cancellationToken)),
+            ["postgres"] = await ProbeAsync(() => services.GetRequiredService<IModelRepository>().GetAllAsync(cancellationToken)),
         };
 
         var allHealthy = checks.Values.All(v => v == "healthy");
@@ -621,7 +621,7 @@ static class HealthChecks
     }
 }
 
-public sealed record UpdateModelDeploymentBody(RoutingStrategy Strategy);
+public sealed record UpdateModelBody(RoutingStrategy Strategy);
 
 public sealed record AddEndpointBody(
     Guid EndpointId,

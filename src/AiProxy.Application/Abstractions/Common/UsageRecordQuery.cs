@@ -4,7 +4,7 @@ namespace AiProxy.Application.Abstractions;
 
 /// <summary>Filter/paging criteria for querying usage records (architecture.md §7.2 usage query endpoint).</summary>
 public sealed record UsageRecordQuery(
-    string? ModelDeploymentName = null,
+    string? ModelName = null,
     string? ConsumerName = null,
     OperationType? OperationType = null,
     DateTimeOffset? From = null,

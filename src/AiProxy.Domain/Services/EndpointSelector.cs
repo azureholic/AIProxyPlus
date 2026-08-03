@@ -9,7 +9,7 @@ namespace AiProxy.Domain.Services;
 /// </summary>
 public static class EndpointSelector
 {
-    /// <param name="endpoints">All endpoints configured for the deployment.</param>
+    /// <param name="endpoints">All endpoints configured for the model.</param>
     /// <param name="stickyEndpointId">
     /// When set, the call must be pinned to this endpoint (session affinity). If it's missing, disabled, or
     /// unhealthy the selection fails outright — silently rerouting a stateful session is unsafe (§9).
@@ -25,7 +25,7 @@ public static class EndpointSelector
     /// has no visible effect. Ignored when <paramref name="stickyEndpointId"/> is set.
     /// </param>
     public static EndpointSelectionResult SelectEndpoint(
-        IReadOnlyList<ModelDeploymentEndpoint> endpoints,
+        IReadOnlyList<ModelEndpoint> endpoints,
         Guid? stickyEndpointId = null,
         IReadOnlySet<Guid>? excludedEndpointIds = null,
         int roundRobinCounter = 0)
@@ -36,7 +36,7 @@ public static class EndpointSelector
             if (stickyEndpoint is null)
             {
                 return EndpointSelectionResult.Failure(
-                    $"Sticky endpoint '{sticky}' is not a valid, enabled endpoint for this deployment.");
+                    $"Sticky endpoint '{sticky}' is not a valid, enabled endpoint for this model.");
             }
 
             if (stickyEndpoint.Health == EndpointHealthState.Unhealthy)
@@ -56,13 +56,13 @@ public static class EndpointSelector
 
         if (candidates.Count == 0)
         {
-            return EndpointSelectionResult.Failure("No enabled endpoints available for this deployment.");
+            return EndpointSelectionResult.Failure("No enabled endpoints available for this model.");
         }
 
         var healthy = candidates.Where(e => e.Health != EndpointHealthState.Unhealthy).ToList();
         if (healthy.Count == 0)
         {
-            return EndpointSelectionResult.Failure("All endpoints for this deployment are unhealthy.");
+            return EndpointSelectionResult.Failure("All endpoints for this model are unhealthy.");
         }
 
         // Lowest Priority number wins; endpoints sharing that priority round-robin via roundRobinCounter,

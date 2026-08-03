@@ -18,7 +18,7 @@ export type OperationType =
 
 export interface Endpoint {
   id: string;
-  modelDeploymentId: string;
+  modelId: string;
   name: string;
   baseUrl: string;
   apiFamily: ApiFamily;
@@ -46,7 +46,7 @@ export interface EndpointConfig {
   maxRetries: number;
 }
 
-export interface ModelDeployment {
+export interface Model {
   id: string;
   name: string;
   strategy: RoutingStrategy;
@@ -72,7 +72,7 @@ export interface ConsumerWithApiKey {
 export interface UsageRecord {
   id: string;
   timestamp: string;
-  modelDeploymentName: string;
+  modelName: string;
   consumerId: string;
   consumerName: string;
   endpointId: string;
@@ -97,7 +97,7 @@ export interface PagedResult<T> {
 }
 
 export interface UsageRecordFilter {
-  modelDeploymentName?: string;
+  modelName?: string;
   consumerName?: string;
   operationType?: OperationType;
   from?: string;

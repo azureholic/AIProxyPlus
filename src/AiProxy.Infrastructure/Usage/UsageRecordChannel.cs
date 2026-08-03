@@ -20,9 +20,9 @@ public sealed class UsageRecordChannel(ILogger<UsageRecordChannel> logger, int c
         if (!_channel.Writer.TryWrite(usageRecord))
         {
             logger.LogError(
-                "Usage record queue is full; dropping usage record for request {RequestId} (deployment {ModelDeploymentName}).",
+                "Usage record queue is full; dropping usage record for request {RequestId} (model {ModelName}).",
                 usageRecord.RequestId,
-                usageRecord.ModelDeploymentName);
+                usageRecord.ModelName);
         }
     }
 }

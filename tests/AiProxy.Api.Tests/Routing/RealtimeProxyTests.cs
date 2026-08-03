@@ -11,7 +11,7 @@ namespace AiProxy.Api.Tests.Routing;
 
 /// <summary>
 /// End-to-end tests for the Realtime (voice) WebSocket proxy (architecture.md §9): connection-scoped
-/// selection, handshake-only failover, and auth/deployment resolution failing fast before any upgrade.
+/// selection, handshake-only failover, and auth/model resolution failing fast before any upgrade.
 /// </summary>
 public class RealtimeProxyTests : IAsyncLifetime, IDisposable
 {
@@ -33,13 +33,13 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority)
+    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl, int priority)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"realtime-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x");
-        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
     }
 
     private WebSocketClient NewAuthenticatedWebSocketClient()
@@ -54,12 +54,12 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task SuccessfulHandshake_EchoesMessagesOverTheConnection()
     {
-        var deploymentName = $"realtime-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        _factory.Models.Seed(model);
 
-        using var socket = await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(deploymentName), CancellationToken.None);
+        using var socket = await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(modelName), CancellationToken.None);
 
         var payload = Encoding.UTF8.GetBytes("hello realtime");
         await socket.SendAsync(payload, WebSocketMessageType.Text, endOfMessage: true, CancellationToken.None);
@@ -78,12 +78,12 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     {
         // Browsers' native WebSocket API can't set custom headers, so the frontend's Voice Playground
         // (architecture.md §6.5) authenticates this one route via ?api_key= instead of X-Api-Key.
-        var deploymentName = $"realtime-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        _factory.Models.Seed(model);
 
-        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={deploymentName}&api_key={ApiTestFactory.DefaultConsumerApiKey}");
+        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={modelName}&api_key={ApiTestFactory.DefaultConsumerApiKey}");
         using var socket = await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None);
 
         _backend1.AcceptedConnectionCount.Should().Be(1);
@@ -94,10 +94,10 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task TicketHandshake_ConsumesTicketOnce_AndRejectsReplay()
     {
-        var deploymentName = $"realtime-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        _factory.Models.Seed(model);
         var consumer = Consumer.CreateOidc(
             Guid.NewGuid(),
             "proxy-admin",
@@ -108,7 +108,7 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
             consumer,
             RealtimeTicketRoutes.OpenAiRealtime,
             TimeSpan.FromSeconds(30));
-        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={deploymentName}&ticket={ticket}");
+        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={modelName}&ticket={ticket}");
 
         using (var socket = await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None))
         {
@@ -149,7 +149,7 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task UnknownDeployment_FailsBeforeUpgrade_With404()
+    public async Task UnknownModel_FailsBeforeUpgrade_With404()
     {
         var act = async () => await NewAuthenticatedWebSocketClient().ConnectAsync(
             RealtimeUri($"does-not-exist-{Guid.NewGuid():N}"), CancellationToken.None);
@@ -160,13 +160,13 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task MissingApiKey_FailsBeforeUpgrade_With401()
     {
-        var deploymentName = $"realtime-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        _factory.Models.Seed(model);
 
         // Deliberately using the un-authenticated client (no ConfigureRequest / X-Api-Key header).
-        var act = async () => await _factory.Server.CreateWebSocketClient().ConnectAsync(RealtimeUri(deploymentName), CancellationToken.None);
+        var act = async () => await _factory.Server.CreateWebSocketClient().ConnectAsync(RealtimeUri(modelName), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*401*");
     }
@@ -176,13 +176,13 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     {
         _backend1.RejectHandshake = true;
 
-        var deploymentName = $"realtime-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url, priority: 2));
+        _factory.Models.Seed(model);
 
-        using var socket = await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(deploymentName), CancellationToken.None);
+        using var socket = await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(modelName), CancellationToken.None);
 
         _backend1.AcceptedConnectionCount.Should().Be(0);
         _backend2.AcceptedConnectionCount.Should().Be(1);
@@ -196,13 +196,13 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
         _backend1.RejectHandshake = true;
         _backend2.RejectHandshake = true;
 
-        var deploymentName = $"realtime-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url, priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url, priority: 2));
+        _factory.Models.Seed(model);
 
-        var act = async () => await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(deploymentName), CancellationToken.None);
+        var act = async () => await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(modelName), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*503*");
     }

@@ -10,7 +10,7 @@ namespace AiProxy.Domain.Entities;
 public sealed class SessionAffinityEntry
 {
     public string SessionId { get; private set; }
-    public Guid ModelDeploymentId { get; private set; }
+    public Guid ModelId { get; private set; }
     public Guid EndpointId { get; private set; }
     public DateTimeOffset LastUsedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
@@ -23,13 +23,13 @@ public sealed class SessionAffinityEntry
 
     private SessionAffinityEntry(
         string sessionId,
-        Guid modelDeploymentId,
+        Guid modelId,
         Guid endpointId,
         DateTimeOffset lastUsedAt,
         DateTimeOffset expiresAt)
     {
         SessionId = sessionId;
-        ModelDeploymentId = modelDeploymentId;
+        ModelId = modelId;
         EndpointId = endpointId;
         LastUsedAt = lastUsedAt;
         ExpiresAt = expiresAt;
@@ -37,7 +37,7 @@ public sealed class SessionAffinityEntry
 
     public static SessionAffinityEntry Create(
         string sessionId,
-        Guid modelDeploymentId,
+        Guid modelId,
         Guid endpointId,
         TimeSpan ttl,
         DateTimeOffset? now = null)
@@ -58,7 +58,7 @@ public sealed class SessionAffinityEntry
         }
 
         var effectiveNow = now ?? DateTimeOffset.UtcNow;
-        return new SessionAffinityEntry(sessionId, modelDeploymentId, endpointId, effectiveNow, effectiveNow + ttl);
+        return new SessionAffinityEntry(sessionId, modelId, endpointId, effectiveNow, effectiveNow + ttl);
     }
 
     public void Touch(TimeSpan ttl, DateTimeOffset? now = null)

@@ -20,7 +20,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
     public const string AdminApiKey = "test-admin-key";
     public const string DefaultConsumerApiKey = "test-consumer-key";
 
-    public FakeModelDeploymentRepository Deployments { get; } = new();
+    public FakeModelRepository Models { get; } = new();
 
     public FakeEndpointRepository Endpoints { get; }
 
@@ -38,7 +38,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public ApiTestFactory()
     {
-        Endpoints = new FakeEndpointRepository(Deployments);
+        Endpoints = new FakeEndpointRepository(Models);
         Secrets.Seed("consumer-key-pepper", TestPepper);
         Secrets.Seed("admin-api-key-hash", AdminApiKeyAuthenticator.Hash(AdminApiKey));
 
@@ -54,7 +54,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         builder.UseSetting("Authentication:AdminApiKeyFallbackEnabled", "true");
         builder.ConfigureTestServices(services =>
         {
-            services.AddSingleton<IModelDeploymentRepository>(Deployments);
+            services.AddSingleton<IModelRepository>(Models);
             services.AddSingleton<IEndpointRepository>(Endpoints);
             services.AddSingleton<ISessionAffinityStore>(Affinity);
             services.AddSingleton<ICredentialProvider, FakeCredentialProvider>();

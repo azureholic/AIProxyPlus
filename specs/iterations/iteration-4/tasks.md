@@ -10,7 +10,7 @@ inference remain open and are intentionally unchecked below.
 Iteration 3's frontend asks operators to paste an Admin API Key and Consumer API Key into `sessionStorage`.
 Iteration 4 replaces both frontend key stand-ins with an interactive OIDC login and a same-origin server session
 for Config, Usage, and Playground inference calls. Every admitted frontend user is an administrator and may select
-any configured model deployment. Inference-only clients outside the frontend continue to use Consumer API Keys.
+any configured model. Inference-only clients outside the frontend continue to use Consumer API Keys.
 The login design must work with any provider that satisfies the documented OIDC capability contract, without a
 provider SDK or provider-specific branch in the application.
 
@@ -175,7 +175,7 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
   do not expose or retain provider tokens in browser storage or JavaScript state.
 - [x] Update the API client to send same-origin credentials and the antiforgery header on unsafe methods, handle
   session expiry without retry loops, and redirect to login when reauthentication is required.
-- [x] Keep the deployment picker backed by the admin-protected model-deployment list. A logged-in administrator can
+- [x] Keep the deployment picker backed by the admin-protected model list. A logged-in administrator can
   select any enabled deployment and invoke Chat or Images with the same session, without entering a key.
 - [x] Show the resolved Consumer username in Playground results and usage views so the administrator can verify
   that inference was attributed to their own identity.
@@ -294,7 +294,7 @@ inference, or the complete provider conformance matrix.
   changed password. Document an explicit reset procedure that removes only the local Keycloak volume and then
   reimports the realm.
 - [ ] Add a local smoke test/checklist proving `proxy-admin` can complete Code + PKCE login, establish a secure
-  session, call Config and Usage APIs with antiforgery protection, list/select all enabled model deployments, run Chat/Images inference without
+  session, call Config and Usage APIs with antiforgery protection, list/select all enabled models, run Chat/Images inference without
   a Consumer API Key, receive usage attribution as `proxy-admin`, obtain and consume a Realtime ticket, log out,
   and log back in after the AppHost has been stopped and restarted.
 - [ ] Update `AiProxy.AppHost` so the Postgres and Vault container resources use Aspire's persistent container

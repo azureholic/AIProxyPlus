@@ -46,7 +46,7 @@ Definition of Done for this iteration:
 
 ## Phase 1 — Domain layer
 
-- [x] Implement `ModelDeployment`, `Endpoint`, `UsageRecord`, `SessionAffinityEntry`, `Consumer` entities and
+- [x] Implement `Model`, `Endpoint`, `UsageRecord`, `SessionAffinityEntry`, `Consumer` entities and
   `ApiFamily`, `AuthMode`, `RoutingStrategy`, `EndpointHealthState`, `OperationType` (ChatCompletion, Completion,
   Embedding, ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, extensible) value objects/enums
   (architecture §5).
@@ -62,12 +62,12 @@ Definition of Done for this iteration:
 
 ## Phase 2 — Application layer
 
-- [x] Define ports: `IModelDeploymentRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
+- [x] Define ports: `IModelRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
   `ISecretResolver`, `ICredentialProvider`, `IEndpointHealthTracker`, `IConsumerRepository`,
   `IConsumerAuthenticator` (hashes an incoming API key and looks up the matching enabled `Consumer`),
   `IUsageExtractor` (extracts token counts and/or `UsageMetrics` from a request/response for one
   `ApiFamily`+`OperationType` pair) and `IUsageExtractorResolver` (picks the right `IUsageExtractor` per request).
-- [x] Implement configuration use cases: create/update/delete `ModelDeployment`, add/update/remove `Endpoint`,
+- [x] Implement configuration use cases: create/update/delete `Model`, add/update/remove `Endpoint`,
   set-endpoint-secret command (delegates to `ISecretResolver`, never stores secret material itself); create
   `Consumer` (generates a random API key, persists only its hash, returns the plaintext key once), rotate
   `Consumer` key, revoke `Consumer`.
@@ -82,12 +82,12 @@ Definition of Done for this iteration:
 - [x] Add EF Core + Npgsql, `AiProxyDbContext`, entity configurations for all five tables
   (architecture §7.1, incl. `consumers`), initial migration. `usage_records.prompt_tokens`/`completion_tokens`/
   `total_tokens` are nullable; add `operation_type` and a `usage_metrics` jsonb column.
-- [x] Implement `IModelDeploymentRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
+- [x] Implement `IModelRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
   `IConsumerRepository` (incl. `GetByApiKeyHashAsync`) against `AiProxyDbContext`.
 - [x] Implement a bounded-channel background writer for usage records so writes never block the response path.
 - [x] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Postgres module: migrations apply
-  cleanly, repository CRUD round-trips, uniqueness constraints enforced (`model_deployments.name`,
-  `consumers.name`/`api_key_hash`, `endpoints.(model_deployment_id, priority)`), usage-record writer persists
+  cleanly, repository CRUD round-trips, uniqueness constraints enforced (`models.name`,
+  `consumers.name`/`api_key_hash`, `endpoints.(model_id, priority)`), usage-record writer persists
   under load (channel → background service → DB, 50 concurrent records), consumer create/rotate/revoke
   round-trips.
 
@@ -188,9 +188,9 @@ Definition of Done for this iteration:
   `/openai/v1/images/variations`, `/openai/v1/responses`) and Anthropic ingress route (`/anthropic/v1/messages`)
   per architecture §12 (mapped in Phase 5, now behind `ConsumerAuthEndpointFilter`).
 - [x] Map configuration REST API (`/api/v1/config/*`, incl. `Consumer` CRUD/rotate) per architecture §7.2, backed
-  by Phase 2 use cases (`CreateModelDeploymentHandler`, `AddEndpointHandler`, `UpdateEndpointHandler`,
-  `RemoveEndpointHandler`, `SetEndpointSecretHandler`, `UpdateModelDeploymentHandler`,
-  `DeleteModelDeploymentHandler`, `CreateConsumerHandler`, `RotateConsumerKeyHandler`, `RevokeConsumerHandler`),
+  by Phase 2 use cases (`CreateModelHandler`, `AddEndpointHandler`, `UpdateEndpointHandler`,
+  `RemoveEndpointHandler`, `SetEndpointSecretHandler`, `UpdateModelHandler`,
+  `DeleteModelHandler`, `CreateConsumerHandler`, `RotateConsumerKeyHandler`, `RevokeConsumerHandler`),
   plus direct repository reads for the two list/get routes that have no dedicated use case.
 - [x] Map usage query endpoint (`GET /api/v1/usage`, filterable by deployment, consumer, operation type, date range).
 - [x] Implement ingress authentication (`ConsumerAuthEndpointFilter`) that resolves the caller's `X-Api-Key` to a
@@ -200,7 +200,7 @@ Definition of Done for this iteration:
   comparison, hash auto-provisioned in Vault on first run) for the **entire** `/api/v1/config/*` + `/api/v1/usage`
   surface — see the architecture §7.2 implementation note for why this is broader than "write routes only".
 - [x] Add `/health/live` (always healthy — liveness), `/health/ready` (probes `ISecretResolver`/
-  `IModelDeploymentRepository` if registered, reports `"not configured"` until Phase 9 wires Postgres/Vault for
+  `IModelRepository` if registered, reports `"not configured"` until Phase 9 wires Postgres/Vault for
   real — forward-compatible with no further code changes needed then), and OpenAPI (`/openapi/v1.json`) +
   Scalar UI in dev.
 - [x] Integration tests (`AiProxy.Api.Tests`): full config CRUD lifecycle (create/get/list/update/delete
@@ -243,7 +243,7 @@ Definition of Done for this iteration:
   instance), the Api project resource wired via `WithReference(postgres)` + `Vault__Address`/`Vault__Token`
   environment variables + `WaitFor(...)` on both. Also closes the long-standing DI-registration gap from
   Phases 5–8: `Program.cs` now registers the real `AiProxyDbContext` (via `Aspire.Npgsql.EntityFrameworkCore.PostgreSQL`'s
-  `AddNpgsqlDbContext`), `ModelDeploymentRepository`/`ConsumerRepository`/`SessionAffinityStore`/`UsageRecordRepository`,
+  `AddNpgsqlDbContext`), `ModelRepository`/`ConsumerRepository`/`SessionAffinityStore`/`UsageRecordRepository`,
   `VaultSecretResolver` (+ `VaultClientFactory`/`VaultOptions`), and `CredentialProvider`
   (`ApiKeyCredentialProvider`/`ManagedIdentityCredentialProvider` via `IMemoryCache`/`DefaultAzureCredential`).
 - [x] Add Dockerfile for `AiProxy.Api` (multi-stage restore/publish/runtime, repo-root build context) + a
@@ -256,7 +256,7 @@ Definition of Done for this iteration:
   - `dotnet run --project src/AiProxy.AppHost`: Postgres/Vault containers came up, `AiProxyDbContextFactory`
     (design-time-only) updated to honor a `ConnectionStrings__aiproxydb` env var override so `dotnet ef database
     update` could target the Aspire-managed container; `GET /health/ready` initially reported `postgres`
-    unhealthy (`relation "model_deployments" does not exist` — migrations aren't auto-applied at startup, by
+    unhealthy (`relation "models" does not exist` — migrations aren't auto-applied at startup, by
     design, since that would break `WebApplicationFactory`-based tests which never point at a real database),
     then reported `{"vault":"healthy","postgres":"healthy"}` once the migration was applied. Directly queried
     Vault's HTTP API with the dev root token and confirmed `admin-api-key-hash` was auto-provisioned at

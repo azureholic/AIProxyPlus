@@ -12,7 +12,7 @@ import {
 import { SendRegular } from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
-import { DeploymentPicker } from '../../components/DeploymentPicker';
+import { ModelPicker } from '../../components/ModelPicker';
 import { consumerFetch, toApiError } from '../../api/client';
 import { readSseEvents } from '../../api/sse';
 
@@ -51,7 +51,7 @@ interface OpenAiChatChunk {
 
 export function ChatPlaygroundPage() {
   const styles = useStyles();
-  const [deployment, setDeployment] = useState('');
+  const [model, setModel] = useState('');
   const [streaming, setStreaming] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -60,7 +60,7 @@ export function ChatPlaygroundPage() {
   const [usage, setUsage] = useState<OpenAiChatChunk['usage'] | null>(null);
 
   const send = async () => {
-    if (!deployment || !input.trim() || busy) {
+    if (!model || !input.trim() || busy) {
       return;
     }
 
@@ -75,7 +75,7 @@ export function ChatPlaygroundPage() {
       const response = await consumerFetch('/openai/v1/chat/completions', {
         method: 'POST',
         body: JSON.stringify({
-          model: deployment,
+          model: model,
           stream: streaming,
           messages: history.map((m) => ({ role: m.role, content: m.content })),
         }),
@@ -122,7 +122,7 @@ export function ChatPlaygroundPage() {
       <PageHeader title="Chat Playground" />
 
       <div className={styles.controls}>
-        <DeploymentPicker value={deployment} onChange={setDeployment} />
+        <ModelPicker value={model} onChange={setModel} />
         <Switch checked={streaming} onChange={(_, data) => setStreaming(data.checked)} label="Streaming" />
       </div>
 
@@ -146,8 +146,8 @@ export function ChatPlaygroundPage() {
         <Textarea
           style={{ flex: 1 }}
           value={input}
-          placeholder={deployment ? 'Type a message…' : 'Select a deployment first'}
-          disabled={!deployment}
+          placeholder={model ? 'Type a message…' : 'Select a model first'}
+          disabled={!model}
           onChange={(_, data) => setInput(data.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -159,7 +159,7 @@ export function ChatPlaygroundPage() {
         <Button
           appearance="primary"
           icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
-          disabled={!deployment || !input.trim() || busy}
+          disabled={!model || !input.trim() || busy}
           onClick={send}
         >
           Send

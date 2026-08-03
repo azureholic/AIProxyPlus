@@ -3,7 +3,7 @@ import { Button, Spinner, Textarea, makeStyles, tokens } from '@fluentui/react-c
 import { ImageAddRegular } from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
-import { DeploymentPicker } from '../../components/DeploymentPicker';
+import { ModelPicker } from '../../components/ModelPicker';
 import { consumerFetch, toApiError } from '../../api/client';
 
 const useStyles = makeStyles({
@@ -31,7 +31,7 @@ interface ImageResult {
 
 export function ImagePlaygroundPage() {
   const styles = useStyles();
-  const [deployment, setDeployment] = useState('');
+  const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -43,7 +43,7 @@ export function ImagePlaygroundPage() {
     try {
       const response = await consumerFetch('/openai/v1/images/generations', {
         method: 'POST',
-        body: JSON.stringify({ model: deployment, prompt }),
+        body: JSON.stringify({ model: model, prompt }),
       });
 
       if (!response.ok) {
@@ -64,7 +64,7 @@ export function ImagePlaygroundPage() {
       <PageHeader title="Image Playground" />
 
       <div className={styles.controls}>
-        <DeploymentPicker value={deployment} onChange={setDeployment} />
+        <ModelPicker value={model} onChange={setModel} />
       </div>
 
       <Textarea
@@ -76,7 +76,7 @@ export function ImagePlaygroundPage() {
       <Button
         appearance="primary"
         icon={busy ? <Spinner size="tiny" /> : <ImageAddRegular />}
-        disabled={!deployment || !prompt.trim() || busy}
+        disabled={!model || !prompt.trim() || busy}
         onClick={generate}
       >
         Generate

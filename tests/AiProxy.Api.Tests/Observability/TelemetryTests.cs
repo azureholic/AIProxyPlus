@@ -36,22 +36,22 @@ public class TelemetryTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority)
+    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl, int priority)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"telemetry-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
     }
 
     [Fact]
     public async Task SuccessfulRequest_EmitsExpectedActivitiesAndMetrics()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!, priority: 1));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!, priority: 1));
+        _factory.Models.Seed(model);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(
@@ -86,10 +86,10 @@ public class TelemetryTests : IAsyncLifetime, IDisposable
         meterListener.Start();
 
         var response = await _factory.CreateClient().PostAsJsonAsync(
-            "/openai/v1/chat/completions", new { model = deploymentName, messages = new[] { new { role = "user", content = "hi" } } });
+            "/openai/v1/chat/completions", new { model = modelName, messages = new[] { new { role = "user", content = "hi" } } });
         response.EnsureSuccessStatusCode();
 
-        activityNames.Should().Contain(["ai_proxy.request", "deployment_resolution", "secret_resolution", "backend_call", "usage_extraction"]);
+        activityNames.Should().Contain(["ai_proxy.request", "model_resolution", "secret_resolution", "backend_call", "usage_extraction"]);
         measurements.Select(m => m.Instrument).Should().Contain(
             ["ai_proxy.requests.count", "ai_proxy.request.duration", "ai_proxy.tokens.prompt", "ai_proxy.tokens.completion", "ai_proxy.tokens.total"]);
     }
@@ -97,14 +97,14 @@ public class TelemetryTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task Failover_EmitsFailoverCountMetric()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
         var backend2 = WireMockServer.Start();
         try
         {
-            deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!, priority: 1));
-            deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, backend2.Url!, priority: 2));
-            _factory.Deployments.Seed(deployment);
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!, priority: 1));
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, backend2.Url!, priority: 2));
+            _factory.Models.Seed(model);
 
             _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
                 .RespondWith(Response.Create().WithStatusCode(500));
@@ -127,7 +127,7 @@ public class TelemetryTests : IAsyncLifetime, IDisposable
             meterListener.Start();
 
             var response = await _factory.CreateClient().PostAsJsonAsync(
-                "/openai/v1/chat/completions", new { model = deploymentName, messages = new[] { new { role = "user", content = "hi" } } });
+                "/openai/v1/chat/completions", new { model = modelName, messages = new[] { new { role = "user", content = "hi" } } });
             response.EnsureSuccessStatusCode();
 
             measurements.Should().Contain("ai_proxy.failover.count");

@@ -36,12 +36,12 @@ public class SessionAffinityStoreTests(PostgresContainerFixture fixture)
     public async Task SaveAsync_CalledTwiceForSameSession_UpdatesExpiryInPlace()
     {
         var sessionId = $"session-{Guid.NewGuid():N}";
-        var modelDeploymentId = Guid.NewGuid();
+        var modelId = Guid.NewGuid();
         var endpointId = Guid.NewGuid();
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         await using var writeContext1 = fixture.CreateDbContext();
-        var entry = SessionAffinityEntry.Create(sessionId, modelDeploymentId, endpointId, TimeSpan.FromMinutes(30), now);
+        var entry = SessionAffinityEntry.Create(sessionId, modelId, endpointId, TimeSpan.FromMinutes(30), now);
         await new SessionAffinityStore(writeContext1).SaveAsync(entry);
 
         entry.Touch(TimeSpan.FromMinutes(30), now.AddMinutes(10));

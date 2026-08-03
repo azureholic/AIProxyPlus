@@ -26,19 +26,19 @@ public sealed class AiProxyMetrics : IDisposable
         _failoverCount = _meter.CreateCounter<long>("ai_proxy.failover.count", description: "Failovers from one endpoint to the next.");
     }
 
-    public void RecordRequest(string deployment, string apiFamily, string endpoint, int statusCode) =>
+    public void RecordRequest(string model, string apiFamily, string endpoint, int statusCode) =>
         _requestsCount.Add(
             1,
-            new KeyValuePair<string, object?>("deployment", deployment),
+            new KeyValuePair<string, object?>("model", model),
             new KeyValuePair<string, object?>("api_family", apiFamily),
             new KeyValuePair<string, object?>("endpoint", endpoint),
             new KeyValuePair<string, object?>("status", statusCode));
 
-    public void RecordTokens(string deployment, string endpoint, int? promptTokens, int? completionTokens, int? totalTokens)
+    public void RecordTokens(string model, string endpoint, int? promptTokens, int? completionTokens, int? totalTokens)
     {
         var tags = new KeyValuePair<string, object?>[]
         {
-            new("deployment", deployment),
+            new("model", model),
             new("endpoint", endpoint),
         };
 
@@ -58,18 +58,18 @@ public sealed class AiProxyMetrics : IDisposable
         }
     }
 
-    public void RecordDuration(double milliseconds, string deployment, string apiFamily, string endpoint, int statusCode) =>
+    public void RecordDuration(double milliseconds, string model, string apiFamily, string endpoint, int statusCode) =>
         _requestDuration.Record(
             milliseconds,
-            new KeyValuePair<string, object?>("deployment", deployment),
+            new KeyValuePair<string, object?>("model", model),
             new KeyValuePair<string, object?>("api_family", apiFamily),
             new KeyValuePair<string, object?>("endpoint", endpoint),
             new KeyValuePair<string, object?>("status", statusCode));
 
-    public void RecordFailover(string deployment, string fromEndpoint, string toEndpoint) =>
+    public void RecordFailover(string model, string fromEndpoint, string toEndpoint) =>
         _failoverCount.Add(
             1,
-            new KeyValuePair<string, object?>("deployment", deployment),
+            new KeyValuePair<string, object?>("model", model),
             new KeyValuePair<string, object?>("from_endpoint", fromEndpoint),
             new KeyValuePair<string, object?>("to_endpoint", toEndpoint));
 

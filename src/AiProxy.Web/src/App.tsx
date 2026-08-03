@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Button, FluentProvider, Spinner, webLightTheme } from '@fluentui/react-components';
 import { AppShell } from './layout/AppShell';
 import { navSections, settingsRoute, defaultRoutePath } from './routes/routes';
-import { ModelDeploymentDetailPage } from './pages/config/ModelDeploymentDetailPage';
+import { ModelDetailPage } from './pages/config/ModelDetailPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 
 function AuthenticatedApp() {
@@ -26,7 +26,7 @@ function AuthenticatedApp() {
     <AppShell>
       <Routes>
         <Route path="/" element={<Navigate to={defaultRoutePath} replace />} />
-        <Route path="/config/model-deployments/:name" element={<ModelDeploymentDetailPage />} />
+        <Route path="/config/models/:name" element={<ModelDetailPage />} />
         {allRoutes.map((route) => (
           <Route key={route.path} path={route.path} element={route.element} />
         ))}

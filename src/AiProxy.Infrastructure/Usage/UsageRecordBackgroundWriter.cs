@@ -25,9 +25,9 @@ public sealed class UsageRecordBackgroundWriter(
             {
                 logger.LogError(
                     ex,
-                    "Failed to persist usage record for request {RequestId} (deployment {ModelDeploymentName}).",
+                    "Failed to persist usage record for request {RequestId} (model {ModelName}).",
                     usageRecord.RequestId,
-                    usageRecord.ModelDeploymentName);
+                    usageRecord.ModelName);
             }
         }
     }

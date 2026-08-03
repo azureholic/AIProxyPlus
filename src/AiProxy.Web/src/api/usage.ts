@@ -2,7 +2,7 @@ import { adminJson } from './client';
 import type { OperationType, PagedResult, UsageRecord } from './types';
 
 export interface UsageFilter {
-  modelDeploymentName?: string;
+  modelName?: string;
   consumerName?: string;
   operationType?: OperationType | '';
   from?: string;
@@ -13,7 +13,7 @@ export interface UsageFilter {
 
 export function queryUsage(filter: UsageFilter): Promise<PagedResult<UsageRecord>> {
   const params = new URLSearchParams();
-  if (filter.modelDeploymentName) params.set('modelDeploymentName', filter.modelDeploymentName);
+  if (filter.modelName) params.set('modelName', filter.modelName);
   if (filter.consumerName) params.set('consumerName', filter.consumerName);
   if (filter.operationType) params.set('operationType', filter.operationType);
   if (filter.from) params.set('from', filter.from);

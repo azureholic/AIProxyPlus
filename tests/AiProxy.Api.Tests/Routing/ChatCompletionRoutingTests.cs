@@ -32,13 +32,13 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority, int maxRetries = 0)
+    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl, int priority, int maxRetries = 0)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"chat-completion-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: maxRetries);
-        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
     }
 
     private static object ChatBody(string model) => new { model, messages = new[] { new { role = "user", content = "hi" } } };
@@ -46,18 +46,18 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task Routes_ToLowestPriorityHealthyEndpoint()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
 
         _backend1.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-1", choices = Array.Empty<object>() }));
         _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
 
-        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(deploymentName));
+        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
@@ -68,18 +68,18 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task Failover_OnBackend5xx_TriesNextPriorityEndpoint()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
 
         _backend1.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(500));
         _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
 
-        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(deploymentName));
+        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
@@ -89,16 +89,16 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task Failover_OnConnectionRefused_TriesNextPriorityEndpoint()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, "http://127.0.0.1:1", priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, "http://127.0.0.1:1", priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
 
         _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
 
-        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(deploymentName));
+        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
@@ -110,25 +110,25 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
     {
         // The client sees the priority-1 endpoint's own error (500), not a generic 503 that masks which
         // backend actually failed and why (architecture.md §9) — even though priority-2 failed differently (503).
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1));
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
 
         _backend1.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(500).WithBodyAsJson(new { error = "backend1 exploded" }));
         _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(503));
 
-        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(deploymentName));
+        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         (await response.Content.ReadAsStringAsync()).Should().Contain("backend1 exploded");
     }
 
     [Fact]
-    public async Task UnknownDeployment_Returns404()
+    public async Task UnknownModel_Returns404()
     {
         var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody("never-registered"));
 
@@ -146,18 +146,18 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task DisabledEndpoint_IsNeverSelected()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        var disabled = NewApiKeyEndpoint(deployment.Id, _backend1.Url!, priority: 1);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        var disabled = NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1);
         disabled.Disable();
-        deployment.AddEndpoint(disabled);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend2.Url!, priority: 2));
-        _factory.Deployments.Seed(deployment);
+        model.AddEndpoint(disabled);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
 
         _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
 
-        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(deploymentName));
+        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _backend1.LogEntries.Should().BeEmpty();

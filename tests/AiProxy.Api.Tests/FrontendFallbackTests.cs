@@ -44,6 +44,6 @@ public class FrontendFallbackTests : IDisposable
         noAuthClient.DefaultRequestHeaders.Remove("X-Admin-Api-Key");
 
         (await noAuthClient.PostAsync("/openai/v1/chat/completions", content: null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await noAuthClient.GetAsync("/api/v1/config/model-deployments")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await noAuthClient.GetAsync("/api/v1/config/models")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

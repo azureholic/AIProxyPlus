@@ -5,11 +5,11 @@ namespace AiProxy.Infrastructure.Persistence;
 
 public sealed class AiProxyDbContext(DbContextOptions<AiProxyDbContext> options) : DbContext(options)
 {
-    public DbSet<ModelDeployment> ModelDeployments => Set<ModelDeployment>();
+    public DbSet<Model> Models => Set<Model>();
 
     public DbSet<Endpoint> Endpoints => Set<Endpoint>();
 
-    public DbSet<ModelDeploymentEndpoint> ModelDeploymentEndpoints => Set<ModelDeploymentEndpoint>();
+    public DbSet<ModelEndpoint> ModelEndpoints => Set<ModelEndpoint>();
 
     public DbSet<Consumer> Consumers => Set<Consumer>();
 

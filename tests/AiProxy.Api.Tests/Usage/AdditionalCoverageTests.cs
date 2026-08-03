@@ -30,29 +30,29 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority = 1)
+    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl, int priority = 1)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"additional-coverage-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
     }
 
     [Fact]
     public async Task ImageEdit_NonStreaming_CapturesUsageMetrics()
     {
-        var deploymentName = $"dall-e-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"dall-e-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/images/edits").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(
                 new { data = new[] { new { url = "https://example/edited.png", size = "512x512" } } }));
 
         var response = await _factory.CreateClient().PostAsJsonAsync(
-            "/openai/v1/images/edits", new { model = deploymentName, prompt = "make it blue" });
+            "/openai/v1/images/edits", new { model = modelName, prompt = "make it blue" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -60,17 +60,17 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task ImageVariation_NonStreaming_Succeeds()
     {
-        var deploymentName = $"dall-e-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"dall-e-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/images/variations").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(
                 new { data = new[] { new { url = "https://example/variation.png" } } }));
 
         var response = await _factory.CreateClient().PostAsJsonAsync(
-            "/openai/v1/images/variations", new { model = deploymentName });
+            "/openai/v1/images/variations", new { model = modelName });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -78,14 +78,14 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task ResponsesApi_StreamingFollowUpTurn_PinsToOriginatingBackend()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
         var backend2 = WireMockServer.Start();
         try
         {
-            deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-            deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, backend2.Url!, priority: 2));
-            _factory.Deployments.Seed(deployment);
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, backend2.Url!, priority: 2));
+            _factory.Models.Seed(model);
 
             const string responseId = "resp_stream_abc";
             var sse =
@@ -98,12 +98,12 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
                 .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "should-not-be-called" }));
 
             var client = _factory.CreateClient();
-            var first = await client.PostAsJsonAsync("/openai/v1/responses", new { model = deploymentName, input = "hi", stream = true });
+            var first = await client.PostAsJsonAsync("/openai/v1/responses", new { model = modelName, input = "hi", stream = true });
             first.StatusCode.Should().Be(HttpStatusCode.OK);
             (await first.Content.ReadAsStringAsync()).Should().Contain("response.completed");
 
             var second = await client.PostAsJsonAsync(
-                "/openai/v1/responses", new { model = deploymentName, previous_response_id = responseId, input = "and then?", stream = true });
+                "/openai/v1/responses", new { model = modelName, previous_response_id = responseId, input = "and then?", stream = true });
 
             second.StatusCode.Should().Be(HttpStatusCode.OK);
             backend2.LogEntries.Should().BeEmpty("the follow-up turn must pin to the endpoint that created responseId, not fail over");
@@ -117,10 +117,10 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task CallerCancellation_DoesNotTriggerFailoverRetry()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithDelay(TimeSpan.FromSeconds(5)).WithBodyAsJson(new { id = "resp-1" }));
@@ -128,7 +128,7 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
         var request = new HttpRequestMessage(HttpMethod.Post, "/openai/v1/chat/completions")
         {
-            Content = JsonContent.Create(new { model = deploymentName, messages = new[] { new { role = "user", content = "hi" } } }),
+            Content = JsonContent.Create(new { model = modelName, messages = new[] { new { role = "user", content = "hi" } } }),
         };
 
         var act = () => _factory.CreateClient().SendAsync(request, cts.Token);

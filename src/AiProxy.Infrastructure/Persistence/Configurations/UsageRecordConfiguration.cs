@@ -14,7 +14,7 @@ public sealed class UsageRecordConfiguration : IEntityTypeConfiguration<UsageRec
         builder.HasKey(u => u.Id);
         builder.Property(u => u.Id).ValueGeneratedNever();
 
-        builder.Property(u => u.ModelDeploymentName).IsRequired().HasMaxLength(200);
+        builder.Property(u => u.ModelName).IsRequired().HasMaxLength(200);
         builder.Property(u => u.ConsumerName).IsRequired().HasMaxLength(200);
         builder.Property(u => u.ApiFamily).HasConversion<string>().HasMaxLength(50);
         builder.Property(u => u.OperationType).HasConversion<string>().HasMaxLength(50);
@@ -34,7 +34,7 @@ public sealed class UsageRecordConfiguration : IEntityTypeConfiguration<UsageRec
         builder.Property(u => u.UsageMetrics).HasColumnType("jsonb");
 
         // Chargeback queries per architecture.md §7.1.
-        builder.HasIndex(u => new { u.ModelDeploymentName, u.Timestamp });
+        builder.HasIndex(u => new { u.ModelName, u.Timestamp });
         builder.HasIndex(u => new { u.ConsumerId, u.Timestamp });
     }
 

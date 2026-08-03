@@ -1,7 +1,7 @@
 # Iteration 7 — Reusable API Routes
 
 Companion to [specs/architecture/architecture.md](../../architecture/architecture.md). This iteration introduces
-reusable API-route configuration so a model deployment can combine a shared endpoint host and credential with the
+reusable API-route configuration so a model can combine a shared endpoint host and credential with the
 provider-specific API surface exposed by that host.
 
 ## Proposed model
@@ -9,7 +9,7 @@ provider-specific API surface exposed by that host.
 - `Endpoint` continues to own connection and credential configuration: base URL, authentication mode, secret or
   managed identity settings, timeout, and retries.
 - `ApiRoute` owns API-surface configuration: display name, provider, and normalized path prefix.
-- `ModelDeploymentEndpoint` selects both an `Endpoint` and an `ApiRoute`, in addition to priority, enabled state,
+- `ModelEndpoint` selects both an `Endpoint` and an `ApiRoute`, in addition to priority, enabled state,
   and runtime health.
 - Ingress remains stable. Clients continue to call the proxy's existing `/openai/v1/*` and `/anthropic/v1/*`
   routes; only the selected upstream path is rewritten.
@@ -37,8 +37,8 @@ replace an administrator's later edits when the application restarts.
   delete behavior while assigned.
 - [ ] Decide whether provider is a closed enum or an extensible identifier, and document how unsupported
   provider/operation combinations fail before any upstream request is sent.
-- [ ] Define the `ModelDeploymentEndpoint` identity and invariants after adding `ApiRouteId`, including whether
-  the same endpoint may be assigned more than once to one deployment through different API routes.
+- [ ] Define the `ModelEndpoint` identity and invariants after adding `ApiRouteId`, including whether
+  the same endpoint may be assigned more than once to one model through different API routes.
 - [ ] Define upstream URI composition as `Endpoint.BaseUrl + ApiRoute.PathPrefix + operation suffix + query`,
   with exactly one slash at each boundary and no forwarding of the proxy ingress prefix.
 - [ ] Define provider adapters for operation suffixes, credential-header placement, request mutation, response
@@ -51,7 +51,7 @@ replace an administrator's later edits when the application restarts.
 
 - [ ] Add the reusable `ApiRoute` aggregate and provider value type with validation for names and normalized path
   prefixes.
-- [ ] Add `ApiRouteId` and navigation to the model-deployment endpoint assignment according to the approved
+- [ ] Add `ApiRouteId` and navigation to the model endpoint assignment according to the approved
   identity and uniqueness design.
 - [ ] Add `api_routes` persistence, repository abstraction/implementation, EF configuration, and assignment
   relationships with delete protection.
@@ -69,11 +69,11 @@ replace an administrator's later edits when the application restarts.
 - [ ] Add validated `ApiRoute` list/get/create/update/delete handlers and repository ports.
 - [ ] Add admin-protected `/api/v1/config/api-routes` CRUD endpoints with OpenAPI metadata and conflict responses
   for assigned routes.
-- [ ] Extend model-deployment assignment commands and responses to require and expose both `endpointId` and
+- [ ] Extend model assignment commands and responses to require and expose both `endpointId` and
   `apiRouteId`.
 - [ ] Preserve endpoint secret handling and ensure API-route reads never duplicate or expose credential material.
 - [ ] Add application and API tests for route CRUD, seeded-route visibility, endpoint/route reuse across model
-  deployments, invalid combinations, and delete protection.
+  configurations, invalid combinations, and delete protection.
 
 ## Phase 4 — Upstream routing
 
@@ -92,12 +92,12 @@ replace an administrator's later edits when the application restarts.
 
 ## Phase 5 — Frontend
 
-- [ ] Add Config > API Routes beside Model Deployments, Endpoints, and Consumers.
+- [ ] Add Config > API Routes beside Models, Endpoints, and Consumers.
 - [ ] Add API-route list/create/edit/delete flows with provider selection, path-prefix validation, built-in-route
   visibility, assigned-route conflict handling, and no credential fields.
-- [ ] Update model-deployment assignment UI to select both an existing endpoint and an existing API route, then
+- [ ] Update model assignment UI to select both an existing endpoint and an existing API route, then
   configure priority and enabled state.
-- [ ] Show endpoint and API-route names together on deployment details so the effective target is understandable
+- [ ] Show endpoint and API-route names together on model details so the effective target is understandable
   without exposing secrets.
 - [ ] Add frontend API-contract and interaction coverage for route management and assignment selection.
 

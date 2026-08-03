@@ -125,7 +125,7 @@ export function EndpointsPage() {
 
       <ErrorBanner error={error} />
       {endpoints === null && <Spinner label="Loading endpoints..." />}
-      {endpoints !== null && endpoints.length === 0 && <p>No endpoints yet. Create one before assigning it to a model deployment.</p>}
+      {endpoints !== null && endpoints.length === 0 && <p>No endpoints yet. Create one before assigning it to a model.</p>}
       {endpoints !== null && endpoints.length > 0 && (
         <Table>
           <TableHeader>
@@ -164,7 +164,7 @@ export function EndpointsPage() {
                   <ConfirmDialog
                     trigger={<Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Delete ${endpoint.name}`} />}
                     title={`Delete '${endpoint.name}'?`}
-                    message="The endpoint can only be deleted when it is not assigned to any model deployment."
+                    message="The endpoint can only be deleted when it is not assigned to any model."
                     confirmLabel="Delete"
                     onConfirm={async () => {
                       await deleteEndpoint(endpoint.id);

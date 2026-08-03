@@ -15,14 +15,14 @@ using Endpoint = AiProxy.Domain.Entities.Endpoint;
 namespace AiProxy.Infrastructure.Routing;
 
 /// <summary>
-/// Orchestrates deployment resolution, priority/failover selection, sticky sessions, forwarding, and usage
+/// Orchestrates model resolution, priority/failover selection, sticky sessions, forwarding, and usage
 /// capture for a single ingress request (architecture.md §9/§10). Forwarding itself goes through
 /// <see cref="DirectHttpProxy"/>/<see cref="SseStreamRelay"/> rather than YARP's <c>IHttpForwarder</c> — see
 /// that type's remarks for why: retries require inspecting an upstream response before committing anything to
 /// the client, which <c>IHttpForwarder</c> does not allow.
 /// </summary>
 public sealed class ProxyRoutingService(
-    IModelDeploymentRepository modelDeploymentRepository,
+    IModelRepository modelRepository,
     ISessionAffinityStore sessionAffinityStore,
     IEndpointHealthTracker endpointHealthTracker,
     IEndpointRoundRobinCounter roundRobinCounter,
@@ -52,28 +52,28 @@ public sealed class ProxyRoutingService(
 
         if (string.IsNullOrWhiteSpace(fields.Model))
         {
-            return new RoutingFailure(RoutingFailureReason.DeploymentNotFound, "Request body must include a 'model' field.");
+            return new RoutingFailure(RoutingFailureReason.ModelNotFound, "Request body must include a 'model' field.");
         }
 
-        ModelDeployment? deployment;
-        using (AiProxyActivitySource.Instance.StartActivity("deployment_resolution"))
+        Model? model;
+        using (AiProxyActivitySource.Instance.StartActivity("model_resolution"))
         {
-            deployment = await modelDeploymentRepository.GetByNameAsync(fields.Model, cancellationToken);
+            model = await modelRepository.GetByNameAsync(fields.Model, cancellationToken);
         }
 
-        if (deployment is null)
+        if (model is null)
         {
-            return new RoutingFailure(RoutingFailureReason.DeploymentNotFound, $"Model deployment '{fields.Model}' was not found.");
+            return new RoutingFailure(RoutingFailureReason.ModelNotFound, $"Model '{fields.Model}' was not found.");
         }
 
-        rootActivity?.SetTag("deployment", deployment.Name);
+        rootActivity?.SetTag("model", model.Name);
 
         // Snapshot once per incoming request (not per retry) so a single request's failover attempts move
         // deterministically through the surviving round-robin tier instead of re-rolling on every retry.
-        var roundRobinSeed = roundRobinCounter.Next(deployment.Id);
+        var roundRobinSeed = roundRobinCounter.Next(model.Id);
 
         // The Responses API is the only operation type with cross-request affinity, and it's automatic — no
-        // deployment-level config flag (architecture.md §9). Everything else round-robins/fails over freely;
+        // model-level config flag (architecture.md §9). Everything else round-robins/fails over freely;
         // Realtime API connections (§9) get their own connection-scoped selection, not this per-request path.
         var sessionKey = operationType == OperationType.ResponsesApi ? fields.PreviousResponseId : null;
         SessionAffinityEntry? affinityEntry = null;
@@ -98,7 +98,7 @@ public sealed class ProxyRoutingService(
         UpstreamFailureSnapshot? firstFailureSnapshot = null;
         while (true)
         {
-            var selection = EndpointSelector.SelectEndpoint(deployment.Endpoints, stickyEndpointId, excludedEndpointIds, roundRobinSeed);
+            var selection = EndpointSelector.SelectEndpoint(model.Endpoints, stickyEndpointId, excludedEndpointIds, roundRobinSeed);
             if (!selection.IsSuccess)
             {
                 var reason = stickyEndpointId is not null
@@ -112,7 +112,7 @@ public sealed class ProxyRoutingService(
 
             if (previouslyFailedEndpoint is not null && previouslyFailedEndpoint.Id != endpoint.Id)
             {
-                metrics.RecordFailover(deployment.Name, previouslyFailedEndpoint.BaseUrl, endpoint.BaseUrl);
+                metrics.RecordFailover(model.Name, previouslyFailedEndpoint.BaseUrl, endpoint.BaseUrl);
             }
 
             EndpointCredential credential;
@@ -134,16 +134,16 @@ public sealed class ProxyRoutingService(
             if (outcome.Succeeded)
             {
                 endpointHealthTracker.MarkHealthy(endpoint.Id);
-                metrics.RecordRequest(deployment.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
-                metrics.RecordDuration(stopwatch.Elapsed.TotalMilliseconds, deployment.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
+                metrics.RecordRequest(model.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
+                metrics.RecordDuration(stopwatch.Elapsed.TotalMilliseconds, model.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
                 if (outcome.Usage is not null)
                 {
                     metrics.RecordTokens(
-                        deployment.Name, endpoint.BaseUrl, outcome.Usage.PromptTokens, outcome.Usage.CompletionTokens, outcome.Usage.TotalTokens);
+                        model.Name, endpoint.BaseUrl, outcome.Usage.PromptTokens, outcome.Usage.CompletionTokens, outcome.Usage.TotalTokens);
                 }
 
                 await PersistResponsesApiAffinityAsync(
-                    deployment, endpoint, operationType, fields.StoreFalse, outcome.CapturedResponseId, cancellationToken);
+                    model, endpoint, operationType, fields.StoreFalse, outcome.CapturedResponseId, cancellationToken);
 
                 // ConsumerId is only populated once ingress authentication (Phase 7) resolves a caller; until
                 // then there is no valid Consumer to attribute usage to, so capture is skipped rather than
@@ -153,7 +153,7 @@ public sealed class ProxyRoutingService(
                 if (consumerId is not null && outcome.Usage is not null)
                 {
                     EnqueueUsageRecord(
-                        deployment, endpoint, operationType, fields, sessionKey, consumerId.Value, consumerName, outcome, stopwatch.ElapsedMilliseconds);
+                        model, endpoint, operationType, fields, sessionKey, consumerId.Value, consumerName, outcome, stopwatch.ElapsedMilliseconds);
                 }
 
                 return null;
@@ -190,7 +190,7 @@ public sealed class ProxyRoutingService(
     }
 
     private void EnqueueUsageRecord(
-        ModelDeployment deployment,
+        Model model,
         Endpoint endpoint,
         OperationType operationType,
         RequestBodyFields fields,
@@ -202,7 +202,7 @@ public sealed class ProxyRoutingService(
     {
         var usageRecord = UsageRecord.Create(
             Guid.NewGuid(),
-            deployment.Name,
+            model.Name,
             consumerId,
             consumerName ?? "unknown",
             endpoint.Id,
@@ -299,7 +299,7 @@ public sealed class ProxyRoutingService(
     }
 
     private async Task PersistResponsesApiAffinityAsync(
-        ModelDeployment deployment,
+        Model model,
         Endpoint endpoint,
         OperationType operationType,
         bool storeFalse,
@@ -311,7 +311,7 @@ public sealed class ProxyRoutingService(
             return;
         }
 
-        var entry = SessionAffinityEntry.Create(capturedResponseId, deployment.Id, endpoint.Id, _sessionAffinityTtl);
+        var entry = SessionAffinityEntry.Create(capturedResponseId, model.Id, endpoint.Id, _sessionAffinityTtl);
         await sessionAffinityStore.SaveAsync(entry, cancellationToken);
     }
 

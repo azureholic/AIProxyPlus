@@ -10,7 +10,7 @@ describe('api client', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await adminFetch('/api/v1/config/model-deployments');
+    await adminFetch('/api/v1/config/models');
 
     const [, init] = fetchMock.mock.calls[0];
     expect(init.credentials).toBe('include');
@@ -59,7 +59,7 @@ describe('api client', () => {
     const listener = vi.fn();
     window.addEventListener('aiproxy:session-expired', listener, { once: true });
 
-    await adminFetch('/api/v1/config/model-deployments');
+    await adminFetch('/api/v1/config/models');
 
     expect(listener).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -67,16 +67,16 @@ describe('api client', () => {
 
   it('surfaces the backend error body as a thrown ApiError', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: 'Model deployment was not found.' }), {
+      new Response(JSON.stringify({ error: 'Model was not found.' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json' },
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(adminJson('/api/v1/config/model-deployments/missing')).rejects.toMatchObject({
+    await expect(adminJson('/api/v1/config/models/missing')).rejects.toMatchObject({
       status: 404,
-      message: 'Model deployment was not found.',
+      message: 'Model was not found.',
     } satisfies Partial<ApiError>);
   });
 

@@ -7,19 +7,19 @@ namespace AiProxy.Domain.Tests.Services;
 
 public class EndpointSelectorTests
 {
-    private static ModelDeploymentEndpoint Healthy(Guid deploymentId, int priority)
+    private static ModelEndpoint Healthy(Guid modelId, int priority)
     {
         var endpoint = Endpoint.Create(
             Guid.NewGuid(), "Endpoint", "https://api.example.com", ApiFamily.OpenAI,
             AuthMode.ApiKey, secretRef: "secret/x");
-        var assignment = ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority);
+        var assignment = ModelEndpoint.Create(modelId, endpoint, priority);
         assignment.MarkHealthy();
         return assignment;
     }
 
-    private static ModelDeploymentEndpoint Unhealthy(Guid deploymentId, int priority)
+    private static ModelEndpoint Unhealthy(Guid modelId, int priority)
     {
-        var endpoint = Healthy(deploymentId, priority);
+        var endpoint = Healthy(modelId, priority);
         endpoint.MarkUnhealthy();
         return endpoint;
     }
@@ -37,8 +37,8 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_SingleHealthyEndpoint_ReturnsIt()
     {
-        var deploymentId = Guid.NewGuid();
-        var endpoint = Healthy(deploymentId, priority: 1);
+        var modelId = Guid.NewGuid();
+        var endpoint = Healthy(modelId, priority: 1);
 
         var result = EndpointSelector.SelectEndpoint([endpoint]);
 
@@ -49,9 +49,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_MultipleHealthy_ReturnsLowestPriority()
     {
-        var deploymentId = Guid.NewGuid();
-        var primary = Healthy(deploymentId, priority: 1);
-        var secondary = Healthy(deploymentId, priority: 2);
+        var modelId = Guid.NewGuid();
+        var primary = Healthy(modelId, priority: 1);
+        var secondary = Healthy(modelId, priority: 2);
 
         var result = EndpointSelector.SelectEndpoint([secondary, primary]);
 
@@ -62,8 +62,8 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_AllUnhealthy_ReturnsFailure()
     {
-        var deploymentId = Guid.NewGuid();
-        var endpoints = new[] { Unhealthy(deploymentId, 1), Unhealthy(deploymentId, 2) };
+        var modelId = Guid.NewGuid();
+        var endpoints = new[] { Unhealthy(modelId, 1), Unhealthy(modelId, 2) };
 
         var result = EndpointSelector.SelectEndpoint(endpoints);
 
@@ -74,9 +74,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_UnhealthyPrimary_FallsBackToHealthySecondary()
     {
-        var deploymentId = Guid.NewGuid();
-        var primary = Unhealthy(deploymentId, priority: 1);
-        var secondary = Healthy(deploymentId, priority: 2);
+        var modelId = Guid.NewGuid();
+        var primary = Unhealthy(modelId, priority: 1);
+        var secondary = Healthy(modelId, priority: 2);
 
         var result = EndpointSelector.SelectEndpoint([primary, secondary]);
 
@@ -87,9 +87,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_ExcludedEndpointIds_SkipsThem()
     {
-        var deploymentId = Guid.NewGuid();
-        var primary = Healthy(deploymentId, priority: 1);
-        var secondary = Healthy(deploymentId, priority: 2);
+        var modelId = Guid.NewGuid();
+        var primary = Healthy(modelId, priority: 1);
+        var secondary = Healthy(modelId, priority: 2);
 
         var result = EndpointSelector.SelectEndpoint([primary, secondary], excludedEndpointIds: new HashSet<Guid> { primary.Id });
 
@@ -100,10 +100,10 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_DisabledEndpoint_IsIgnored()
     {
-        var deploymentId = Guid.NewGuid();
-        var primary = Healthy(deploymentId, priority: 1);
+        var modelId = Guid.NewGuid();
+        var primary = Healthy(modelId, priority: 1);
         primary.Disable();
-        var secondary = Healthy(deploymentId, priority: 2);
+        var secondary = Healthy(modelId, priority: 2);
 
         var result = EndpointSelector.SelectEndpoint([primary, secondary]);
 
@@ -114,9 +114,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_StickyEndpointHealthy_ReturnsItEvenIfNotLowestPriority()
     {
-        var deploymentId = Guid.NewGuid();
-        var primary = Healthy(deploymentId, priority: 1);
-        var sticky = Healthy(deploymentId, priority: 2);
+        var modelId = Guid.NewGuid();
+        var primary = Healthy(modelId, priority: 1);
+        var sticky = Healthy(modelId, priority: 2);
 
         var result = EndpointSelector.SelectEndpoint([primary, sticky], stickyEndpointId: sticky.Id);
 
@@ -127,9 +127,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_StickyEndpointUnhealthy_FailsFastWithoutFallback()
     {
-        var deploymentId = Guid.NewGuid();
-        var sticky = Unhealthy(deploymentId, priority: 1);
-        var otherHealthy = Healthy(deploymentId, priority: 2);
+        var modelId = Guid.NewGuid();
+        var sticky = Unhealthy(modelId, priority: 1);
+        var otherHealthy = Healthy(modelId, priority: 2);
 
         var result = EndpointSelector.SelectEndpoint([sticky, otherHealthy], stickyEndpointId: sticky.Id);
 
@@ -141,8 +141,8 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_StickyEndpointNotFound_ReturnsFailure()
     {
-        var deploymentId = Guid.NewGuid();
-        var onlyEndpoint = Healthy(deploymentId, priority: 1);
+        var modelId = Guid.NewGuid();
+        var onlyEndpoint = Healthy(modelId, priority: 1);
 
         var result = EndpointSelector.SelectEndpoint([onlyEndpoint], stickyEndpointId: Guid.NewGuid());
 
@@ -152,8 +152,8 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_StickyEndpointDisabled_ReturnsFailure()
     {
-        var deploymentId = Guid.NewGuid();
-        var sticky = Healthy(deploymentId, priority: 1);
+        var modelId = Guid.NewGuid();
+        var sticky = Healthy(modelId, priority: 1);
         sticky.Disable();
 
         var result = EndpointSelector.SelectEndpoint([sticky], stickyEndpointId: sticky.Id);
@@ -164,9 +164,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_SamePriorityTier_RoundRobinsAcrossCounterValues()
     {
-        var deploymentId = Guid.NewGuid();
-        var a = Healthy(deploymentId, priority: 1);
-        var b = Healthy(deploymentId, priority: 1);
+        var modelId = Guid.NewGuid();
+        var a = Healthy(modelId, priority: 1);
+        var b = Healthy(modelId, priority: 1);
         var endpoints = new[] { a, b };
         var tier = new[] { a, b }.OrderBy(e => e.Id).ToList();
 
@@ -182,9 +182,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_SamePriorityTier_NegativeCounter_StillProducesAValidIndex()
     {
-        var deploymentId = Guid.NewGuid();
-        var a = Healthy(deploymentId, priority: 1);
-        var b = Healthy(deploymentId, priority: 1);
+        var modelId = Guid.NewGuid();
+        var a = Healthy(modelId, priority: 1);
+        var b = Healthy(modelId, priority: 1);
 
         var result = EndpointSelector.SelectEndpoint([a, b], roundRobinCounter: -1);
 
@@ -195,10 +195,10 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_RoundRobinTier_NeverPicksALowerPriorityEndpoint()
     {
-        var deploymentId = Guid.NewGuid();
-        var a = Healthy(deploymentId, priority: 1);
-        var b = Healthy(deploymentId, priority: 1);
-        var fallback = Healthy(deploymentId, priority: 2);
+        var modelId = Guid.NewGuid();
+        var a = Healthy(modelId, priority: 1);
+        var b = Healthy(modelId, priority: 1);
+        var fallback = Healthy(modelId, priority: 2);
 
         for (var counter = 0; counter < 4; counter++)
         {
@@ -211,9 +211,9 @@ public class EndpointSelectorTests
     [Fact]
     public void SelectEndpoint_RoundRobinTier_ExcludingOneMember_AlwaysPicksTheSurvivor()
     {
-        var deploymentId = Guid.NewGuid();
-        var a = Healthy(deploymentId, priority: 1);
-        var b = Healthy(deploymentId, priority: 1);
+        var modelId = Guid.NewGuid();
+        var a = Healthy(modelId, priority: 1);
+        var b = Healthy(modelId, priority: 1);
 
         for (var counter = 0; counter < 4; counter++)
         {

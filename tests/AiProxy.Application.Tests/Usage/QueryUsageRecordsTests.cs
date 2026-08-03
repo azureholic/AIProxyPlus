@@ -26,7 +26,7 @@ public class QueryUsageRecordsTests
             ApiFamily.OpenAI, OperationType.ChatCompletion, "req-1", streaming: false, httpStatusCode: 200,
             durationMs: 100, totalTokens: 30);
         var expected = new PagedResult<UsageRecord>([usageRecord], 1, 1, 50);
-        var query = new UsageRecordQuery(ModelDeploymentName: "gpt-4o-prod");
+        var query = new UsageRecordQuery(ModelName: "gpt-4o-prod");
         _repository.QueryAsync(query, Arg.Any<CancellationToken>()).Returns(expected);
 
         var result = await _handler.HandleAsync(query);

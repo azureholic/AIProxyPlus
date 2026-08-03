@@ -6,25 +6,25 @@ namespace AiProxy.Infrastructure.Tests.Routing;
 public class EndpointRoundRobinCounterTests
 {
     [Fact]
-    public void Next_ForSameDeployment_IncrementsEachCall()
+    public void Next_ForSameModel_IncrementsEachCall()
     {
         var counter = new EndpointRoundRobinCounter();
-        var deploymentId = Guid.NewGuid();
+        var modelId = Guid.NewGuid();
 
-        counter.Next(deploymentId).Should().Be(0);
-        counter.Next(deploymentId).Should().Be(1);
-        counter.Next(deploymentId).Should().Be(2);
+        counter.Next(modelId).Should().Be(0);
+        counter.Next(modelId).Should().Be(1);
+        counter.Next(modelId).Should().Be(2);
     }
 
     [Fact]
-    public void Next_ForDifferentDeployments_TracksIndependently()
+    public void Next_ForDifferentModels_TracksIndependently()
     {
         var counter = new EndpointRoundRobinCounter();
-        var deploymentA = Guid.NewGuid();
-        var deploymentB = Guid.NewGuid();
+        var modelA = Guid.NewGuid();
+        var modelB = Guid.NewGuid();
 
-        counter.Next(deploymentA).Should().Be(0);
-        counter.Next(deploymentA).Should().Be(1);
-        counter.Next(deploymentB).Should().Be(0);
+        counter.Next(modelA).Should().Be(0);
+        counter.Next(modelA).Should().Be(1);
+        counter.Next(modelB).Should().Be(0);
     }
 }

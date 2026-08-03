@@ -22,7 +22,7 @@ public sealed class EndpointRepository(AiProxyDbContext dbContext) : IEndpointRe
             cancellationToken);
 
     public Task<bool> IsAssignedAsync(Guid id, CancellationToken cancellationToken = default) =>
-        dbContext.ModelDeploymentEndpoints.AnyAsync(assignment => assignment.EndpointId == id, cancellationToken);
+        dbContext.ModelEndpoints.AnyAsync(assignment => assignment.EndpointId == id, cancellationToken);
 
     public async Task AddAsync(Endpoint endpoint, CancellationToken cancellationToken = default)
     {

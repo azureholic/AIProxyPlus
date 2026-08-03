@@ -123,7 +123,7 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.ToTable("endpoints", (string)null);
                 });
 
-            modelBuilder.Entity("AiProxy.Domain.Entities.ModelDeployment", b =>
+            modelBuilder.Entity("AiProxy.Domain.Entities.Model", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
@@ -149,12 +149,12 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("model_deployments", (string)null);
+                    b.ToTable("models", (string)null);
                 });
 
-            modelBuilder.Entity("AiProxy.Domain.Entities.ModelDeploymentEndpoint", b =>
+            modelBuilder.Entity("AiProxy.Domain.Entities.ModelEndpoint", b =>
                 {
-                    b.Property<Guid>("ModelDeploymentId")
+                    b.Property<Guid>("ModelId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("EndpointId")
@@ -171,11 +171,11 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.Property<int>("Priority")
                         .HasColumnType("integer");
 
-                    b.HasKey("ModelDeploymentId", "EndpointId");
+                    b.HasKey("ModelId", "EndpointId");
 
                     b.HasIndex("EndpointId");
 
-                    b.ToTable("model_deployment_endpoints", (string)null);
+                    b.ToTable("model_endpoints", (string)null);
                 });
 
             modelBuilder.Entity("AiProxy.Domain.Entities.SessionAffinityEntry", b =>
@@ -193,7 +193,7 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("LastUsedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("ModelDeploymentId")
+                    b.Property<Guid>("ModelId")
                         .HasColumnType("uuid");
 
                     b.HasKey("SessionId");
@@ -233,7 +233,7 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.Property<int>("HttpStatusCode")
                         .HasColumnType("integer");
 
-                    b.Property<string>("ModelDeploymentName")
+                    b.Property<string>("ModelName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -271,7 +271,7 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ConsumerId", "Timestamp");
 
-                    b.HasIndex("ModelDeploymentName", "Timestamp");
+                    b.HasIndex("ModelName", "Timestamp");
 
                     b.ToTable("usage_records", (string)null);
                 });
@@ -305,7 +305,7 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.ToTable("realtime_tickets", (string)null);
                 });
 
-            modelBuilder.Entity("AiProxy.Domain.Entities.ModelDeploymentEndpoint", b =>
+            modelBuilder.Entity("AiProxy.Domain.Entities.ModelEndpoint", b =>
                 {
                     b.HasOne("AiProxy.Domain.Entities.Endpoint", "Endpoint")
                         .WithMany()
@@ -313,9 +313,9 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("AiProxy.Domain.Entities.ModelDeployment", null)
+                    b.HasOne("AiProxy.Domain.Entities.Model", null)
                         .WithMany("Endpoints")
-                        .HasForeignKey("ModelDeploymentId")
+                        .HasForeignKey("ModelId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -333,7 +333,7 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.Navigation("Consumer");
                 });
 
-            modelBuilder.Entity("AiProxy.Domain.Entities.ModelDeployment", b =>
+            modelBuilder.Entity("AiProxy.Domain.Entities.Model", b =>
                 {
                     b.Navigation("Endpoints");
                 });

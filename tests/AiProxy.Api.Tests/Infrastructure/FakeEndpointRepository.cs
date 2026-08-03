@@ -5,7 +5,7 @@ using AiProxy.Domain.Entities;
 namespace AiProxy.Api.Tests.Infrastructure;
 
 /// <summary>In-memory <see cref="IEndpointRepository"/> fake for fast, Docker-free API tests.</summary>
-public sealed class FakeEndpointRepository(FakeModelDeploymentRepository deployments) : IEndpointRepository
+public sealed class FakeEndpointRepository(FakeModelRepository models) : IEndpointRepository
 {
     private readonly ConcurrentDictionary<Guid, Endpoint> _byId = new();
 
@@ -23,8 +23,8 @@ public sealed class FakeEndpointRepository(FakeModelDeploymentRepository deploym
             endpoint.Name == name && (!excludingId.HasValue || endpoint.Id != excludingId.Value)));
 
     public async Task<bool> IsAssignedAsync(Guid id, CancellationToken cancellationToken = default) =>
-        (await deployments.GetAllAsync(cancellationToken))
-            .Any(deployment => deployment.Endpoints.Any(assignment => assignment.EndpointId == id));
+        (await models.GetAllAsync(cancellationToken))
+            .Any(model => model.Endpoints.Any(assignment => assignment.EndpointId == id));
 
     public Task AddAsync(Endpoint endpoint, CancellationToken cancellationToken = default)
     {

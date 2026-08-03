@@ -29,22 +29,22 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl)
+    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"usage-capture-openai-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority: 1, enabled: true);
+        return ModelEndpoint.Create(modelId, endpoint, priority: 1, enabled: true);
     }
 
-    private static ModelDeploymentEndpoint NewAnthropicEndpoint(Guid deploymentId, string baseUrl)
+    private static ModelEndpoint NewAnthropicEndpoint(Guid modelId, string baseUrl)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"usage-capture-anthropic-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.Anthropic, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority: 1, enabled: true);
+        return ModelEndpoint.Create(modelId, endpoint, priority: 1, enabled: true);
     }
 
     private static HttpRequestMessage BuildRequest(string path, object body) =>
@@ -69,17 +69,17 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task NonStreamingChatCompletion_CapturesTokenUsage()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(
                 new { id = "resp-1", usage = new { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 } }));
 
         var response = await _factory.CreateClient().SendAsync(
-            BuildRequest("/openai/v1/chat/completions", new { model = deploymentName, messages = new[] { new { role = "user", content = "hi" } } }));
+            BuildRequest("/openai/v1/chat/completions", new { model = modelName, messages = new[] { new { role = "user", content = "hi" } } }));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var record = await WaitForUsageRecordAsync();
@@ -88,24 +88,24 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
         record.TotalTokens.Should().Be(15);
         record.ConsumerName.Should().Be(_factory.DefaultConsumer.Name);
         record.OperationType.Should().Be(OperationType.ChatCompletion);
-        record.ModelDeploymentName.Should().Be(deploymentName);
+        record.ModelName.Should().Be(modelName);
         record.Streaming.Should().BeFalse();
     }
 
     [Fact]
     public async Task NonStreamingImageGeneration_CapturesUsageMetricsWithoutTokens()
     {
-        var deploymentName = $"dall-e-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"dall-e-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/images/generations").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(
                 new { data = new[] { new { url = "https://example/1.png", size = "1024x1024" } } }));
 
         var response = await _factory.CreateClient().SendAsync(
-            BuildRequest("/openai/v1/images/generations", new { model = deploymentName, prompt = "a cat" }));
+            BuildRequest("/openai/v1/images/generations", new { model = modelName, prompt = "a cat" }));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var record = await WaitForUsageRecordAsync();
@@ -121,10 +121,10 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task StreamingChatCompletion_WithClientRequestedUsage_ForwardsUsageChunkAndCapturesUsage()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         const string sse =
             "data: {\"id\":\"c1\",\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n" +
@@ -139,7 +139,7 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
             "/openai/v1/chat/completions",
             new
             {
-                model = deploymentName,
+                model = modelName,
                 messages = new[] { new { role = "user", content = "hi" } },
                 stream = true,
                 stream_options = new { include_usage = true },
@@ -158,10 +158,10 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task StreamingChatCompletion_WithoutClientRequestedUsage_SuppressesUsageChunkButStillCapturesUsage()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         const string sse =
             "data: {\"id\":\"c1\",\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n" +
@@ -176,7 +176,7 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
         // but must not leak the resulting usage-only frame back to a client that never asked for it.
         var response = await _factory.CreateClient().SendAsync(BuildRequest(
             "/openai/v1/chat/completions",
-            new { model = deploymentName, messages = new[] { new { role = "user", content = "hi" } }, stream = true }));
+            new { model = modelName, messages = new[] { new { role = "user", content = "hi" } }, stream = true }));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
@@ -191,10 +191,10 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task StreamingAnthropicMessages_CapturesInputAndOutputTokensFromMessageEvents()
     {
-        var deploymentName = $"claude-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewAnthropicEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"claude-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewAnthropicEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         const string sse =
             "event: message_start\n" +
@@ -211,7 +211,7 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
 
         var response = await _factory.CreateClient().SendAsync(BuildRequest(
             "/anthropic/v1/messages",
-            new { model = deploymentName, messages = new[] { new { role = "user", content = "hi" } }, stream = true }));
+            new { model = modelName, messages = new[] { new { role = "user", content = "hi" } }, stream = true }));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
@@ -225,16 +225,16 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task ResponseWithNoUsageSignal_SucceedsWithoutCapturingUsageRecord()
     {
-        var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
-        var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-        _factory.Deployments.Seed(deployment);
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-no-usage" }));
 
         var response = await _factory.CreateClient().SendAsync(BuildRequest(
-            "/openai/v1/chat/completions", new { model = deploymentName, messages = new[] { new { role = "user", content = "hi" } } }));
+            "/openai/v1/chat/completions", new { model = modelName, messages = new[] { new { role = "user", content = "hi" } } }));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         await Task.Delay(200);

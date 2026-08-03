@@ -58,14 +58,14 @@ public class UsageRecordTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Create_WithEmptyModelDeploymentName_Throws(string name)
+    public void Create_WithEmptyModelName_Throws(string name)
     {
         var act = () => UsageRecord.Create(
             Guid.NewGuid(), name, Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
             ApiFamily.OpenAI, OperationType.ChatCompletion, "req-5", streaming: false, httpStatusCode: 200,
             durationMs: 120, totalTokens: 10);
 
-        act.Should().Throw<DomainException>().WithMessage("*ModelDeploymentName*");
+        act.Should().Throw<DomainException>().WithMessage("*ModelName*");
     }
 
     [Fact]

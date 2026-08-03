@@ -52,7 +52,7 @@ Chat and Images display `Error [object Object]` when an OpenAI-compatible provid
 
 ### Symptom
 
-The model-deployment detail page permits adding, enabling, rotating, and removing endpoints, but offers no way to
+The model detail page permits adding, enabling, rotating, and removing endpoints, but offers no way to
 correct an existing base URL or managed-identity scope. A malformed Azure OpenAI base URL therefore requires
 deleting and recreating the endpoint.
 

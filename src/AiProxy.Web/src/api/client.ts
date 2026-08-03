@@ -30,7 +30,7 @@ export async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, `Request failed with status ${response.status}`, response.headers);
 }
 
-/** Same-origin always — the frontend is served by the same host as the API in every deployment target. */
+/** Same-origin always — the frontend is served by the same host as the API in every model target. */
 let antiforgeryToken: string | undefined;
 export const sessionExpiredEvent = 'aiproxy:session-expired';
 

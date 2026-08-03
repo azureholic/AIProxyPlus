@@ -24,7 +24,7 @@ public class AuthorizationTests : IDisposable
     {
         var client = ClientWithoutHeader("X-Admin-Api-Key");
 
-        var response = await client.GetAsync("/api/v1/config/model-deployments");
+        var response = await client.GetAsync("/api/v1/config/models");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -35,7 +35,7 @@ public class AuthorizationTests : IDisposable
         var client = ClientWithoutHeader("X-Admin-Api-Key");
         client.DefaultRequestHeaders.Add("X-Admin-Api-Key", "not-the-real-key");
 
-        var response = await client.GetAsync("/api/v1/config/model-deployments");
+        var response = await client.GetAsync("/api/v1/config/models");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -45,7 +45,7 @@ public class AuthorizationTests : IDisposable
     {
         var client = _factory.CreateClient();
 
-        var response = await client.GetAsync("/api/v1/config/model-deployments");
+        var response = await client.GetAsync("/api/v1/config/models");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -91,7 +91,7 @@ public class AuthorizationTests : IDisposable
         var response = await client.PostAsJsonAsync(
             "/openai/v1/chat/completions", new { model = "never-registered", messages = Array.Empty<object>() });
 
-        // 404 (unknown deployment) proves auth succeeded and the request reached routing, not 401.
+        // 404 (unknown model) proves auth succeeded and the request reached routing, not 401.
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 

@@ -12,7 +12,7 @@ public sealed class UsageRecord
 {
     public Guid Id { get; private set; }
     public DateTimeOffset Timestamp { get; private set; }
-    public string ModelDeploymentName { get; private set; }
+    public string ModelName { get; private set; }
     public Guid ConsumerId { get; private set; }
     public string ConsumerName { get; private set; }
     public Guid EndpointId { get; private set; }
@@ -31,7 +31,7 @@ public sealed class UsageRecord
     /// <summary>For EF Core materialization only — domain code must use <see cref="Create"/>.</summary>
     private UsageRecord()
     {
-        ModelDeploymentName = null!;
+        ModelName = null!;
         ConsumerName = null!;
         RequestId = null!;
     }
@@ -39,7 +39,7 @@ public sealed class UsageRecord
     private UsageRecord(
         Guid id,
         DateTimeOffset timestamp,
-        string modelDeploymentName,
+        string modelName,
         Guid consumerId,
         string consumerName,
         Guid endpointId,
@@ -57,7 +57,7 @@ public sealed class UsageRecord
     {
         Id = id;
         Timestamp = timestamp;
-        ModelDeploymentName = modelDeploymentName;
+        ModelName = modelName;
         ConsumerId = consumerId;
         ConsumerName = consumerName;
         EndpointId = endpointId;
@@ -76,7 +76,7 @@ public sealed class UsageRecord
 
     public static UsageRecord Create(
         Guid id,
-        string modelDeploymentName,
+        string modelName,
         Guid consumerId,
         string consumerName,
         Guid endpointId,
@@ -93,9 +93,9 @@ public sealed class UsageRecord
         IReadOnlyDictionary<string, string>? usageMetrics = null,
         DateTimeOffset? timestamp = null)
     {
-        if (string.IsNullOrWhiteSpace(modelDeploymentName))
+        if (string.IsNullOrWhiteSpace(modelName))
         {
-            throw new DomainException("UsageRecord.ModelDeploymentName must not be empty.");
+            throw new DomainException("UsageRecord.ModelName must not be empty.");
         }
 
         if (consumerId == Guid.Empty)
@@ -130,7 +130,7 @@ public sealed class UsageRecord
         return new UsageRecord(
             id,
             timestamp ?? DateTimeOffset.UtcNow,
-            modelDeploymentName,
+            modelName,
             consumerId,
             consumerName,
             endpointId,

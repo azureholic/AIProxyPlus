@@ -57,7 +57,7 @@ const useStyles = makeStyles({
 
 export function UsageDashboardPage() {
   const styles = useStyles();
-  const [modelDeploymentName, setModelDeploymentName] = useState('');
+  const [modelName, setModelName] = useState('');
   const [consumerName, setConsumerName] = useState('');
   const [operationType, setOperationType] = useState<OperationType | ''>('');
   const [from, setFrom] = useState('');
@@ -72,7 +72,7 @@ export function UsageDashboardPage() {
     setLoading(true);
     setError(null);
     queryUsage({
-      modelDeploymentName: modelDeploymentName || undefined,
+      modelName: modelName || undefined,
       consumerName: consumerName || undefined,
       operationType,
       from: from ? new Date(from).toISOString() : undefined,
@@ -89,9 +89,9 @@ export function UsageDashboardPage() {
   useEffect(load, [page]);
 
   const records = result?.items ?? [];
-  const tokensByDeployment = Object.values(
+  const tokensByModel = Object.values(
     records.reduce<Record<string, { name: string; tokens: number }>>((acc, record) => {
-      const key = record.modelDeploymentName;
+      const key = record.modelName;
       acc[key] ??= { name: key, tokens: 0 };
       acc[key].tokens += record.totalTokens ?? 0;
       return acc;
@@ -112,8 +112,8 @@ export function UsageDashboardPage() {
       <PageHeader title="Usage Dashboard" />
 
       <div className={styles.filters}>
-        <Field label="Model deployment">
-          <Input value={modelDeploymentName} onChange={(_, data) => setModelDeploymentName(data.value)} />
+        <Field label="Model">
+          <Input value={modelName} onChange={(_, data) => setModelName(data.value)} />
         </Field>
         <Field label="Consumer">
           <Input value={consumerName} onChange={(_, data) => setConsumerName(data.value)} />
@@ -160,12 +160,12 @@ export function UsageDashboardPage() {
           <div className={styles.charts}>
             <div className={styles.chart}>
               <ResponsiveContainer>
-                <BarChart data={tokensByDeployment}>
+                <BarChart data={tokensByModel}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
                   <Tooltip />
-                  <Bar dataKey="tokens" fill="#464feb" name="Tokens by deployment" />
+                  <Bar dataKey="tokens" fill="#464feb" name="Tokens by model" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -189,7 +189,7 @@ export function UsageDashboardPage() {
             <TableHeader>
               <TableRow>
                 <TableHeaderCell>Timestamp</TableHeaderCell>
-                <TableHeaderCell>Deployment</TableHeaderCell>
+                <TableHeaderCell>Model</TableHeaderCell>
                 <TableHeaderCell>Consumer</TableHeaderCell>
                 <TableHeaderCell>Operation</TableHeaderCell>
                 <TableHeaderCell>Tokens</TableHeaderCell>
@@ -202,7 +202,7 @@ export function UsageDashboardPage() {
               {records.map((record) => (
                 <TableRow key={record.id}>
                   <TableCell>{new Date(record.timestamp).toLocaleString()}</TableCell>
-                  <TableCell>{record.modelDeploymentName}</TableCell>
+                  <TableCell>{record.modelName}</TableCell>
                   <TableCell>{record.consumerName}</TableCell>
                   <TableCell>{record.operationType}</TableCell>
                   <TableCell>{record.totalTokens ?? '—'}</TableCell>

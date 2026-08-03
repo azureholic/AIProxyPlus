@@ -51,7 +51,7 @@ public class ConsumerConfigTests : IDisposable
 
         var response = await client.SendAsync(request);
 
-        // 404 (unknown deployment) proves auth succeeded and the request reached routing, not 401.
+        // 404 (unknown model) proves auth succeeded and the request reached routing, not 401.
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 

@@ -85,7 +85,7 @@ A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboar
 [specs/iterations/iteration-3/tasks.md](specs/iterations/iteration-3/tasks.md)), served by the **same**
 container as the API — no separate frontend host/deployment.
 
-- **Pages**: Config → Model Deployments, Endpoints, Consumers; Playground → Chat
+- **Pages**: Config → Models, Endpoints, Consumers; Playground → Chat
   (streaming/non-streaming), Images, Voice (Realtime connectivity + raw-event-log test tool — not full
   duplex audio, see architecture.md §19.4); Dashboard → Usage (filters, table, token/request charts).
 - **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it
@@ -152,11 +152,11 @@ curl -X POST http://localhost:8080/api/v1/config/endpoints `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"name":"primary-openai","baseUrl":"https://my-openai-endpoint.example.com","apiFamily":"OpenAI","authMode":"ApiKey","apiKeyPlaintext":"sk-...","timeoutSeconds":100,"maxRetries":2}'
 
-# Register a model deployment and assign the existing endpoint by id.
-curl -X POST http://localhost:8080/api/v1/config/model-deployments `
+# Register a model and assign the existing endpoint by id.
+curl -X POST http://localhost:8080/api/v1/config/models `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"name":"gpt-4o"}'
-curl -X POST http://localhost:8080/api/v1/config/model-deployments/gpt-4o/endpoints `
+curl -X POST http://localhost:8080/api/v1/config/models/gpt-4o/endpoints `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"endpointId":"<endpoint-id>","priority":1,"enabled":true}'
 ```
