@@ -31,6 +31,7 @@ describe('App shell + navigation', () => {
 
     for (const [navLabel, pageBodyText] of [
       ['Endpoints', 'New endpoint'],
+      ['API Routes', 'New API route'],
       ['Consumers', 'New consumer'],
       ['Chat', 'Send'],
       ['Images', 'Generate'],

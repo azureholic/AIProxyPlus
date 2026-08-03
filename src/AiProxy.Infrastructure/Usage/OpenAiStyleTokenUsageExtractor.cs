@@ -6,12 +6,12 @@ namespace AiProxy.Infrastructure.Usage;
 
 /// <summary>
 /// Handles OpenAI-shaped token usage (chat completions, completions, embeddings) for any OpenAI-compatible
-/// <see cref="ApiFamily"/> — the JSON shape (<c>usage.prompt_tokens/completion_tokens/total_tokens</c>) is the
+/// <see cref="Provider"/> — the JSON shape (<c>usage.prompt_tokens/completion_tokens/total_tokens</c>) is the
 /// same whether the endpoint is OpenAI, Azure OpenAI, or a generic OpenAI-compatible backend.
 /// </summary>
-public sealed class OpenAiStyleTokenUsageExtractor(ApiFamily apiFamily, OperationType operationType) : IUsageExtractor
+public sealed class OpenAiStyleTokenUsageExtractor(Provider provider, OperationType operationType) : IUsageExtractor
 {
-    public ApiFamily ApiFamily { get; } = apiFamily;
+    public Provider Provider { get; } = provider;
 
     public OperationType OperationType { get; } = operationType;
 

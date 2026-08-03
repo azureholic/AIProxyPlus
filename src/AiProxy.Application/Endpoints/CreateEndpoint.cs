@@ -9,7 +9,6 @@ namespace AiProxy.Application.Endpoints;
 public sealed record CreateEndpointCommand(
     string Name,
     string BaseUrl,
-    ApiFamily ApiFamily,
     AuthMode AuthMode,
     string? ApiKeyPlaintext = null,
     string? ManagedIdentityScope = null,
@@ -77,7 +76,6 @@ public sealed class CreateEndpointHandler(
             endpointId,
             command.Name,
             command.BaseUrl,
-            command.ApiFamily,
             command.AuthMode,
             secretRef,
             command.ManagedIdentityScope,

@@ -11,12 +11,16 @@ public sealed class ModelRepository(AiProxyDbContext dbContext) : IModelReposito
         dbContext.Models
             .Include(d => d.Endpoints)
             .ThenInclude(e => e.Endpoint)
+            .Include(d => d.Endpoints)
+            .ThenInclude(e => e.ApiRoute)
             .FirstOrDefaultAsync(d => d.Name == name, cancellationToken);
 
     public async Task<IReadOnlyList<Model>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await dbContext.Models
             .Include(d => d.Endpoints)
             .ThenInclude(e => e.Endpoint)
+            .Include(d => d.Endpoints)
+            .ThenInclude(e => e.ApiRoute)
             .OrderBy(d => d.Name)
             .ToListAsync(cancellationToken);
 

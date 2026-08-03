@@ -24,6 +24,8 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public FakeEndpointRepository Endpoints { get; }
 
+    public FakeApiRouteRepository ApiRoutes { get; }
+
     public FakeSessionAffinityStore Affinity { get; } = new();
 
     public FakeUsageRecordRepository UsageRecords { get; } = new();
@@ -39,6 +41,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
     public ApiTestFactory()
     {
         Endpoints = new FakeEndpointRepository(Models);
+        ApiRoutes = new FakeApiRouteRepository(Models);
         Secrets.Seed("consumer-key-pepper", TestPepper);
         Secrets.Seed("admin-api-key-hash", AdminApiKeyAuthenticator.Hash(AdminApiKey));
 
@@ -52,10 +55,12 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         // Development so /openapi/v1.json (and the Scalar UI) are mapped for OpenApiDocument_IsGeneratedSuccessfully.
         builder.UseEnvironment("Development");
         builder.UseSetting("Authentication:AdminApiKeyFallbackEnabled", "true");
+        builder.UseSetting("Database:ApplyMigrations", "false");
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IModelRepository>(Models);
             services.AddSingleton<IEndpointRepository>(Endpoints);
+            services.AddSingleton<IApiRouteRepository>(ApiRoutes);
             services.AddSingleton<ISessionAffinityStore>(Affinity);
             services.AddSingleton<ICredentialProvider, FakeCredentialProvider>();
             services.AddSingleton<IUsageRecordRepository>(UsageRecords);

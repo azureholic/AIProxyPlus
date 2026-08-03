@@ -23,7 +23,7 @@ public class QueryUsageRecordsTests
     {
         var usageRecord = UsageRecord.Create(
             Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ChatCompletion, "req-1", streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, "req-1", streaming: false, httpStatusCode: 200,
             durationMs: 100, totalTokens: 30);
         var expected = new PagedResult<UsageRecord>([usageRecord], 1, 1, 50);
         var query = new UsageRecordQuery(ModelName: "gpt-4o-prod");

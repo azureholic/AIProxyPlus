@@ -11,5 +11,5 @@ public sealed record EndpointCredential(string HeaderName, string HeaderValue);
 /// </summary>
 public interface ICredentialProvider
 {
-    Task<EndpointCredential> GetCredentialAsync(Endpoint endpoint, CancellationToken cancellationToken = default);
+    Task<EndpointCredential> GetCredentialAsync(ModelEndpoint assignment, CancellationToken cancellationToken = default);
 }

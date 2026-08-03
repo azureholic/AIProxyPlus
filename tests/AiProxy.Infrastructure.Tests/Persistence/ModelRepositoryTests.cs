@@ -14,9 +14,12 @@ public class ModelRepositoryTests(PostgresContainerFixture fixture)
 
     private static ModelEndpoint NewEndpoint(Guid modelId, int priority = 1) =>
         ModelEndpoint.Create(
+            Guid.NewGuid(),
             modelId,
             Endpoint.Create(Guid.NewGuid(), $"OpenAI {Guid.NewGuid():N}", "https://api.openai.com",
-                ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: $"endpoints/{Guid.NewGuid()}"),
+                AuthMode.ApiKey, secretRef: $"endpoints/{Guid.NewGuid()}"),
+            ApiRoute.Create(
+                Guid.NewGuid(), $"OpenAI {Guid.NewGuid():N}", Provider.OpenAI, $"/v1/{Guid.NewGuid():N}"),
             priority);
 
     [Fact]
@@ -121,8 +124,8 @@ public class ModelRepositoryTests(PostgresContainerFixture fixture)
 
         await using var readContext = fixture.CreateDbContext();
         (await new ModelRepository(readContext).GetByNameAsync(model.Name)).Should().BeNull();
-        (await readContext.Set<Endpoint>().AnyAsync(e => e.Id == endpoint.Id)).Should().BeTrue();
-        (await readContext.Set<ModelEndpoint>().AnyAsync(e => e.EndpointId == endpoint.Id)).Should().BeFalse();
+        (await readContext.Set<Endpoint>().AnyAsync(e => e.Id == endpoint.EndpointId)).Should().BeTrue();
+        (await readContext.Set<ModelEndpoint>().AnyAsync(e => e.EndpointId == endpoint.EndpointId)).Should().BeFalse();
     }
 
     [Fact]

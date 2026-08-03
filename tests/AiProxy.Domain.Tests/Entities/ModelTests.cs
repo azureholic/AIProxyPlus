@@ -8,10 +8,19 @@ namespace AiProxy.Domain.Tests.Entities;
 public class ModelTests
 {
     private static ModelEndpoint CreateEndpoint(Guid modelId, int priority, Endpoint? endpoint = null) =>
-        ModelEndpoint.Create(
+        CreateEndpoint(
             modelId,
-            endpoint ?? Endpoint.Create(Guid.NewGuid(), "OpenAI", "https://api.openai.com", ApiFamily.OpenAI,
-                AuthMode.ApiKey, secretRef: "secret/x"),
+            priority,
+            endpoint,
+            ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/v1"));
+
+    private static ModelEndpoint CreateEndpoint(Guid modelId, int priority, Endpoint? endpoint, ApiRoute route) =>
+        ModelEndpoint.Create(
+            Guid.NewGuid(),
+            modelId,
+            endpoint ?? Endpoint.Create(Guid.NewGuid(), "OpenAI", "https://api.openai.com", AuthMode.ApiKey,
+                secretRef: "secret/x"),
+            route,
             priority);
 
     [Theory]
@@ -68,8 +77,8 @@ public class ModelTests
     [Fact]
     public void AddEndpoint_SameReusableEndpointAcrossModels_Succeeds()
     {
-        var endpoint = Endpoint.Create(Guid.NewGuid(), "Shared", "https://api.openai.com", ApiFamily.OpenAI,
-            AuthMode.ApiKey, secretRef: "secret/x");
+        var endpoint = Endpoint.Create(Guid.NewGuid(), "Shared", "https://api.openai.com", AuthMode.ApiKey,
+            secretRef: "secret/x");
         var first = Model.Create(Guid.NewGuid(), "gpt-4o");
         var second = Model.Create(Guid.NewGuid(), "gpt-4.1");
 
@@ -83,12 +92,13 @@ public class ModelTests
     [Fact]
     public void AddEndpoint_DuplicateAssignment_Throws()
     {
-        var endpoint = Endpoint.Create(Guid.NewGuid(), "Shared", "https://api.openai.com", ApiFamily.OpenAI,
-            AuthMode.ApiKey, secretRef: "secret/x");
+        var endpoint = Endpoint.Create(Guid.NewGuid(), "Shared", "https://api.openai.com", AuthMode.ApiKey,
+            secretRef: "secret/x");
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/v1");
         var model = Model.Create(Guid.NewGuid(), "gpt-4o");
-        model.AddEndpoint(CreateEndpoint(model.Id, 1, endpoint));
+        model.AddEndpoint(CreateEndpoint(model.Id, 1, endpoint, route));
 
-        var act = () => model.AddEndpoint(CreateEndpoint(model.Id, 2, endpoint));
+        var act = () => model.AddEndpoint(CreateEndpoint(model.Id, 2, endpoint, route));
 
         act.Should().Throw<DomainException>().WithMessage("*already assigned*");
     }

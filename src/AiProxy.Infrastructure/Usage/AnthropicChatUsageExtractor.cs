@@ -12,7 +12,7 @@ namespace AiProxy.Infrastructure.Usage;
 /// </summary>
 public sealed class AnthropicChatUsageExtractor : IUsageExtractor
 {
-    public ApiFamily ApiFamily => ApiFamily.Anthropic;
+    public Provider Provider => Provider.Anthropic;
 
     public OperationType OperationType => OperationType.ChatCompletion;
 

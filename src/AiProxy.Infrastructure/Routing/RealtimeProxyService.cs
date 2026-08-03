@@ -19,7 +19,8 @@ public sealed class RealtimeProxyService(
     IModelRepository modelRepository,
     IEndpointHealthTracker endpointHealthTracker,
     IEndpointRoundRobinCounter roundRobinCounter,
-    ICredentialProvider credentialProvider)
+    ICredentialProvider credentialProvider,
+    UpstreamRouteResolver upstreamRouteResolver)
 {
     public async Task<RoutingFailure?> ProxyAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
@@ -56,11 +57,24 @@ public sealed class RealtimeProxyService(
                 return new RoutingFailure(RoutingFailureReason.NoHealthyEndpoint, selection.FailureReason!);
             }
 
-            var endpoint = selection.SelectedEndpoint!.Endpoint;
+            var assignment = selection.SelectedEndpoint!;
+            var endpoint = assignment.Endpoint;
+
+            Uri targetUri;
+            try
+            {
+                targetUri = upstreamRouteResolver.ResolveRealtime(assignment, httpContext.Request.QueryString.Value ?? string.Empty);
+            }
+            catch (NotSupportedException)
+            {
+                excludedEndpointIds.Add(endpoint.Id);
+                continue;
+            }
+
             EndpointCredential credential;
             using (AiProxyActivitySource.Instance.StartActivity("secret_resolution"))
             {
-                credential = await credentialProvider.GetCredentialAsync(endpoint, cancellationToken);
+                credential = await credentialProvider.GetCredentialAsync(assignment, cancellationToken);
             }
 
             var backendSocket = new ClientWebSocket();
@@ -70,7 +84,7 @@ public sealed class RealtimeProxyService(
             {
                 try
                 {
-                    await backendSocket.ConnectAsync(BuildBackendUri(endpoint.BaseUrl, httpContext), cancellationToken);
+                    await backendSocket.ConnectAsync(targetUri, cancellationToken);
                 }
                 catch (Exception ex) when (ex is WebSocketException or HttpRequestException)
                 {
@@ -91,17 +105,6 @@ public sealed class RealtimeProxyService(
 
             return null;
         }
-    }
-
-    private static Uri BuildBackendUri(string baseUrl, HttpContext httpContext)
-    {
-        // Same "append the full incoming path" convention as DirectHttpProxy.BuildRequest, just with the
-        // scheme swapped for WebSocket — kept consistent with the HTTP ingress path rather than introducing a
-        // second convention.
-        var webSocketBaseUrl = baseUrl
-            .Replace("https://", "wss://", StringComparison.OrdinalIgnoreCase)
-            .Replace("http://", "ws://", StringComparison.OrdinalIgnoreCase);
-        return new Uri(webSocketBaseUrl.TrimEnd('/') + httpContext.Request.Path + httpContext.Request.QueryString);
     }
 
     private static async Task PumpBidirectionallyAsync(WebSocket client, WebSocket backend, CancellationToken cancellationToken)

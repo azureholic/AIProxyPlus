@@ -11,7 +11,8 @@ public class SessionAffinityStoreTests(PostgresContainerFixture fixture)
     public async Task SaveAsync_Then_GetAsync_RoundTrips()
     {
         var sessionId = $"session-{Guid.NewGuid():N}";
-        var entry = SessionAffinityEntry.Create(sessionId, Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromMinutes(30));
+        var entry = SessionAffinityEntry.Create(
+            sessionId, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromMinutes(30));
         await using var writeContext = fixture.CreateDbContext();
         await new SessionAffinityStore(writeContext).SaveAsync(entry);
 
@@ -37,11 +38,13 @@ public class SessionAffinityStoreTests(PostgresContainerFixture fixture)
     {
         var sessionId = $"session-{Guid.NewGuid():N}";
         var modelId = Guid.NewGuid();
+        var modelEndpointId = Guid.NewGuid();
         var endpointId = Guid.NewGuid();
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         await using var writeContext1 = fixture.CreateDbContext();
-        var entry = SessionAffinityEntry.Create(sessionId, modelId, endpointId, TimeSpan.FromMinutes(30), now);
+        var entry = SessionAffinityEntry.Create(
+            sessionId, modelId, modelEndpointId, endpointId, TimeSpan.FromMinutes(30), now);
         await new SessionAffinityStore(writeContext1).SaveAsync(entry);
 
         entry.Touch(TimeSpan.FromMinutes(30), now.AddMinutes(10));
@@ -60,7 +63,8 @@ public class SessionAffinityStoreTests(PostgresContainerFixture fixture)
         var sessionId = $"session-{Guid.NewGuid():N}";
         await using var writeContext = fixture.CreateDbContext();
         await new SessionAffinityStore(writeContext).SaveAsync(
-            SessionAffinityEntry.Create(sessionId, Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromMinutes(30)));
+            SessionAffinityEntry.Create(
+                sessionId, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromMinutes(30)));
 
         await using var removeContext = fixture.CreateDbContext();
         await new SessionAffinityStore(removeContext).RemoveAsync(sessionId);

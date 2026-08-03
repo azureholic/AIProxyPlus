@@ -9,12 +9,16 @@ namespace AiProxy.Infrastructure.Tests.Secrets;
 
 public class ManagedIdentityCredentialProviderTests
 {
-    private static Endpoint NewEndpoint(
+    private static ModelEndpoint NewAssignment(
         string? scope = "https://cognitiveservices.azure.com/.default",
-        string? tenantId = null) =>
-        Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: scope, managedIdentityTenantId: tenantId);
+        string? tenantId = null)
+    {
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: scope, managedIdentityTenantId: tenantId);
+        var route = ApiRoute.Create(Guid.NewGuid(), "Foundry OpenAI", Provider.OpenAI, "/openai/v1");
+        return ModelEndpoint.Create(Guid.NewGuid(), Guid.NewGuid(), endpoint, route, 1);
+    }
 
     [Fact]
     public async Task GetCredentialAsync_ReturnsBearerTokenFromCredential()
@@ -25,7 +29,7 @@ public class ManagedIdentityCredentialProviderTests
             .Returns(new AccessToken("the-token", DateTimeOffset.UtcNow.AddHours(1)));
         var provider = new ManagedIdentityCredentialProvider(tokenCredential);
 
-        var credential = await provider.GetCredentialAsync(NewEndpoint());
+        var credential = await provider.GetCredentialAsync(NewAssignment());
 
         credential.HeaderName.Should().Be("Authorization");
         credential.HeaderValue.Should().Be("Bearer the-token");
@@ -40,7 +44,7 @@ public class ManagedIdentityCredentialProviderTests
             .Returns(new AccessToken("t", DateTimeOffset.UtcNow.AddHours(1)));
         var provider = new ManagedIdentityCredentialProvider(tokenCredential);
 
-        await provider.GetCredentialAsync(NewEndpoint("https://my-scope/.default"));
+        await provider.GetCredentialAsync(NewAssignment("https://my-scope/.default"));
 
         await tokenCredential.Received(1).GetTokenAsync(
             Arg.Is<TokenRequestContext>(c => c.Scopes.Contains("https://my-scope/.default")),
@@ -57,7 +61,7 @@ public class ManagedIdentityCredentialProviderTests
             .Returns(new AccessToken("t", DateTimeOffset.UtcNow.AddHours(1)));
         var provider = new ManagedIdentityCredentialProvider(tokenCredential);
 
-        await provider.GetCredentialAsync(NewEndpoint(tenantId: tenantId));
+        await provider.GetCredentialAsync(NewAssignment(tenantId: tenantId));
 
         await tokenCredential.Received(1).GetTokenAsync(
             Arg.Is<TokenRequestContext>(context => context.TenantId == tenantId),

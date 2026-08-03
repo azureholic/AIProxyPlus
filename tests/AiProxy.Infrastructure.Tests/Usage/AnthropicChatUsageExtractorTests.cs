@@ -62,9 +62,9 @@ public class AnthropicChatUsageExtractorTests
             .Should().BeFalse();
 
     [Fact]
-    public void ApiFamilyAndOperationType_AreAnthropicChatCompletion()
+    public void ProviderAndOperationType_AreAnthropicChatCompletion()
     {
-        _extractor.ApiFamily.Should().Be(ApiFamily.Anthropic);
+        _extractor.Provider.Should().Be(Provider.Anthropic);
         _extractor.OperationType.Should().Be(OperationType.ChatCompletion);
     }
 }

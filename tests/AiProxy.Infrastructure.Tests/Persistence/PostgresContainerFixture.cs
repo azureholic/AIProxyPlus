@@ -1,5 +1,6 @@
 using AiProxy.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Testcontainers.PostgreSql;
 
 namespace AiProxy.Infrastructure.Tests.Persistence;
@@ -29,10 +30,36 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
     public string ConnectionString => _container.GetConnectionString();
 
+    public async Task<string> CreateIsolatedDatabaseAsync()
+    {
+        var databaseName = $"aiproxy_{Guid.NewGuid():N}";
+        var adminConnectionString = new NpgsqlConnectionStringBuilder(ConnectionString) { Database = "postgres" }.ConnectionString;
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
+        await command.ExecuteNonQueryAsync();
+
+        return new NpgsqlConnectionStringBuilder(ConnectionString) { Database = databaseName }.ConnectionString;
+    }
+
+    public async Task DropIsolatedDatabaseAsync(string connectionString)
+    {
+        var databaseName = new NpgsqlConnectionStringBuilder(connectionString).Database;
+        var adminConnectionString = new NpgsqlConnectionStringBuilder(ConnectionString) { Database = "postgres" }.ConnectionString;
+        NpgsqlConnection.ClearAllPools();
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand($"DROP DATABASE \"{databaseName}\" WITH (FORCE)", connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
     public AiProxyDbContext CreateDbContext()
+        => CreateDbContext(ConnectionString);
+
+    public static AiProxyDbContext CreateDbContext(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AiProxyDbContext>()
-            .UseNpgsql(_container.GetConnectionString())
+            .UseNpgsql(connectionString)
             .Options;
         return new AiProxyDbContext(options);
     }

@@ -6,7 +6,7 @@ namespace AiProxy.Infrastructure.Tests.Usage;
 
 public class OpenAiStyleTokenUsageExtractorTests
 {
-    private readonly OpenAiStyleTokenUsageExtractor _extractor = new(ApiFamily.OpenAI, OperationType.ChatCompletion);
+    private readonly OpenAiStyleTokenUsageExtractor _extractor = new(Provider.OpenAI, OperationType.ChatCompletion);
 
     [Fact]
     public void ExtractFromResponseBody_WithUsage_ReturnsTokenCounts()
@@ -54,9 +54,9 @@ public class OpenAiStyleTokenUsageExtractorTests
         _extractor.IsUsageOnlyStreamingEvent("[DONE]").Should().BeFalse();
 
     [Fact]
-    public void ApiFamilyAndOperationType_ReflectConstructorArguments()
+    public void ProviderAndOperationType_ReflectConstructorArguments()
     {
-        _extractor.ApiFamily.Should().Be(ApiFamily.OpenAI);
+        _extractor.Provider.Should().Be(Provider.OpenAI);
         _extractor.OperationType.Should().Be(OperationType.ChatCompletion);
     }
 }

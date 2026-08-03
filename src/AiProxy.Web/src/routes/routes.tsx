@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import {
   Board24Regular,
+  BranchFork24Regular,
   Chat24Regular,
   CloudDatabaseRegular,
   DataUsage24Regular,
@@ -11,6 +12,7 @@ import {
 } from '@fluentui/react-icons';
 import { ModelsPage } from '../pages/config/ModelsPage';
 import { EndpointsPage } from '../pages/config/EndpointsPage';
+import { ApiRoutesPage } from '../pages/config/ApiRoutesPage';
 import { ConsumersPage } from '../pages/config/ConsumersPage';
 import { ChatPlaygroundPage } from '../pages/playground/ChatPlaygroundPage';
 import { ImagePlaygroundPage } from '../pages/playground/ImagePlaygroundPage';
@@ -37,6 +39,7 @@ export const navSections: NavSection[] = [
     routes: [
       { path: '/config/models', label: 'Models', icon: <Board24Regular />, element: <ModelsPage /> },
       { path: '/config/endpoints', label: 'Endpoints', icon: <CloudDatabaseRegular />, element: <EndpointsPage /> },
+      { path: '/config/api-routes', label: 'API Routes', icon: <BranchFork24Regular />, element: <ApiRoutesPage /> },
       { path: '/config/consumers', label: 'Consumers', icon: <PeopleTeam24Regular />, element: <ConsumersPage /> },
     ],
   },

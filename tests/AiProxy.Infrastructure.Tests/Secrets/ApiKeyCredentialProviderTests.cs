@@ -10,22 +10,25 @@ namespace AiProxy.Infrastructure.Tests.Secrets;
 
 public class ApiKeyCredentialProviderTests
 {
-    private static Endpoint NewEndpoint(ApiFamily apiFamily, string? secretRef = "endpoints/abc") =>
-        Endpoint.Create(
-            Guid.NewGuid(), "API endpoint", "https://api.example.com", apiFamily, AuthMode.ApiKey, secretRef: secretRef);
+    private static ModelEndpoint NewAssignment(Provider provider, string? secretRef = "endpoints/abc") =>
+        ModelEndpoint.Create(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Endpoint.Create(Guid.NewGuid(), "API endpoint", "https://api.example.com", AuthMode.ApiKey, secretRef),
+            ApiRoute.Create(Guid.NewGuid(), $"{provider} route", provider, "/v1"),
+            1);
 
     [Theory]
-    [InlineData(ApiFamily.OpenAI, "Authorization", "Bearer sk-abc")]
-    [InlineData(ApiFamily.OpenAICompatible, "Authorization", "Bearer sk-abc")]
-    [InlineData(ApiFamily.AzureOpenAI, "api-key", "sk-abc")]
-    [InlineData(ApiFamily.Anthropic, "x-api-key", "sk-abc")]
-    public async Task GetCredentialAsync_BuildsHeader_PerApiFamilyConvention(ApiFamily apiFamily, string expectedHeader, string expectedValue)
+    [InlineData(Provider.OpenAI, "Authorization", "Bearer sk-abc")]
+    [InlineData(Provider.MicrosoftAI, "api-key", "sk-abc")]
+    [InlineData(Provider.Anthropic, "x-api-key", "sk-abc")]
+    public async Task GetCredentialAsync_BuildsHeader_PerProviderConvention(Provider routeProvider, string expectedHeader, string expectedValue)
     {
         var secretResolver = Substitute.For<ISecretResolver>();
         secretResolver.TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>()).Returns("sk-abc");
         var provider = new ApiKeyCredentialProvider(secretResolver, new MemoryCache(new MemoryCacheOptions()));
 
-        var credential = await provider.GetCredentialAsync(NewEndpoint(apiFamily));
+        var credential = await provider.GetCredentialAsync(NewAssignment(routeProvider));
 
         credential.HeaderName.Should().Be(expectedHeader);
         credential.HeaderValue.Should().Be(expectedValue);
@@ -37,7 +40,7 @@ public class ApiKeyCredentialProviderTests
         var secretResolver = Substitute.For<ISecretResolver>();
         secretResolver.TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>()).Returns("sk-abc");
         var provider = new ApiKeyCredentialProvider(secretResolver, new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromMinutes(5));
-        var endpoint = NewEndpoint(ApiFamily.OpenAI);
+        var endpoint = NewAssignment(Provider.OpenAI);
 
         await provider.GetCredentialAsync(endpoint);
         await provider.GetCredentialAsync(endpoint);
@@ -51,7 +54,7 @@ public class ApiKeyCredentialProviderTests
         var secretResolver = Substitute.For<ISecretResolver>();
         secretResolver.TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>()).Returns("sk-abc");
         var provider = new ApiKeyCredentialProvider(secretResolver, new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromMilliseconds(50));
-        var endpoint = NewEndpoint(ApiFamily.OpenAI);
+        var endpoint = NewAssignment(Provider.OpenAI);
 
         await provider.GetCredentialAsync(endpoint);
         await Task.Delay(150);
@@ -67,7 +70,7 @@ public class ApiKeyCredentialProviderTests
         secretResolver.TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>()).Returns((string?)null);
         var provider = new ApiKeyCredentialProvider(secretResolver, new MemoryCache(new MemoryCacheOptions()));
 
-        var act = () => provider.GetCredentialAsync(NewEndpoint(ApiFamily.OpenAI));
+        var act = () => provider.GetCredentialAsync(NewAssignment(Provider.OpenAI));
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }

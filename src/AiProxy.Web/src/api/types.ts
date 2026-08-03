@@ -2,7 +2,7 @@
 // enums serialize as strings). Kept in one file since the frontend has no code-gen from the backend's OpenAPI
 // document yet — see specs/iterations/iteration-3/tasks.md for that as a possible follow-up.
 
-export type ApiFamily = 'OpenAI' | 'AzureOpenAI' | 'Anthropic' | 'OpenAICompatible';
+export type Provider = 'OpenAI' | 'MicrosoftAI' | 'Anthropic';
 export type AuthMode = 'ApiKey' | 'ManagedIdentity';
 export type RoutingStrategy = 'Priority';
 export type EndpointHealthState = 'Unknown' | 'Healthy' | 'Unhealthy';
@@ -19,9 +19,12 @@ export type OperationType =
 export interface Endpoint {
   id: string;
   modelId: string;
+  endpointId: string;
+  apiRouteId: string;
+  apiRoute: ApiRoute;
   name: string;
   baseUrl: string;
-  apiFamily: ApiFamily;
+  provider: Provider;
   priority: number;
   authMode: AuthMode;
   secretRef: string | null;
@@ -37,13 +40,20 @@ export interface EndpointConfig {
   id: string;
   name: string;
   baseUrl: string;
-  apiFamily: ApiFamily;
   authMode: AuthMode;
   secretRef: string | null;
   managedIdentityScope: string | null;
   managedIdentityTenantId: string | null;
   timeoutSeconds: number;
   maxRetries: number;
+}
+
+export interface ApiRoute {
+  id: string;
+  name: string;
+  provider: Provider;
+  pathPrefix: string;
+  isBuiltIn: boolean;
 }
 
 export interface Model {
@@ -76,7 +86,7 @@ export interface UsageRecord {
   consumerId: string;
   consumerName: string;
   endpointId: string;
-  apiFamily: ApiFamily;
+  provider: Provider;
   operationType: OperationType;
   requestId: string;
   sessionId: string | null;

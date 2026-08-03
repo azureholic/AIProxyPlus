@@ -26,11 +26,11 @@ public sealed class AiProxyMetrics : IDisposable
         _failoverCount = _meter.CreateCounter<long>("ai_proxy.failover.count", description: "Failovers from one endpoint to the next.");
     }
 
-    public void RecordRequest(string model, string apiFamily, string endpoint, int statusCode) =>
+    public void RecordRequest(string model, string provider, string endpoint, int statusCode) =>
         _requestsCount.Add(
             1,
             new KeyValuePair<string, object?>("model", model),
-            new KeyValuePair<string, object?>("api_family", apiFamily),
+            new KeyValuePair<string, object?>("provider", provider),
             new KeyValuePair<string, object?>("endpoint", endpoint),
             new KeyValuePair<string, object?>("status", statusCode));
 
@@ -58,11 +58,11 @@ public sealed class AiProxyMetrics : IDisposable
         }
     }
 
-    public void RecordDuration(double milliseconds, string model, string apiFamily, string endpoint, int statusCode) =>
+    public void RecordDuration(double milliseconds, string model, string provider, string endpoint, int statusCode) =>
         _requestDuration.Record(
             milliseconds,
             new KeyValuePair<string, object?>("model", model),
-            new KeyValuePair<string, object?>("api_family", apiFamily),
+            new KeyValuePair<string, object?>("provider", provider),
             new KeyValuePair<string, object?>("endpoint", endpoint),
             new KeyValuePair<string, object?>("status", statusCode));
 

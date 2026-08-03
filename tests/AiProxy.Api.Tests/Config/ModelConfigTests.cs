@@ -34,7 +34,6 @@ public class ModelConfigTests : IDisposable
             {
                 name = endpointName,
                 baseUrl = "https://backend.example.com",
-                apiFamily = "OpenAI",
                 authMode = "ApiKey",
                 apiKeyPlaintext = "sk-test-123",
             });
@@ -45,13 +44,22 @@ public class ModelConfigTests : IDisposable
         secretRefProp.GetString().Should().NotBeNullOrEmpty();
         endpointDoc.RootElement.ToString().Should().NotContain("sk-test-123", "the plaintext key must never be echoed back");
 
+        var createApiRouteResponse = await client.PostAsJsonAsync(
+            "/api/v1/config/api-routes",
+            new { name = $"native-openai-{Guid.NewGuid():N}", provider = "OpenAI", pathPrefix = "/openai/v1" });
+        createApiRouteResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var apiRouteDoc = JsonDocument.Parse(await createApiRouteResponse.Content.ReadAsStringAsync());
+        var apiRouteId = apiRouteDoc.RootElement.GetProperty("id").GetGuid();
+
         var addEndpointResponse = await client.PostAsJsonAsync(
             $"/api/v1/config/models/{modelName}/endpoints",
-            new { endpointId, priority = 1 });
+            new { endpointId, apiRouteId, priority = 1 });
         addEndpointResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var assignmentDoc = JsonDocument.Parse(await addEndpointResponse.Content.ReadAsStringAsync());
+        var assignmentId = assignmentDoc.RootElement.GetProperty("id").GetGuid();
 
         var updateEndpointResponse = await client.PutAsJsonAsync(
-            $"/api/v1/config/models/{modelName}/endpoints/{endpointId}", new { priority = 2 });
+            $"/api/v1/config/models/{modelName}/endpoints/{assignmentId}", new { priority = 2 });
         updateEndpointResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var updatedEndpointDoc = JsonDocument.Parse(await updateEndpointResponse.Content.ReadAsStringAsync());
         updatedEndpointDoc.RootElement.GetProperty("priority").GetInt32().Should().Be(2);
@@ -76,7 +84,7 @@ public class ModelConfigTests : IDisposable
         setSecretResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var removeEndpointResponse = await client.DeleteAsync(
-            $"/api/v1/config/models/{modelName}/endpoints/{endpointId}");
+            $"/api/v1/config/models/{modelName}/endpoints/{assignmentId}");
         removeEndpointResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var deleteEndpointResponse = await client.DeleteAsync($"/api/v1/config/endpoints/{endpointId}");
@@ -107,26 +115,38 @@ public class ModelConfigTests : IDisposable
             {
                 name = $"shared-{Guid.NewGuid():N}",
                 baseUrl = "https://shared.example.com",
-                apiFamily = "OpenAI",
                 authMode = "ApiKey",
                 apiKeyPlaintext = "sk-shared",
             });
         using var endpointDoc = JsonDocument.Parse(await createEndpointResponse.Content.ReadAsStringAsync());
         var endpointId = endpointDoc.RootElement.GetProperty("id").GetGuid();
 
-        (await client.PostAsJsonAsync(
+        var createApiRouteResponse = await client.PostAsJsonAsync(
+            "/api/v1/config/api-routes",
+            new { name = $"shared-route-{Guid.NewGuid():N}", provider = "OpenAI", pathPrefix = "/openai/v1" });
+        using var apiRouteDoc = JsonDocument.Parse(await createApiRouteResponse.Content.ReadAsStringAsync());
+        var apiRouteId = apiRouteDoc.RootElement.GetProperty("id").GetGuid();
+
+        var firstAssignmentResponse = await client.PostAsJsonAsync(
             $"/api/v1/config/models/{firstModelName}/endpoints",
-            new { endpointId, priority = 1 })).StatusCode.Should().Be(HttpStatusCode.Created);
-        (await client.PostAsJsonAsync(
+            new { endpointId, apiRouteId, priority = 1 });
+        firstAssignmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var firstAssignmentDoc = JsonDocument.Parse(await firstAssignmentResponse.Content.ReadAsStringAsync());
+        var firstAssignmentId = firstAssignmentDoc.RootElement.GetProperty("id").GetGuid();
+
+        var secondAssignmentResponse = await client.PostAsJsonAsync(
             $"/api/v1/config/models/{secondModelName}/endpoints",
-            new { endpointId, priority = 2 })).StatusCode.Should().Be(HttpStatusCode.Created);
+            new { endpointId, apiRouteId, priority = 2 });
+        secondAssignmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var secondAssignmentDoc = JsonDocument.Parse(await secondAssignmentResponse.Content.ReadAsStringAsync());
+        var secondAssignmentId = secondAssignmentDoc.RootElement.GetProperty("id").GetGuid();
 
         (await client.DeleteAsync($"/api/v1/config/endpoints/{endpointId}"))
             .StatusCode.Should().Be(HttpStatusCode.Conflict);
 
-        (await client.DeleteAsync($"/api/v1/config/models/{firstModelName}/endpoints/{endpointId}"))
+        (await client.DeleteAsync($"/api/v1/config/models/{firstModelName}/endpoints/{firstAssignmentId}"))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await client.DeleteAsync($"/api/v1/config/models/{secondModelName}/endpoints/{endpointId}"))
+        (await client.DeleteAsync($"/api/v1/config/models/{secondModelName}/endpoints/{secondAssignmentId}"))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await client.DeleteAsync($"/api/v1/config/endpoints/{endpointId}"))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);

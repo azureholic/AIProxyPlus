@@ -12,7 +12,7 @@ public class UsageRecordTests
     {
         var record = UsageRecord.Create(
             Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ChatCompletion, "req-1", streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, "req-1", streaming: false, httpStatusCode: 200,
             durationMs: 120, promptTokens: 10, completionTokens: 20, totalTokens: 30);
 
         record.TotalTokens.Should().Be(30);
@@ -26,7 +26,7 @@ public class UsageRecordTests
 
         var record = UsageRecord.Create(
             Guid.NewGuid(), "dall-e-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ImageGeneration, "req-2", streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ImageGeneration, "req-2", streaming: false, httpStatusCode: 200,
             durationMs: 900, usageMetrics: metrics);
 
         record.PromptTokens.Should().BeNull();
@@ -38,7 +38,7 @@ public class UsageRecordTests
     {
         var act = () => UsageRecord.Create(
             Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ChatCompletion, "req-3", streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, "req-3", streaming: false, httpStatusCode: 200,
             durationMs: 120);
 
         act.Should().Throw<DomainException>().WithMessage("*usage signal*");
@@ -49,7 +49,7 @@ public class UsageRecordTests
     {
         var act = () => UsageRecord.Create(
             Guid.NewGuid(), "gpt-4o-prod", Guid.Empty, "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ChatCompletion, "req-4", streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, "req-4", streaming: false, httpStatusCode: 200,
             durationMs: 120, totalTokens: 10);
 
         act.Should().Throw<DomainException>().WithMessage("*ConsumerId*");
@@ -62,7 +62,7 @@ public class UsageRecordTests
     {
         var act = () => UsageRecord.Create(
             Guid.NewGuid(), name, Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ChatCompletion, "req-5", streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, "req-5", streaming: false, httpStatusCode: 200,
             durationMs: 120, totalTokens: 10);
 
         act.Should().Throw<DomainException>().WithMessage("*ModelName*");
@@ -73,7 +73,7 @@ public class UsageRecordTests
     {
         var act = () => UsageRecord.Create(
             Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.Empty,
-            ApiFamily.OpenAI, OperationType.ChatCompletion, "req-6", streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, "req-6", streaming: false, httpStatusCode: 200,
             durationMs: 120, totalTokens: 10);
 
         act.Should().Throw<DomainException>().WithMessage("*EndpointId*");

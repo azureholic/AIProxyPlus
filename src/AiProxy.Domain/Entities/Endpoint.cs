@@ -9,7 +9,6 @@ public sealed class Endpoint
     public Guid Id { get; private set; }
     public string Name { get; private set; }
     public string BaseUrl { get; private set; }
-    public ApiFamily ApiFamily { get; private set; }
     public AuthMode AuthMode { get; private set; }
     public string? SecretRef { get; private set; }
     public string? ManagedIdentityScope { get; private set; }
@@ -28,7 +27,6 @@ public sealed class Endpoint
         Guid id,
         string name,
         string baseUrl,
-        ApiFamily apiFamily,
         AuthMode authMode,
         string? secretRef,
         string? managedIdentityScope,
@@ -39,7 +37,6 @@ public sealed class Endpoint
         Id = id;
         Name = name;
         BaseUrl = baseUrl;
-        ApiFamily = apiFamily;
         AuthMode = authMode;
         SecretRef = secretRef;
         ManagedIdentityScope = managedIdentityScope;
@@ -52,7 +49,6 @@ public sealed class Endpoint
         Guid id,
         string name,
         string baseUrl,
-        ApiFamily apiFamily,
         AuthMode authMode,
         string? secretRef = null,
         string? managedIdentityScope = null,
@@ -104,7 +100,6 @@ public sealed class Endpoint
             id,
             name,
             baseUrl,
-            apiFamily,
             authMode,
             secretRef,
             managedIdentityScope,

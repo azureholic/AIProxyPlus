@@ -8,6 +8,7 @@ namespace AiProxy.Application.Models;
 public sealed record AddEndpointCommand(
     string ModelName,
     Guid EndpointId,
+    Guid ApiRouteId,
     int Priority,
     bool Enabled = true);
 
@@ -17,6 +18,7 @@ public sealed class AddEndpointValidator : AbstractValidator<AddEndpointCommand>
     {
         RuleFor(c => c.ModelName).NotEmpty();
         RuleFor(c => c.EndpointId).NotEmpty();
+        RuleFor(c => c.ApiRouteId).NotEmpty();
         RuleFor(c => c.Priority).GreaterThanOrEqualTo(1);
     }
 }
@@ -24,6 +26,7 @@ public sealed class AddEndpointValidator : AbstractValidator<AddEndpointCommand>
 public sealed class AddEndpointHandler(
     IModelRepository repository,
     IEndpointRepository endpointRepository,
+    IApiRouteRepository apiRouteRepository,
     IValidator<AddEndpointCommand> validator)
 {
     public async Task<ModelEndpoint> HandleAsync(
@@ -37,7 +40,9 @@ public sealed class AddEndpointHandler(
 
         var endpoint = await endpointRepository.GetByIdAsync(command.EndpointId, cancellationToken)
             ?? throw new NotFoundException($"Endpoint '{command.EndpointId}' was not found.");
-        var assignment = ModelEndpoint.Create(model.Id, endpoint, command.Priority, command.Enabled);
+        var apiRoute = await apiRouteRepository.GetByIdAsync(command.ApiRouteId, cancellationToken)
+            ?? throw new NotFoundException($"API route '{command.ApiRouteId}' was not found.");
+        var assignment = ModelEndpoint.Create(Guid.NewGuid(), model.Id, endpoint, apiRoute, command.Priority, command.Enabled);
         model.AddEndpoint(assignment);
         await repository.UpdateAsync(model, cancellationToken);
         return assignment;

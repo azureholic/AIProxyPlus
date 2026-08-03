@@ -9,9 +9,9 @@ namespace AiProxy.Infrastructure.Usage;
 /// the body; streaming responses carry the same shape nested under <c>response.usage</c> on the terminal
 /// <c>response.completed</c> SSE event (never a usage-only frame — it's the final content-bearing event).
 /// </summary>
-public sealed class ResponsesUsageExtractor(ApiFamily apiFamily) : IUsageExtractor
+public sealed class ResponsesUsageExtractor(Provider provider) : IUsageExtractor
 {
-    public ApiFamily ApiFamily { get; } = apiFamily;
+    public Provider Provider { get; } = provider;
 
     public OperationType OperationType => OperationType.ResponsesApi;
 

@@ -9,7 +9,7 @@ public class ImageUsageExtractorTests
     [Fact]
     public void ExtractFromResponseBody_WithDataArray_ReturnsImageCountAndSize()
     {
-        var extractor = new ImageUsageExtractor(OperationType.ImageGeneration);
+        var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration);
 
         var result = extractor.ExtractFromResponseBody(
             """{"data":[{"url":"https://example/1.png","size":"1024x1024"},{"url":"https://example/2.png"}]}""");
@@ -24,7 +24,7 @@ public class ImageUsageExtractorTests
     [Fact]
     public void ExtractFromResponseBody_WithTopLevelSizeAndQuality_IncludesBoth()
     {
-        var extractor = new ImageUsageExtractor(OperationType.ImageEdit);
+        var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageEdit);
 
         var result = extractor.ExtractFromResponseBody("""{"data":[{"url":"x"}],"size":"512x512","quality":"hd"}""");
 
@@ -36,26 +36,27 @@ public class ImageUsageExtractorTests
     [Fact]
     public void ExtractFromResponseBody_WithNoRecognizableFields_ReturnsNull()
     {
-        var extractor = new ImageUsageExtractor(OperationType.ImageVariation);
+        var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageVariation);
 
         extractor.ExtractFromResponseBody("""{"id":"unrelated"}""").Should().BeNull();
     }
 
     [Fact]
     public void ExtractFromResponseBody_WithInvalidJson_ReturnsNull() =>
-        new ImageUsageExtractor(OperationType.ImageGeneration).ExtractFromResponseBody("not json").Should().BeNull();
+        new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration).ExtractFromResponseBody("not json").Should().BeNull();
 
     [Fact]
     public void TryExtractFromStreamingEvent_AlwaysNull_SinceImagesApiIsNeverStreamed() =>
-        new ImageUsageExtractor(OperationType.ImageGeneration).TryExtractFromStreamingEvent("{}").Should().BeNull();
+        new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration).TryExtractFromStreamingEvent("{}").Should().BeNull();
 
     [Theory]
     [InlineData(OperationType.ImageGeneration)]
     [InlineData(OperationType.ImageEdit)]
     [InlineData(OperationType.ImageVariation)]
     public void OperationType_ReflectsConstructorArgument(OperationType operationType) =>
-        new ImageUsageExtractor(operationType).OperationType.Should().Be(operationType);
+        new ImageUsageExtractor(Provider.OpenAI, operationType).OperationType.Should().Be(operationType);
 
     [Fact]
-    public void ApiFamily_IsAlwaysOpenAi() => new ImageUsageExtractor(OperationType.ImageGeneration).ApiFamily.Should().Be(ApiFamily.OpenAI);
+    public void Provider_ReflectsConstructorArgument() =>
+        new ImageUsageExtractor(Provider.MicrosoftAI, OperationType.ImageGeneration).Provider.Should().Be(Provider.MicrosoftAI);
 }

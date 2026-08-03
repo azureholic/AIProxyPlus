@@ -9,10 +9,10 @@ namespace AiProxy.Application.Tests.Usage;
 
 public class UsageExtractorResolverTests
 {
-    private static IUsageExtractor FakeExtractor(ApiFamily apiFamily, OperationType operationType)
+    private static IUsageExtractor FakeExtractor(Provider provider, OperationType operationType)
     {
         var extractor = Substitute.For<IUsageExtractor>();
-        extractor.ApiFamily.Returns(apiFamily);
+        extractor.Provider.Returns(provider);
         extractor.OperationType.Returns(operationType);
         return extractor;
     }
@@ -20,11 +20,11 @@ public class UsageExtractorResolverTests
     [Fact]
     public void Resolve_WithMatchingExtractorRegistered_ReturnsIt()
     {
-        var chatExtractor = FakeExtractor(ApiFamily.OpenAI, OperationType.ChatCompletion);
-        var imageExtractor = FakeExtractor(ApiFamily.OpenAI, OperationType.ImageGeneration);
+        var chatExtractor = FakeExtractor(Provider.OpenAI, OperationType.ChatCompletion);
+        var imageExtractor = FakeExtractor(Provider.OpenAI, OperationType.ImageGeneration);
         var resolver = new UsageExtractorResolver([chatExtractor, imageExtractor]);
 
-        var resolved = resolver.Resolve(ApiFamily.OpenAI, OperationType.ImageGeneration);
+        var resolved = resolver.Resolve(Provider.OpenAI, OperationType.ImageGeneration);
 
         resolved.Should().Be(imageExtractor);
     }
@@ -32,20 +32,20 @@ public class UsageExtractorResolverTests
     [Fact]
     public void Resolve_WithSameOperationTypeButDifferentApiFamily_PicksCorrectOne()
     {
-        var openAiExtractor = FakeExtractor(ApiFamily.OpenAI, OperationType.ChatCompletion);
-        var anthropicExtractor = FakeExtractor(ApiFamily.Anthropic, OperationType.ChatCompletion);
+        var openAiExtractor = FakeExtractor(Provider.OpenAI, OperationType.ChatCompletion);
+        var anthropicExtractor = FakeExtractor(Provider.Anthropic, OperationType.ChatCompletion);
         var resolver = new UsageExtractorResolver([openAiExtractor, anthropicExtractor]);
 
-        resolver.Resolve(ApiFamily.Anthropic, OperationType.ChatCompletion).Should().Be(anthropicExtractor);
-        resolver.Resolve(ApiFamily.OpenAI, OperationType.ChatCompletion).Should().Be(openAiExtractor);
+        resolver.Resolve(Provider.Anthropic, OperationType.ChatCompletion).Should().Be(anthropicExtractor);
+        resolver.Resolve(Provider.OpenAI, OperationType.ChatCompletion).Should().Be(openAiExtractor);
     }
 
     [Fact]
     public void Resolve_WithNoMatchingExtractor_ThrowsNotFoundException()
     {
-        var resolver = new UsageExtractorResolver([FakeExtractor(ApiFamily.OpenAI, OperationType.ChatCompletion)]);
+        var resolver = new UsageExtractorResolver([FakeExtractor(Provider.OpenAI, OperationType.ChatCompletion)]);
 
-        var act = () => resolver.Resolve(ApiFamily.Anthropic, OperationType.ChatCompletion);
+        var act = () => resolver.Resolve(Provider.Anthropic, OperationType.ChatCompletion);
 
         act.Should().Throw<NotFoundException>();
     }

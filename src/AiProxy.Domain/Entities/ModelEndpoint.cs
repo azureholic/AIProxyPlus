@@ -6,17 +6,19 @@ namespace AiProxy.Domain.Entities;
 /// <summary>Assigns a reusable endpoint to a model with model-specific routing settings.</summary>
 public sealed class ModelEndpoint
 {
+    public Guid Id { get; private set; }
     public Guid ModelId { get; private set; }
     public Guid EndpointId { get; private set; }
     public Endpoint Endpoint { get; private set; }
+    public Guid ApiRouteId { get; private set; }
+    public ApiRoute ApiRoute { get; private set; }
     public int Priority { get; private set; }
     public bool Enabled { get; private set; }
     public EndpointHealthState Health { get; private set; }
 
-    public Guid Id => EndpointId;
     public string Name => Endpoint.Name;
     public string BaseUrl => Endpoint.BaseUrl;
-    public ApiFamily ApiFamily => Endpoint.ApiFamily;
+    public Provider Provider => ApiRoute.Provider;
     public AuthMode AuthMode => Endpoint.AuthMode;
     public string? SecretRef => Endpoint.SecretRef;
     public string? ManagedIdentityScope => Endpoint.ManagedIdentityScope;
@@ -27,24 +29,35 @@ public sealed class ModelEndpoint
     private ModelEndpoint()
     {
         Endpoint = null!;
+        ApiRoute = null!;
     }
 
-    private ModelEndpoint(Guid modelId, Endpoint endpoint, int priority, bool enabled)
+    private ModelEndpoint(Guid id, Guid modelId, Endpoint endpoint, ApiRoute apiRoute, int priority, bool enabled)
     {
+        Id = id;
         ModelId = modelId;
         EndpointId = endpoint.Id;
         Endpoint = endpoint;
+        ApiRouteId = apiRoute.Id;
+        ApiRoute = apiRoute;
         Priority = priority;
         Enabled = enabled;
         Health = EndpointHealthState.Unknown;
     }
 
     public static ModelEndpoint Create(
+        Guid id,
         Guid modelId,
         Endpoint endpoint,
+        ApiRoute apiRoute,
         int priority,
         bool enabled = true)
     {
+        if (id == Guid.Empty)
+        {
+            throw new DomainException("ModelEndpoint.Id must be valid.");
+        }
+
         if (modelId == Guid.Empty)
         {
             throw new DomainException("ModelEndpoint.ModelId must be valid.");
@@ -55,7 +68,7 @@ public sealed class ModelEndpoint
             throw new DomainException("ModelEndpoint.Priority must be 1 or greater.");
         }
 
-        return new ModelEndpoint(modelId, endpoint, priority, enabled);
+        return new ModelEndpoint(id, modelId, endpoint, apiRoute, priority, enabled);
     }
 
     public void UpdatePriority(int priority)

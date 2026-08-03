@@ -11,13 +11,13 @@ namespace AiProxy.Infrastructure.Routing;
 /// </summary>
 public static class OutboundBodyMutator
 {
-    private static readonly HashSet<ApiFamily> OpenAiStyleFamilies =
-        [ApiFamily.OpenAI, ApiFamily.AzureOpenAI, ApiFamily.OpenAICompatible];
+    private static readonly HashSet<Provider> OpenAiStyleProviders =
+        [Provider.OpenAI, Provider.MicrosoftAI];
 
     /// <summary>Returns a body with <c>stream_options.include_usage: true</c> injected, or the original bytes if unchanged.</summary>
-    public static byte[] EnsureStreamUsageRequested(byte[] bodyBytes, ApiFamily apiFamily, OperationType operationType, bool streaming)
+    public static byte[] EnsureStreamUsageRequested(byte[] bodyBytes, Provider provider, OperationType operationType, bool streaming)
     {
-        if (!streaming || !OpenAiStyleFamilies.Contains(apiFamily) ||
+        if (!streaming || !OpenAiStyleProviders.Contains(provider) ||
             operationType is not (OperationType.ChatCompletion or OperationType.Completion))
         {
             return bodyBytes;

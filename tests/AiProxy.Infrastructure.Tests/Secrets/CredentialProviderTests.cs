@@ -11,15 +11,17 @@ namespace AiProxy.Infrastructure.Tests.Secrets;
 
 public class CredentialProviderTests
 {
-    private static Endpoint ApiKeyEndpoint() =>
-        Endpoint.Create(
-            Guid.NewGuid(), "OpenAI", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey,
-            secretRef: "endpoints/abc");
+    private static ModelEndpoint ApiKeyEndpoint() => CreateAssignment(
+        Endpoint.Create(Guid.NewGuid(), "OpenAI", "https://api.openai.com", AuthMode.ApiKey, "endpoints/abc"));
 
-    private static Endpoint ManagedIdentityEndpoint() =>
+    private static ModelEndpoint ManagedIdentityEndpoint() => CreateAssignment(
         Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "scope");
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "scope"));
+
+    private static ModelEndpoint CreateAssignment(Endpoint endpoint) => ModelEndpoint.Create(
+        Guid.NewGuid(), Guid.NewGuid(), endpoint,
+        ApiRoute.Create(Guid.NewGuid(), "OpenAI", Provider.OpenAI, "/v1"), 1);
 
     private static CredentialProvider CreateSut(out ISecretResolver secretResolver, out TokenCredential tokenCredential)
     {

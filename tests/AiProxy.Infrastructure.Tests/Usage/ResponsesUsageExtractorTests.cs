@@ -6,7 +6,7 @@ namespace AiProxy.Infrastructure.Tests.Usage;
 
 public class ResponsesUsageExtractorTests
 {
-    private readonly ResponsesUsageExtractor _extractor = new(ApiFamily.OpenAI);
+    private readonly ResponsesUsageExtractor _extractor = new(Provider.OpenAI);
 
     [Fact]
     public void ExtractFromResponseBody_WithUsage_ReturnsTokenCounts()
@@ -54,8 +54,8 @@ public class ResponsesUsageExtractorTests
     public void OperationType_IsAlwaysResponsesApi() => _extractor.OperationType.Should().Be(OperationType.ResponsesApi);
 
     [Theory]
-    [InlineData(ApiFamily.OpenAI)]
-    [InlineData(ApiFamily.AzureOpenAI)]
-    [InlineData(ApiFamily.OpenAICompatible)]
-    public void ApiFamily_ReflectsConstructorArgument(ApiFamily apiFamily) => new ResponsesUsageExtractor(apiFamily).ApiFamily.Should().Be(apiFamily);
+    [InlineData(Provider.OpenAI)]
+    [InlineData(Provider.MicrosoftAI)]
+    public void Provider_ReflectsConstructorArgument(Provider provider) =>
+        new ResponsesUsageExtractor(provider).Provider.Should().Be(provider);
 }

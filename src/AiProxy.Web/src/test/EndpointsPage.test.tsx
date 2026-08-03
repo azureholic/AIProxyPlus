@@ -41,7 +41,6 @@ describe('EndpointsPage', () => {
     expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
       name: 'shared-openai',
       baseUrl: 'https://api.openai.com',
-      apiFamily: 'OpenAI',
       authMode: 'ApiKey',
       apiKeyPlaintext: 'secret-value',
       timeoutSeconds: 100,

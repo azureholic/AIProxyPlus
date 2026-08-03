@@ -20,7 +20,7 @@ public class EndpointLifecycleTests
         var handler = new CreateEndpointHandler(_repository, _secretResolver, new CreateEndpointValidator());
 
         var endpoint = await handler.HandleAsync(new CreateEndpointCommand(
-            "OpenAI primary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, "sk-test"));
+            "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, "sk-test"));
 
         endpoint.Name.Should().Be("OpenAI primary");
         endpoint.SecretRef.Should().Be($"endpoints/{endpoint.Id}");
@@ -36,7 +36,7 @@ public class EndpointLifecycleTests
         var handler = new CreateEndpointHandler(_repository, _secretResolver, new CreateEndpointValidator());
 
         var act = () => handler.HandleAsync(new CreateEndpointCommand(
-            "OpenAI primary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, "sk-test"));
+            "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, "sk-test"));
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         await _secretResolver.Received(1).DeleteAsync(
@@ -50,7 +50,7 @@ public class EndpointLifecycleTests
         var handler = new CreateEndpointHandler(_repository, _secretResolver, new CreateEndpointValidator());
 
         var act = () => handler.HandleAsync(new CreateEndpointCommand(
-            "OpenAI primary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, "sk-test"));
+            "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, "sk-test"));
 
         await act.Should().ThrowAsync<ConflictException>();
         await _secretResolver.DidNotReceiveWithAnyArgs().StoreAsync(default!, default!, default);
@@ -62,7 +62,7 @@ public class EndpointLifecycleTests
         var handler = new CreateEndpointHandler(_repository, _secretResolver, new CreateEndpointValidator());
 
         var act = () => handler.HandleAsync(new CreateEndpointCommand(
-            "OpenAI primary", "http://example.com", ApiFamily.OpenAI, AuthMode.ApiKey, "sk-test"));
+            "OpenAI primary", "http://example.com", AuthMode.ApiKey, "sk-test"));
 
         await act.Should().ThrowAsync<ValidationException>();
     }
@@ -71,8 +71,8 @@ public class EndpointLifecycleTests
     public async Task UpdateAsync_WithManagedIdentitySettings_UpdatesReusableEndpoint()
     {
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "Foundry primary", "https://old.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "https://cognitiveservices.azure.com/.default");
+            Guid.NewGuid(), "Foundry primary", "https://old.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://cognitiveservices.azure.com/.default");
         _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
         var handler = new UpdateEndpointConfigurationHandler(_repository, new UpdateEndpointConfigurationValidator());
 
@@ -127,8 +127,8 @@ public class EndpointLifecycleTests
     public async Task SetSecretAsync_WithManagedIdentityEndpoint_ThrowsConflictException()
     {
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "Foundry primary", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default");
+            Guid.NewGuid(), "Foundry primary", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://ai.azure.com/.default");
         _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
         var handler = new SetEndpointSecretHandler(_repository, _secretResolver, new SetEndpointSecretValidator());
 
@@ -138,6 +138,5 @@ public class EndpointLifecycleTests
     }
 
     private static Endpoint CreateApiKeyEndpoint() => Endpoint.Create(
-        Guid.NewGuid(), "OpenAI primary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey,
-        secretRef: "endpoints/abc");
+        Guid.NewGuid(), "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, secretRef: "endpoints/abc");
 }

@@ -9,6 +9,8 @@ public sealed class AiProxyDbContext(DbContextOptions<AiProxyDbContext> options)
 
     public DbSet<Endpoint> Endpoints => Set<Endpoint>();
 
+    public DbSet<ApiRoute> ApiRoutes => Set<ApiRoute>();
+
     public DbSet<ModelEndpoint> ModelEndpoints => Set<ModelEndpoint>();
 
     public DbSet<Consumer> Consumers => Set<Consumer>();

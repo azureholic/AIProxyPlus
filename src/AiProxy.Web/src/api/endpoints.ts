@@ -1,5 +1,5 @@
 import { adminJson } from './client';
-import type { ApiFamily, AuthMode, EndpointConfig } from './types';
+import type { AuthMode, EndpointConfig } from './types';
 
 export function listEndpoints(): Promise<EndpointConfig[]> {
   return adminJson('/api/v1/config/endpoints');
@@ -8,7 +8,6 @@ export function listEndpoints(): Promise<EndpointConfig[]> {
 export interface CreateEndpointInput {
   name: string;
   baseUrl: string;
-  apiFamily: ApiFamily;
   authMode: AuthMode;
   apiKeyPlaintext?: string;
   managedIdentityScope?: string;

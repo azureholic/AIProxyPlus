@@ -12,7 +12,7 @@ public class UsageRecordChannelTests
     private static UsageRecord NewUsageRecord(string requestId = "req-1") =>
         UsageRecord.Create(
             Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ChatCompletion, requestId, streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, requestId, streaming: false, httpStatusCode: 200,
             durationMs: 100, totalTokens: 10);
 
     [Fact]

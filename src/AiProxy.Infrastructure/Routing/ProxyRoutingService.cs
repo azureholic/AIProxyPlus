@@ -27,6 +27,7 @@ public sealed class ProxyRoutingService(
     IEndpointHealthTracker endpointHealthTracker,
     IEndpointRoundRobinCounter roundRobinCounter,
     ICredentialProvider credentialProvider,
+    UpstreamRouteResolver upstreamRouteResolver,
     IUsageExtractorResolver usageExtractorResolver,
     UsageRecordChannel usageRecordChannel,
     AiProxyMetrics metrics,
@@ -77,14 +78,14 @@ public sealed class ProxyRoutingService(
         // Realtime API connections (§9) get their own connection-scoped selection, not this per-request path.
         var sessionKey = operationType == OperationType.ResponsesApi ? fields.PreviousResponseId : null;
         SessionAffinityEntry? affinityEntry = null;
-        Guid? stickyEndpointId = null;
+        Guid? stickyAssignmentId = null;
 
         if (sessionKey is not null)
         {
             affinityEntry = await sessionAffinityStore.GetAsync(sessionKey, cancellationToken);
             if (affinityEntry is not null && !affinityEntry.IsExpired())
             {
-                stickyEndpointId = affinityEntry.EndpointId;
+                stickyAssignmentId = affinityEntry.ModelEndpointId;
             }
         }
 
@@ -98,10 +99,10 @@ public sealed class ProxyRoutingService(
         UpstreamFailureSnapshot? firstFailureSnapshot = null;
         while (true)
         {
-            var selection = EndpointSelector.SelectEndpoint(model.Endpoints, stickyEndpointId, excludedEndpointIds, roundRobinSeed);
+            var selection = EndpointSelector.SelectEndpoint(model.Endpoints, stickyAssignmentId, excludedEndpointIds, roundRobinSeed);
             if (!selection.IsSuccess)
             {
-                var reason = stickyEndpointId is not null
+                var reason = stickyAssignmentId is not null
                     ? RoutingFailureReason.StickyEndpointUnavailable
                     : RoutingFailureReason.NoHealthyEndpoint;
                 return new RoutingFailure(reason, selection.FailureReason!, firstFailureSnapshot);
@@ -109,6 +110,16 @@ public sealed class ProxyRoutingService(
 
             var assignment = selection.SelectedEndpoint!;
             var endpoint = assignment.Endpoint;
+
+            Uri targetUri;
+            try
+            {
+                targetUri = upstreamRouteResolver.ResolveHttp(assignment, operationType, httpContext.Request.QueryString.Value ?? string.Empty);
+            }
+            catch (NotSupportedException exception)
+            {
+                return new RoutingFailure(RoutingFailureReason.NoHealthyEndpoint, exception.Message);
+            }
 
             if (previouslyFailedEndpoint is not null && previouslyFailedEndpoint.Id != endpoint.Id)
             {
@@ -118,14 +129,14 @@ public sealed class ProxyRoutingService(
             EndpointCredential credential;
             using (AiProxyActivitySource.Instance.StartActivity("secret_resolution"))
             {
-                credential = await credentialProvider.GetCredentialAsync(endpoint, cancellationToken);
+                credential = await credentialProvider.GetCredentialAsync(assignment, cancellationToken);
             }
 
-            var usageExtractor = TryResolveUsageExtractor(endpoint.ApiFamily, operationType);
-            var outboundBody = OutboundBodyMutator.EnsureStreamUsageRequested(bodyBytes, endpoint.ApiFamily, operationType, fields.Streaming);
+            var usageExtractor = TryResolveUsageExtractor(assignment.Provider, operationType);
+            var outboundBody = OutboundBodyMutator.EnsureStreamUsageRequested(bodyBytes, assignment.Provider, operationType, fields.Streaming);
 
             var outcome = await TryForwardWithRetriesAsync(
-                httpContext, endpoint, credential, outboundBody, usageExtractor,
+                httpContext, endpoint, targetUri, credential, outboundBody, usageExtractor,
                 captureResponseId: operationType == OperationType.ResponsesApi,
                 clientRequestedUsage: fields.ClientRequestedUsage,
                 streaming: fields.Streaming,
@@ -134,8 +145,8 @@ public sealed class ProxyRoutingService(
             if (outcome.Succeeded)
             {
                 endpointHealthTracker.MarkHealthy(endpoint.Id);
-                metrics.RecordRequest(model.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
-                metrics.RecordDuration(stopwatch.Elapsed.TotalMilliseconds, model.Name, endpoint.ApiFamily.ToString(), endpoint.BaseUrl, outcome.StatusCode);
+                metrics.RecordRequest(model.Name, assignment.Provider.ToString(), endpoint.BaseUrl, outcome.StatusCode);
+                metrics.RecordDuration(stopwatch.Elapsed.TotalMilliseconds, model.Name, assignment.Provider.ToString(), endpoint.BaseUrl, outcome.StatusCode);
                 if (outcome.Usage is not null)
                 {
                     metrics.RecordTokens(
@@ -143,7 +154,7 @@ public sealed class ProxyRoutingService(
                 }
 
                 await PersistResponsesApiAffinityAsync(
-                    model, endpoint, operationType, fields.StoreFalse, outcome.CapturedResponseId, cancellationToken);
+                    model, assignment, operationType, fields.StoreFalse, outcome.CapturedResponseId, cancellationToken);
 
                 // ConsumerId is only populated once ingress authentication (Phase 7) resolves a caller; until
                 // then there is no valid Consumer to attribute usage to, so capture is skipped rather than
@@ -153,7 +164,7 @@ public sealed class ProxyRoutingService(
                 if (consumerId is not null && outcome.Usage is not null)
                 {
                     EnqueueUsageRecord(
-                        model, endpoint, operationType, fields, sessionKey, consumerId.Value, consumerName, outcome, stopwatch.ElapsedMilliseconds);
+                        model, assignment, operationType, fields, sessionKey, consumerId.Value, consumerName, outcome, stopwatch.ElapsedMilliseconds);
                 }
 
                 return null;
@@ -163,25 +174,25 @@ public sealed class ProxyRoutingService(
             previouslyFailedEndpoint = endpoint;
             firstFailureSnapshot ??= outcome.Failure;
 
-            if (stickyEndpointId is not null)
+            if (stickyAssignmentId is not null)
             {
                 // Deliberately not attaching a snapshot here: a stateful session must fail fast with a clear,
                 // generic error rather than have a stale/misleading upstream body replayed to the client — see
                 // architecture.md §9.
                 return new RoutingFailure(
                     RoutingFailureReason.StickyEndpointUnavailable,
-                    $"Sticky endpoint '{stickyEndpointId}' failed and failover is disallowed for stateful sessions.");
+                    $"Sticky assignment '{stickyAssignmentId}' failed and failover is disallowed for stateful sessions.");
             }
 
             excludedEndpointIds.Add(endpoint.Id);
         }
     }
 
-    private IUsageExtractor? TryResolveUsageExtractor(ApiFamily apiFamily, OperationType operationType)
+    private IUsageExtractor? TryResolveUsageExtractor(Provider provider, OperationType operationType)
     {
         try
         {
-            return usageExtractorResolver.Resolve(apiFamily, operationType);
+            return usageExtractorResolver.Resolve(provider, operationType);
         }
         catch (NotFoundException)
         {
@@ -191,7 +202,7 @@ public sealed class ProxyRoutingService(
 
     private void EnqueueUsageRecord(
         Model model,
-        Endpoint endpoint,
+        ModelEndpoint assignment,
         OperationType operationType,
         RequestBodyFields fields,
         string? sessionKey,
@@ -205,8 +216,8 @@ public sealed class ProxyRoutingService(
             model.Name,
             consumerId,
             consumerName ?? "unknown",
-            endpoint.Id,
-            endpoint.ApiFamily,
+            assignment.EndpointId,
+            assignment.Provider,
             operationType,
             requestId: Guid.NewGuid().ToString("n"),
             streaming: fields.Streaming,
@@ -224,6 +235,7 @@ public sealed class ProxyRoutingService(
     private async Task<ForwardOutcome> TryForwardWithRetriesAsync(
         HttpContext httpContext,
         Endpoint endpoint,
+        Uri targetUri,
         EndpointCredential credential,
         byte[] bodyBytes,
         IUsageExtractor? usageExtractor,
@@ -246,7 +258,7 @@ public sealed class ProxyRoutingService(
             backendCallActivity?.SetTag("attempt", attempt);
             try
             {
-                using var request = DirectHttpProxy.BuildRequest(httpContext, endpoint.BaseUrl, bodyBytes, credential);
+                using var request = DirectHttpProxy.BuildRequest(httpContext, targetUri, bodyBytes, credential);
                 response = await httpClient.SendAsync(request, cancellationToken);
             }
             catch (HttpRequestException)
@@ -300,7 +312,7 @@ public sealed class ProxyRoutingService(
 
     private async Task PersistResponsesApiAffinityAsync(
         Model model,
-        Endpoint endpoint,
+        ModelEndpoint assignment,
         OperationType operationType,
         bool storeFalse,
         string? capturedResponseId,
@@ -311,7 +323,8 @@ public sealed class ProxyRoutingService(
             return;
         }
 
-        var entry = SessionAffinityEntry.Create(capturedResponseId, model.Id, endpoint.Id, _sessionAffinityTtl);
+        var entry = SessionAffinityEntry.Create(
+            capturedResponseId, model.Id, assignment.Id, assignment.EndpointId, _sessionAffinityTtl);
         await sessionAffinityStore.SaveAsync(entry, cancellationToken);
     }
 

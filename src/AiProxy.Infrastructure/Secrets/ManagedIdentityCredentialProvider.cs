@@ -11,8 +11,9 @@ namespace AiProxy.Infrastructure.Secrets;
 /// </summary>
 public sealed class ManagedIdentityCredentialProvider(TokenCredential tokenCredential)
 {
-    public async Task<EndpointCredential> GetCredentialAsync(Endpoint endpoint, CancellationToken cancellationToken = default)
+    public async Task<EndpointCredential> GetCredentialAsync(ModelEndpoint assignment, CancellationToken cancellationToken = default)
     {
+        var endpoint = assignment.Endpoint;
         if (string.IsNullOrWhiteSpace(endpoint.ManagedIdentityScope))
         {
             throw new InvalidOperationException($"Endpoint '{endpoint.Id}' has AuthMode.ManagedIdentity but no ManagedIdentityScope.");

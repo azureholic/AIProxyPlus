@@ -18,7 +18,7 @@
    - Update the applicable `specs/iterations/*/tasks.md` only after implementation and validation are complete.
    - Update `README.md` when setup, configuration, commands, API usage, or user-visible capabilities change.
 5. Run the narrowest relevant tests first, then the broader checks warranted by the blast radius. Report any validation that could not be run.
-6. After all required validation passes, create one focused Git commit for the completed task so it can be rolled back independently. Review the staged diff, include only files belonging to that task, preserve unrelated user changes, and use a concise imperative commit message. Do not commit failed or unvalidated work unless the user explicitly directs it.
+6. After all required validation passes, create one focused Git commit for the completed task so it can be rolled back independently. This instruction is standing user authorization to create that commit without waiting for a separate commit request. Review the staged diff, include only files belonging to that task, preserve unrelated user changes, and use a concise imperative commit message. Do not commit failed or unvalidated work unless the user explicitly directs it.
 
 ## Layer Boundaries
 

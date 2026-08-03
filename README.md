@@ -19,7 +19,7 @@ phase-by-phase build log in [specs/iterations/iteration-1/tasks.md](specs/iterat
   response, then decide whether to retry the next endpoint" impossible. See architecture.md §9 for the full
   reasoning (confirmed empirically during implementation).
 - **Streaming usage capture**: SSE responses are relayed incrementally (`SseStreamRelay`, no full-body
-  buffering) while extracting token usage per `(ApiFamily, OperationType)` via a pluggable `IUsageExtractor`;
+  buffering) while extracting token usage per `(Provider, OperationType)` via a pluggable `IUsageExtractor`;
   a forced `stream_options.include_usage` chunk is stripped from the client-facing stream if the client itself
   never asked for it.
 - **Secrets**: HashiCorp Vault (KV v2) holds outbound endpoint credentials, the admin API key hash, and the
@@ -85,7 +85,7 @@ A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboar
 [specs/iterations/iteration-3/tasks.md](specs/iterations/iteration-3/tasks.md)), served by the **same**
 container as the API — no separate frontend host/deployment.
 
-- **Pages**: Config → Models, Endpoints, Consumers; Playground → Chat
+- **Pages**: Config → Models, Endpoints, API Routes, Consumers; Playground → Chat
   (streaming/non-streaming), Images, Voice (Realtime connectivity + raw-event-log test tool — not full
   duplex audio, see architecture.md §19.4); Dashboard → Usage (filters, table, token/request charts).
 - **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it
@@ -147,19 +147,34 @@ curl -X POST http://localhost:8080/api/v1/config/consumers `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"name":"my-team"}'
 
-# Create a reusable endpoint. Save the returned id; its plaintext API key is never returned.
+# Create reusable connectivity. Save the endpoint id; its plaintext API key is never returned.
 curl -X POST http://localhost:8080/api/v1/config/endpoints `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
-  -d '{"name":"primary-openai","baseUrl":"https://my-openai-endpoint.example.com","apiFamily":"OpenAI","authMode":"ApiKey","apiKeyPlaintext":"sk-...","timeoutSeconds":100,"maxRetries":2}'
+  -d '{"name":"primary-foundry","baseUrl":"https://my-foundry-resource.example.com","authMode":"ApiKey","apiKeyPlaintext":"sk-...","timeoutSeconds":100,"maxRetries":2}'
 
-# Register a model and assign the existing endpoint by id.
+# Create a reusable provider API surface. The migration also supplies deterministic built-in routes.
+curl -X POST http://localhost:8080/api/v1/config/api-routes `
+  -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
+  -d '{"name":"custom-foundry-openai","provider":"OpenAI","pathPrefix":"/openai/v1"}'
+
+# Register a model and assign an endpoint + API route combination.
 curl -X POST http://localhost:8080/api/v1/config/models `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"name":"gpt-4o"}'
 curl -X POST http://localhost:8080/api/v1/config/models/gpt-4o/endpoints `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
-  -d '{"endpointId":"<endpoint-id>","priority":1,"enabled":true}'
+  -d '{"endpointId":"<endpoint-id>","apiRouteId":"<api-route-id>","priority":1,"enabled":true}'
 ```
+
+`Endpoint` owns only the host, credentials, timeout, and retry settings. `ApiRoute` owns provider behavior and
+the normalized upstream prefix. A model assignment combines both, so one Foundry endpoint can be reused with the
+built-in Foundry OpenAI (`/openai/v1`) and Microsoft AI (`/mai/v1`) routes. OpenAI uses bearer authorization,
+Microsoft AI uses `api-key`, and Anthropic uses `x-api-key`.
+
+The Iteration 7 migration creates four built-in routes and backfills existing assignments and Responses affinity.
+Legacy Azure OpenAI and OpenAI-compatible assignments map to the Foundry OpenAI route; Native OpenAI and Anthropic
+map to their matching built-ins. Downgrade is blocked if a model uses the same endpoint through multiple routes,
+because the legacy schema cannot represent that state.
 
 OpenAI-shaped ingress:
 

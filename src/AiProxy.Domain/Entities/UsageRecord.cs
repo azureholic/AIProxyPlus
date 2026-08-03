@@ -16,7 +16,7 @@ public sealed class UsageRecord
     public Guid ConsumerId { get; private set; }
     public string ConsumerName { get; private set; }
     public Guid EndpointId { get; private set; }
-    public ApiFamily ApiFamily { get; private set; }
+    public Provider Provider { get; private set; }
     public OperationType OperationType { get; private set; }
     public string RequestId { get; private set; }
     public string? SessionId { get; private set; }
@@ -43,7 +43,7 @@ public sealed class UsageRecord
         Guid consumerId,
         string consumerName,
         Guid endpointId,
-        ApiFamily apiFamily,
+        Provider provider,
         OperationType operationType,
         string requestId,
         string? sessionId,
@@ -61,7 +61,7 @@ public sealed class UsageRecord
         ConsumerId = consumerId;
         ConsumerName = consumerName;
         EndpointId = endpointId;
-        ApiFamily = apiFamily;
+        Provider = provider;
         OperationType = operationType;
         RequestId = requestId;
         SessionId = sessionId;
@@ -80,7 +80,7 @@ public sealed class UsageRecord
         Guid consumerId,
         string consumerName,
         Guid endpointId,
-        ApiFamily apiFamily,
+        Provider provider,
         OperationType operationType,
         string requestId,
         bool streaming,
@@ -134,7 +134,7 @@ public sealed class UsageRecord
             consumerId,
             consumerName,
             endpointId,
-            apiFamily,
+            provider,
             operationType,
             requestId,
             sessionId,

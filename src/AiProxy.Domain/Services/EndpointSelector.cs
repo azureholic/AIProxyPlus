@@ -10,27 +10,27 @@ namespace AiProxy.Domain.Services;
 public static class EndpointSelector
 {
     /// <param name="endpoints">All endpoints configured for the model.</param>
-    /// <param name="stickyEndpointId">
-    /// When set, the call must be pinned to this endpoint (session affinity). If it's missing, disabled, or
+    /// <param name="stickyAssignmentId">
+    /// When set, the call must be pinned to this assignment (session affinity). If it's missing, disabled, or
     /// unhealthy the selection fails outright — silently rerouting a stateful session is unsafe (§9).
     /// </param>
     /// <param name="excludedEndpointIds">
     /// Endpoints already tried and failed in this request (used for failover retries so the same endpoint
-    /// isn't picked twice). Ignored when <paramref name="stickyEndpointId"/> is set.
+    /// isn't picked twice). Ignored when <paramref name="stickyAssignmentId"/> is set.
     /// </param>
     /// <param name="roundRobinCounter">
     /// A monotonically-increasing value supplied by the caller (one per incoming request, not per retry) used
     /// to rotate the pick across assignments that share the lowest surviving priority.
     /// Endpoints are the sole priority holder, or the tier has already been narrowed by failed attempts, this
-    /// has no visible effect. Ignored when <paramref name="stickyEndpointId"/> is set.
+    /// has no visible effect. Ignored when <paramref name="stickyAssignmentId"/> is set.
     /// </param>
     public static EndpointSelectionResult SelectEndpoint(
         IReadOnlyList<ModelEndpoint> endpoints,
-        Guid? stickyEndpointId = null,
+        Guid? stickyAssignmentId = null,
         IReadOnlySet<Guid>? excludedEndpointIds = null,
         int roundRobinCounter = 0)
     {
-        if (stickyEndpointId is { } sticky)
+        if (stickyAssignmentId is { } sticky)
         {
             var stickyEndpoint = endpoints.FirstOrDefault(e => e.Id == sticky && e.Enabled);
             if (stickyEndpoint is null)
@@ -51,7 +51,7 @@ public static class EndpointSelector
         var candidates = endpoints.Where(e => e.Enabled).ToList();
         if (excludedEndpointIds is { Count: > 0 })
         {
-            candidates = candidates.Where(e => !excludedEndpointIds.Contains(e.Id)).ToList();
+            candidates = candidates.Where(e => !excludedEndpointIds.Contains(e.EndpointId)).ToList();
         }
 
         if (candidates.Count == 0)

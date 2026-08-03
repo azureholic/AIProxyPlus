@@ -89,29 +89,33 @@ ai-proxy/
 
 ### Layer responsibilities
 
-- **Domain** — `Model`, `Endpoint`, `ModelEndpoint`, `UsageRecord`, `SessionAffinityEntry`,
+- **Domain** — `Model`, `Endpoint`, `ApiRoute`, `ModelEndpoint`, `UsageRecord`, `SessionAffinityEntry`,
   `Consumer`, value objects
-  (`ApiFamily`, `AuthMode`, `RoutingStrategy`, `OperationType` — ChatCompletion, Completion, Embedding,
+  (`Provider`, `AuthMode`, `RoutingStrategy`, `OperationType` — ChatCompletion, Completion, Embedding,
   ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, `RealtimeVoice` (Iteration 2), extensible to more),
   `EndpointSelector` (the priority + round-robin selection algorithm — Iteration 2 rework, see §9), domain
   invariants (a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at least
   one usage signal — tokens or `UsageMetrics` — must be present). `Endpoint` is a reusable aggregate containing
-  target and credential configuration. `ModelEndpoint` assigns one endpoint to a deployment and owns
-  routing-specific priority, enabled state, and health. Assignments on the same deployment sharing a `Priority`
+  only target connectivity and credential configuration. `ApiRoute` is a reusable aggregate containing a display
+  name, closed `Provider` (`OpenAI`, `MicrosoftAI`, or `Anthropic`), normalized upstream path prefix, and whether
+  it originated as a built-in route. `ModelEndpoint` assigns one endpoint and one API route to a model and owns
+  routing-specific priority, enabled state, and health. An assignment has its own stable identifier and is unique
+  by `(ModelId, EndpointId, ApiRouteId)`, allowing one endpoint to be reused through multiple API routes on the
+  same model. Assignments on the same model sharing a `Priority`
   intentionally round-robin together (Iteration 2) rather than violating a constraint. A
   deployment with zero or no *enabled* endpoints is a valid domain state (`Model.HasUsableEndpoint`
   reports it) — routing simply fails with `NoHealthyEndpoint` for it at request time; it's not a
   constructor-enforced invariant.
-- **Application** — ports: `IModelRepository`, `IConsumerRepository`, `ISessionAffinityStore`,
+- **Application** — ports: `IModelRepository`, `IApiRouteRepository`, `IConsumerRepository`, `ISessionAffinityStore`,
   `IUsageRecordRepository`, `ISecretResolver`, `ICredentialProvider`, `IApiKeyHasher`, `IApiKeyGenerator`,
   `IConsumerAuthenticator`, `IEndpointHealthTracker`, `IEndpointRoundRobinCounter` (Iteration 2), `IUsageExtractor`
-  (one implementation per `ApiFamily` + `OperationType` combination, resolved via `IUsageExtractorResolver`);
+  (one implementation per `Provider` + `OperationType` combination, resolved via `IUsageExtractorResolver`);
   command/query handlers for configuration CRUD and usage queries; validation (FluentValidation).
 - **Infrastructure** — implements all ports: `AiProxyDbContext` (EF Core/Npgsql), `VaultSecretResolver`
   (VaultSharp), `ApiKeyCredentialProvider` / `ManagedIdentityCredentialProvider`, `ProxyRoutingService` +
   `DirectHttpProxy` + `SseStreamRelay` (routing/forwarding/streaming — see §9 for why this isn't built on YARP),
   `RealtimeProxyService` (WebSocket proxy for the Realtime API, Iteration 2, §6.5/§9),
-  `EndpointRoundRobinCounter` (Iteration 2), per-`(ApiFamily, OperationType)` `IUsageExtractor` implementations
+  `EndpointRoundRobinCounter` (Iteration 2), per-`(Provider, OperationType)` `IUsageExtractor` implementations
   (`OpenAiStyleTokenUsageExtractor`, `AnthropicChatUsageExtractor`, `ImageUsageExtractor`,
   `ResponsesUsageExtractor`), `AiProxyMetrics`/`AiProxyActivitySource` (OpenTelemetry).
 - **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`, `/openai/v1/realtime` WebSocket —
@@ -190,14 +194,15 @@ exists for future use, but no `IUsageExtractor` reads a Realtime session yet).
 | Table | Purpose | Key columns |
 |---|---|---|
 | `models` | Routing key + policy | `id`, `name` (unique), `strategy` |
-| `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `api_family`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries` |
-| `model_endpoints` | Deployment-to-endpoint routing assignments | `model_id`, `endpoint_id`, `priority`, `enabled`, `health` |
+| `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries` |
+| `api_routes` | Reusable provider API surfaces | `id`, `name` (unique), `provider`, `path_prefix`, `is_built_in`; `(provider, path_prefix)` unique |
+| `model_endpoints` | Model-to-endpoint/API-route assignments | `id`, `model_id`, `endpoint_id`, `api_route_id`, `priority`, `enabled`, `health`; `(model_id, endpoint_id, api_route_id)` unique |
 | `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), `api_key_hash`, `enabled`, `created_at`, `revoked_at` |
 | `usage_records` | Usage log (append-only) | `id`, `timestamp`, `model_name`, `consumer_id`, `consumer_name`, `endpoint_id`, `operation_type`, `prompt_tokens?`, `completion_tokens?`, `total_tokens?`, `usage_metrics` (jsonb), `streaming`, `status_code`, `duration_ms` |
-| `session_affinity` | Sticky session map | `session_id`, `model_id`, `endpoint_id`, `expires_at` |
+| `session_affinity` | Responses API affinity map | `session_id`, `model_id`, `model_endpoint_id`, `endpoint_id`, `expires_at` |
 | `__ef_migrations_history` | EF Core migrations | standard |
 
-Access via EF Core + Npgsql, code-first migrations. `usage_records` is append-only and indexed on
+Access via EF Core + Npgsql, code-first migrations applied before the API begins serving requests. `usage_records` is append-only and indexed on
 `(model_name, timestamp)` and `(consumer_id, timestamp)` for chargeback queries per deployment and per
 consumer. `consumers.api_key_hash` stores a salted one-way hash (e.g. HMAC-SHA256 with a server-side pepper) of the
 consumer's inbound API key — never the key itself — so a Postgres read compromise does not leak usable credentials.
@@ -205,6 +210,19 @@ consumer's inbound API key — never the key itself — so a Postgres read compr
 completions, embeddings) populate them; other operation types (e.g. image generation) populate the flexible
 `usage_metrics` jsonb column instead, so new modalities can report whatever billing signal they have without a
 schema migration.
+
+`ApiRoute.Name` is compared case-insensitively for uniqueness. `PathPrefix` must be a relative absolute-path
+component: it starts with exactly one `/`, has no trailing slash (except `/` itself), contains no query or
+fragment, and cannot be an absolute URI. The aggregate normalizes repeated boundary slashes before persistence.
+The closed provider vocabulary makes supported behavior explicit and prevents an administrator from selecting a
+provider for which credential placement, mutation, and usage semantics are unknown. API routes cannot be deleted
+while assigned. Built-in routes are migration-owned and carry stable identifiers, but remain editable and may be
+deleted when unassigned; `IsBuiltIn` records their origin and startup never overwrites administrator changes.
+
+The migration seeds these built-in routes deterministically: Foundry OpenAI (`OpenAI`, `/openai/v1`), Microsoft
+AI (`MicrosoftAI`, `/mai/v1`), Anthropic (`Anthropic`, `/anthropic/v1`), and Native OpenAI (`OpenAI`, `/v1`).
+Existing assignments are backfilled to the route matching their former API family without changing priority,
+enabled state, health, or endpoint credentials.
 
 > **Implementation note:** the originally-planned in-memory config cache (with in-process change-token
 > invalidation on writes) was **not** built in Iteration 1 — `IModelRepository`/`IConsumerRepository`
@@ -231,6 +249,11 @@ schema migration.
 | PUT | `/api/v1/config/endpoints/{id}` | Update reusable target/auth configuration |
 | DELETE | `/api/v1/config/endpoints/{id}` | Delete an unassigned endpoint; returns conflict while assigned |
 | PUT | `/api/v1/config/endpoints/{id}/secret` | Set/replace the API key (writes to Vault, never returned by GET) |
+| GET | `/api/v1/config/api-routes` | List reusable API routes |
+| GET | `/api/v1/config/api-routes/{id}` | Get one reusable API route |
+| POST | `/api/v1/config/api-routes` | Create a reusable API route |
+| PUT | `/api/v1/config/api-routes/{id}` | Update a reusable API route |
+| DELETE | `/api/v1/config/api-routes/{id}` | Delete an unassigned API route; returns conflict while assigned |
 | GET | `/api/v1/config/consumers` | List consumers (name, enabled, created/revoked — never the key or its hash) |
 | POST | `/api/v1/config/consumers` | Create a consumer; response includes the **plaintext API key exactly once** — only its hash is persisted |
 | PUT | `/api/v1/config/consumers/{name}/rotate` | Rotate a consumer's API key; returns the new plaintext key once, invalidates the old one |
@@ -296,6 +319,19 @@ with a well-known root token confined to the dev environment is acceptable.
   this is the one place the proxy must buffer the body, and it's covered by a dedicated integration test. The
   same `model`-field peek covers every OpenAI-compatible operation type (chat completions, completions,
   embeddings, images) since they all carry a `model` field — no per-operation-type routing logic is needed.
+- **Upstream route resolution (Iteration 7)**: the selected `ModelEndpoint` supplies both its physical `Endpoint`
+  and `ApiRoute`. Before credentials are resolved or any network call is made, the provider adapter validates that
+  the ingress `OperationType` is supported and resolves its operation suffix. The target URI is composed as
+  `Endpoint.BaseUrl + ApiRoute.PathPrefix + operation suffix + incoming query`, with exactly one slash at each
+  boundary. The proxy ingress prefix is never forwarded. OpenAI and Microsoft AI support chat completions,
+  completions, embeddings, image generation/edit/variation, and Responses API; OpenAI additionally supports
+  Realtime. Anthropic supports messages through `ChatCompletion` only. Unsupported combinations fail locally
+  with a configuration/routing error before an upstream request is sent.
+- **Provider adapter boundary (Iteration 7)**: adapters own operation suffixes, API-key header placement
+  (`Authorization: Bearer` for OpenAI, `api-key` for Microsoft AI, `x-api-key` for Anthropic), provider-specific
+  request mutation, and usage-extractor selection. Managed identity still uses bearer authentication from the
+  endpoint's credential configuration. Payloads and responses remain protocol passthrough; OpenAI-compatible and
+  Anthropic schemas are never cross-translated.
 - **Priority + round-robin (Iteration 2)**: assigned endpoints are grouped by `ModelEndpoint.Priority`; `EndpointSelector`
   (Domain) narrows to the healthy/enabled candidates, picks the **lowest surviving priority number**, and, if
   more than one endpoint shares that priority, **round-robins** across them using a per-request counter
@@ -316,7 +352,9 @@ with a well-known root token confined to the dev environment is acceptable.
   above, freely. Two operation types carry their own built-in affinity instead:
   - **Responses API** (§6.4): the affinity key is the caller's `previous_response_id`. The affinity map is
     persisted in `session_affinity` (Postgres) rather than only in-memory, so the "one endpoint per stateful
-    chain" guarantee survives proxy restarts/multiple replicas. If the affinity-selected endpoint becomes
+    chain" guarantee survives proxy restarts/multiple replicas. It stores the stable model-endpoint assignment
+    identifier as well as the physical endpoint identifier, pinning the exact endpoint and API route. If the
+    affinity-selected endpoint becomes
     unhealthy, the documented failure policy applies (fail the request with a clear error rather than silently
     rerouting a stateful session — confirmed unsafe and covered by an integration test). An
     unrecognized/expired affinity key (no matching row) is *not* an error — the request simply falls back to
@@ -333,7 +371,7 @@ with a well-known root token confined to the dev environment is acceptable.
   unless the caller sets `store: false`), and a follow-up call references the prior turn via
   `previous_response_id` — that id only resolves on the endpoint that created it. So whenever a `/responses`
   call completes, the proxy reads the response's own `id` field and writes a `session_affinity` row
-  (`session_id` = that response id → the endpoint used); the *next* call that sends `previous_response_id`
+  (`session_id` = that response id → the model-endpoint assignment used); the *next* call that sends `previous_response_id`
   looks itself up the same way a client session id would. No new storage concept is needed —
   `session_affinity.session_id` is just an opaque affinity key, whether it came from a client or from an
   OpenAI-issued response id. If the client sets `store: false`, there is no chain to preserve and no affinity
@@ -375,9 +413,15 @@ with a well-known root token confined to the dev environment is acceptable.
     failover is the request-scoped `excludedEndpointIds` set — so replica-local health state has no correctness
     impact either way; it's tracked for future use (e.g. an admin health-status view), not selection.
 
+  Route selection does not otherwise change retry/failover semantics. Health and same-request exclusion remain
+  keyed to the physical endpoint because connectivity and credentials are endpoint concerns; a failed host is not
+  retried immediately through another route. Telemetry and usage attribution include the selected provider and API
+  route while retaining endpoint and model labels.
+
 ## 10. Streaming & Usage Capture (8)
 
-- Usage extraction is **pluggable per operation type** via `IUsageExtractor`/`IUsageExtractorResolver` (§4), so
+- Usage extraction is **pluggable per provider and operation type** via
+  `IUsageExtractor`/`IUsageExtractorResolver` (§4), so
   adding a new modality later (e.g. audio) only means adding a new extractor implementation, not changing the
   ingress/routing/forwarding pipeline.
 - For OpenAI-family **chat completions and completions** requests, the proxy always sets

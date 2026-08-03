@@ -33,18 +33,20 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
-            endpointId, $"usage-capture-openai-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
+            endpointId, $"usage-capture-openai-test-endpoint-{endpointId:N}", baseUrl, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelEndpoint.Create(modelId, endpoint, priority: 1, enabled: true);
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/openai/v1");
+        return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority: 1, enabled: true);
     }
 
     private static ModelEndpoint NewAnthropicEndpoint(Guid modelId, string baseUrl)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
-            endpointId, $"usage-capture-anthropic-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.Anthropic, AuthMode.ApiKey,
+            endpointId, $"usage-capture-anthropic-test-endpoint-{endpointId:N}", baseUrl, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelEndpoint.Create(modelId, endpoint, priority: 1, enabled: true);
+        var route = ApiRoute.Create(Guid.NewGuid(), "Anthropic", Provider.Anthropic, "/anthropic/v1");
+        return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority: 1, enabled: true);
     }
 
     private static HttpRequestMessage BuildRequest(string path, object body) =>

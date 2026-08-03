@@ -8,10 +8,8 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
-  Dropdown,
   Field,
   Input,
-  Option,
   Spinner,
   Table,
   TableBody,
@@ -30,17 +28,15 @@ import {
   updateEndpointConfig,
   type CreateEndpointInput,
 } from '../../api/endpoints';
-import type { ApiFamily, AuthMode, EndpointConfig } from '../../api/types';
+import type { AuthMode, EndpointConfig } from '../../api/types';
 import { ErrorBanner } from '../../components/Banners';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 
-const apiFamilies: ApiFamily[] = ['OpenAI', 'AzureOpenAI', 'Anthropic', 'OpenAICompatible'];
 const authModes: AuthMode[] = ['ApiKey', 'ManagedIdentity'];
 const emptyEndpoint: CreateEndpointInput = {
   name: '',
   baseUrl: '',
-  apiFamily: 'OpenAI',
   authMode: 'ApiKey',
   apiKeyPlaintext: '',
   managedIdentityScope: '',
@@ -132,7 +128,6 @@ export function EndpointsPage() {
             <TableRow>
               <TableHeaderCell>Name</TableHeaderCell>
               <TableHeaderCell>Base URL</TableHeaderCell>
-              <TableHeaderCell>API family</TableHeaderCell>
               <TableHeaderCell>Authentication</TableHeaderCell>
               <TableHeaderCell>Timeout</TableHeaderCell>
               <TableHeaderCell>Retries</TableHeaderCell>
@@ -144,7 +139,6 @@ export function EndpointsPage() {
               <TableRow key={endpoint.id}>
                 <TableCell><TableCellLayout>{endpoint.name}</TableCellLayout></TableCell>
                 <TableCell><TableCellLayout truncate>{endpoint.baseUrl}</TableCellLayout></TableCell>
-                <TableCell>{endpoint.apiFamily}</TableCell>
                 <TableCell>{endpoint.authMode === 'ApiKey' ? 'API key' : 'Managed identity'}</TableCell>
                 <TableCell>{endpoint.timeoutSeconds}s</TableCell>
                 <TableCell>{endpoint.maxRetries}</TableCell>
@@ -254,23 +248,13 @@ function EndpointFields<T extends CreateEndpointInput | EndpointConfig>({
       <Field label="Base URL"><Input value={value.baseUrl} onChange={(_, data) => update('baseUrl', data.value)} /></Field>
       {includeIdentity && (
         <>
-          <Field label="API family">
-            <Dropdown
-              value={value.apiFamily}
-              selectedOptions={[value.apiFamily]}
-              onOptionSelect={(_, data) => update('apiFamily', data.optionValue as T['apiFamily'])}
-            >
-              {apiFamilies.map(family => <Option key={family} value={family}>{family}</Option>)}
-            </Dropdown>
-          </Field>
           <Field label="Authentication">
-            <Dropdown
+            <select
               value={value.authMode}
-              selectedOptions={[value.authMode]}
-              onOptionSelect={(_, data) => update('authMode', data.optionValue as T['authMode'])}
+              onChange={(event) => update('authMode', event.target.value as T['authMode'])}
             >
-              {authModes.map(mode => <Option key={mode} value={mode}>{mode === 'ApiKey' ? 'API key' : 'Managed identity'}</Option>)}
-            </Dropdown>
+              {authModes.map(mode => <option key={mode} value={mode}>{mode === 'ApiKey' ? 'API key' : 'Managed identity'}</option>)}
+            </select>
           </Field>
         </>
       )}

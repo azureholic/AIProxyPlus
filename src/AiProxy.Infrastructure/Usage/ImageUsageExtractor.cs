@@ -8,9 +8,9 @@ namespace AiProxy.Infrastructure.Usage;
 /// Images API responses carry no token counts — the billing signal is image count/size/quality, captured into
 /// <see cref="UsageExtractionResult.UsageMetrics"/> instead of the token fields. Images API is never streamed.
 /// </summary>
-public sealed class ImageUsageExtractor(OperationType operationType) : IUsageExtractor
+public sealed class ImageUsageExtractor(Provider provider, OperationType operationType) : IUsageExtractor
 {
-    public ApiFamily ApiFamily => ApiFamily.OpenAI;
+    public Provider Provider { get; } = provider;
 
     public OperationType OperationType { get; } = operationType;
 

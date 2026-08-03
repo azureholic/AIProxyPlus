@@ -36,9 +36,10 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
-            endpointId, $"chat-completion-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
+            endpointId, $"chat-completion-test-endpoint-{endpointId:N}", baseUrl, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: maxRetries);
-        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/openai/v1");
+        return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority, enabled: true);
     }
 
     private static object ChatBody(string model) => new { model, messages = new[] { new { role = "user", content = "hi" } } };

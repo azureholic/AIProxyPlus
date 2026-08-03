@@ -27,10 +27,9 @@ internal static class DirectHttpProxy
         "Connection", "Keep-Alive", "Transfer-Encoding", "TE", "Trailer", "Upgrade", "Proxy-Authenticate", "Content-Length",
     };
 
-    public static HttpRequestMessage BuildRequest(HttpContext httpContext, string baseUrl, byte[] bodyBytes, EndpointCredential credential)
+    public static HttpRequestMessage BuildRequest(HttpContext httpContext, Uri targetUri, byte[] bodyBytes, EndpointCredential credential)
     {
-        var uri = new Uri(baseUrl.TrimEnd('/') + httpContext.Request.Path + httpContext.Request.QueryString);
-        var request = new HttpRequestMessage(new HttpMethod(httpContext.Request.Method), uri);
+        var request = new HttpRequestMessage(new HttpMethod(httpContext.Request.Method), targetUri);
 
         if (bodyBytes.Length > 0)
         {

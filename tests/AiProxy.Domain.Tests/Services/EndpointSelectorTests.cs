@@ -10,9 +10,9 @@ public class EndpointSelectorTests
     private static ModelEndpoint Healthy(Guid modelId, int priority)
     {
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "Endpoint", "https://api.example.com", ApiFamily.OpenAI,
-            AuthMode.ApiKey, secretRef: "secret/x");
-        var assignment = ModelEndpoint.Create(modelId, endpoint, priority);
+            Guid.NewGuid(), "Endpoint", "https://api.example.com", AuthMode.ApiKey, secretRef: "secret/x");
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/v1");
+        var assignment = ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority);
         assignment.MarkHealthy();
         return assignment;
     }
@@ -91,7 +91,7 @@ public class EndpointSelectorTests
         var primary = Healthy(modelId, priority: 1);
         var secondary = Healthy(modelId, priority: 2);
 
-        var result = EndpointSelector.SelectEndpoint([primary, secondary], excludedEndpointIds: new HashSet<Guid> { primary.Id });
+        var result = EndpointSelector.SelectEndpoint([primary, secondary], excludedEndpointIds: new HashSet<Guid> { primary.EndpointId });
 
         result.IsSuccess.Should().BeTrue();
         result.SelectedEndpoint.Should().Be(secondary);
@@ -118,7 +118,7 @@ public class EndpointSelectorTests
         var primary = Healthy(modelId, priority: 1);
         var sticky = Healthy(modelId, priority: 2);
 
-        var result = EndpointSelector.SelectEndpoint([primary, sticky], stickyEndpointId: sticky.Id);
+        var result = EndpointSelector.SelectEndpoint([primary, sticky], stickyAssignmentId: sticky.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.SelectedEndpoint.Should().Be(sticky);
@@ -131,7 +131,7 @@ public class EndpointSelectorTests
         var sticky = Unhealthy(modelId, priority: 1);
         var otherHealthy = Healthy(modelId, priority: 2);
 
-        var result = EndpointSelector.SelectEndpoint([sticky, otherHealthy], stickyEndpointId: sticky.Id);
+        var result = EndpointSelector.SelectEndpoint([sticky, otherHealthy], stickyAssignmentId: sticky.Id);
 
         result.IsSuccess.Should().BeFalse();
         result.SelectedEndpoint.Should().BeNull();
@@ -144,7 +144,7 @@ public class EndpointSelectorTests
         var modelId = Guid.NewGuid();
         var onlyEndpoint = Healthy(modelId, priority: 1);
 
-        var result = EndpointSelector.SelectEndpoint([onlyEndpoint], stickyEndpointId: Guid.NewGuid());
+        var result = EndpointSelector.SelectEndpoint([onlyEndpoint], stickyAssignmentId: Guid.NewGuid());
 
         result.IsSuccess.Should().BeFalse();
     }
@@ -156,7 +156,7 @@ public class EndpointSelectorTests
         var sticky = Healthy(modelId, priority: 1);
         sticky.Disable();
 
-        var result = EndpointSelector.SelectEndpoint([sticky], stickyEndpointId: sticky.Id);
+        var result = EndpointSelector.SelectEndpoint([sticky], stickyAssignmentId: sticky.Id);
 
         result.IsSuccess.Should().BeFalse();
     }
@@ -218,7 +218,7 @@ public class EndpointSelectorTests
         for (var counter = 0; counter < 4; counter++)
         {
             var result = EndpointSelector.SelectEndpoint(
-                [a, b], excludedEndpointIds: new HashSet<Guid> { a.Id }, roundRobinCounter: counter);
+                [a, b], excludedEndpointIds: new HashSet<Guid> { a.EndpointId }, roundRobinCounter: counter);
 
             result.SelectedEndpoint.Should().Be(b);
         }

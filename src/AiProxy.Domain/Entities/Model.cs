@@ -60,26 +60,28 @@ public sealed class Model
             throw new DomainException("ModelEndpoint.ModelId does not match this Model.");
         }
 
-        if (_endpoints.Any(existing => existing.EndpointId == endpoint.EndpointId))
+        if (_endpoints.Any(existing =>
+                existing.EndpointId == endpoint.EndpointId && existing.ApiRouteId == endpoint.ApiRouteId))
         {
-            throw new DomainException($"Endpoint '{endpoint.EndpointId}' is already assigned to this Model.");
+            throw new DomainException(
+                $"Endpoint '{endpoint.EndpointId}' and API route '{endpoint.ApiRouteId}' are already assigned to this Model.");
         }
 
         _endpoints.Add(endpoint);
         Touch();
     }
 
-    public void RemoveEndpoint(Guid endpointId)
+    public void RemoveEndpoint(Guid assignmentId)
     {
-        _endpoints.RemoveAll(e => e.EndpointId == endpointId);
+        _endpoints.RemoveAll(e => e.Id == assignmentId);
         Touch();
     }
 
     /// <summary>Changes an endpoint's priority. Ties with other endpoints are allowed (they round-robin together, §9).</summary>
-    public void ChangeEndpointPriority(Guid endpointId, int newPriority)
+    public void ChangeEndpointPriority(Guid assignmentId, int newPriority)
     {
-        var endpoint = _endpoints.FirstOrDefault(e => e.Id == endpointId)
-            ?? throw new DomainException($"Endpoint '{endpointId}' is not assigned to this Model.");
+        var endpoint = _endpoints.FirstOrDefault(e => e.Id == assignmentId)
+            ?? throw new DomainException($"Assignment '{assignmentId}' is not assigned to this Model.");
 
         endpoint.UpdatePriority(newPriority);
         Touch();

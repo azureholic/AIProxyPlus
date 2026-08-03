@@ -22,8 +22,9 @@ public class UpdateEndpointTests
     {
         var model = Model.Create(Guid.NewGuid(), "gpt-4o-prod");
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "OpenAI primary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: "x");
-        var assignment = ModelEndpoint.Create(model.Id, endpoint, 1);
+            Guid.NewGuid(), "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, secretRef: "x");
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/v1");
+        var assignment = ModelEndpoint.Create(Guid.NewGuid(), model.Id, endpoint, route, 1);
         model.AddEndpoint(assignment);
         _repository.GetByNameAsync(model.Name, Arg.Any<CancellationToken>()).Returns(model);
         return (model, assignment);
@@ -67,8 +68,9 @@ public class UpdateEndpointTests
     {
         var (model, endpoint) = GivenModelWithEndpoint();
         var otherEndpoint = Endpoint.Create(
-            Guid.NewGuid(), "OpenAI secondary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: "y");
-        model.AddEndpoint(ModelEndpoint.Create(model.Id, otherEndpoint, 2));
+            Guid.NewGuid(), "OpenAI secondary", "https://api.openai.com", AuthMode.ApiKey, secretRef: "y");
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI 2", Provider.OpenAI, "/v2");
+        model.AddEndpoint(ModelEndpoint.Create(Guid.NewGuid(), model.Id, otherEndpoint, route, 2));
 
         var result = await _handler.HandleAsync(new UpdateEndpointCommand(model.Name, endpoint.Id, Priority: 2));
 

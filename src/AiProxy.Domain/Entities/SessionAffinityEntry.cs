@@ -11,6 +11,7 @@ public sealed class SessionAffinityEntry
 {
     public string SessionId { get; private set; }
     public Guid ModelId { get; private set; }
+    public Guid ModelEndpointId { get; private set; }
     public Guid EndpointId { get; private set; }
     public DateTimeOffset LastUsedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
@@ -24,12 +25,14 @@ public sealed class SessionAffinityEntry
     private SessionAffinityEntry(
         string sessionId,
         Guid modelId,
+        Guid modelEndpointId,
         Guid endpointId,
         DateTimeOffset lastUsedAt,
         DateTimeOffset expiresAt)
     {
         SessionId = sessionId;
         ModelId = modelId;
+        ModelEndpointId = modelEndpointId;
         EndpointId = endpointId;
         LastUsedAt = lastUsedAt;
         ExpiresAt = expiresAt;
@@ -38,6 +41,7 @@ public sealed class SessionAffinityEntry
     public static SessionAffinityEntry Create(
         string sessionId,
         Guid modelId,
+        Guid modelEndpointId,
         Guid endpointId,
         TimeSpan ttl,
         DateTimeOffset? now = null)
@@ -45,6 +49,11 @@ public sealed class SessionAffinityEntry
         if (string.IsNullOrWhiteSpace(sessionId))
         {
             throw new DomainException("SessionAffinityEntry.SessionId must not be empty.");
+        }
+
+        if (modelEndpointId == Guid.Empty)
+        {
+            throw new DomainException("SessionAffinityEntry.ModelEndpointId must be a valid assignment id.");
         }
 
         if (endpointId == Guid.Empty)
@@ -58,7 +67,7 @@ public sealed class SessionAffinityEntry
         }
 
         var effectiveNow = now ?? DateTimeOffset.UtcNow;
-        return new SessionAffinityEntry(sessionId, modelId, endpointId, effectiveNow, effectiveNow + ttl);
+        return new SessionAffinityEntry(sessionId, modelId, modelEndpointId, endpointId, effectiveNow, effectiveNow + ttl);
     }
 
     public void Touch(TimeSpan ttl, DateTimeOffset? now = null)

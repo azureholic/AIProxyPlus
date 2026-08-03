@@ -29,6 +29,7 @@ export function deleteModel(name: string): Promise<void> {
 
 export interface AddEndpointInput {
   endpointId: string;
+  apiRouteId: string;
   priority: number;
   enabled: boolean;
 }

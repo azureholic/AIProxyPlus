@@ -19,7 +19,7 @@ public class UsageRecordBackgroundWriterTests(PostgresContainerFixture fixture)
     private static UsageRecord NewUsageRecord(string requestId) =>
         UsageRecord.Create(
             Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
-            ApiFamily.OpenAI, OperationType.ChatCompletion, requestId, streaming: false, httpStatusCode: 200,
+            Provider.OpenAI, OperationType.ChatCompletion, requestId, streaming: false, httpStatusCode: 200,
             durationMs: 50, totalTokens: 5);
 
     [Fact]

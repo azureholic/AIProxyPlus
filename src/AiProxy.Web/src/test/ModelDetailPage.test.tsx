@@ -26,7 +26,6 @@ describe('ModelDetailPage', () => {
       id: 'endpoint-id',
       name: 'shared-openai',
       baseUrl: 'https://api.openai.com',
-      apiFamily: 'OpenAI',
       authMode: 'ApiKey',
       secretRef: 'endpoints/endpoint-id',
       managedIdentityScope: null,
@@ -34,15 +33,36 @@ describe('ModelDetailPage', () => {
       timeoutSeconds: 100,
       maxRetries: 2,
     };
+    const apiRoute = {
+      id: 'route-id',
+      name: 'Native OpenAI',
+      provider: 'OpenAI',
+      pathPrefix: '/v1',
+      isBuiltIn: true,
+    };
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === '/api/v1/auth/antiforgery') {
         return jsonResponse({ token: 'csrf-token' });
       }
       if (init?.method === 'POST') {
-        return jsonResponse({ ...endpoint, modelId: model.id, priority: 1, enabled: true, health: 'Unknown' }, 201);
+        return jsonResponse({
+          ...endpoint,
+          id: 'assignment-id',
+          endpointId: endpoint.id,
+          apiRouteId: apiRoute.id,
+          apiRoute,
+          provider: apiRoute.provider,
+          modelId: model.id,
+          priority: 1,
+          enabled: true,
+          health: 'Unknown',
+        }, 201);
       }
       if (url === '/api/v1/config/endpoints') {
         return jsonResponse([endpoint]);
+      }
+      if (url === '/api/v1/config/api-routes') {
+        return jsonResponse([apiRoute]);
       }
       return jsonResponse(model);
     });
@@ -58,8 +78,10 @@ describe('ModelDetailPage', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: 'Assign endpoint' }));
-    const endpointPicker = await screen.findByRole('combobox', { name: 'Endpoint' });
+    const endpointPicker = await screen.findByLabelText('Endpoint');
     await user.selectOptions(endpointPicker, 'endpoint-id');
+    const apiRoutePicker = await screen.findByLabelText('API route');
+    await user.selectOptions(apiRoutePicker, 'route-id');
     fireEvent.click(screen.getByRole('button', { name: 'Assign', hidden: true }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
@@ -67,6 +89,11 @@ describe('ModelDetailPage', () => {
       expect.objectContaining({ method: 'POST' }),
     ));
     const assignCall = fetchMock.mock.calls.find(([url, init]) => url.toString().endsWith('/endpoints') && init?.method === 'POST');
-    expect(JSON.parse(String(assignCall?.[1]?.body))).toEqual({ endpointId: 'endpoint-id', priority: 1, enabled: true });
+    expect(JSON.parse(String(assignCall?.[1]?.body))).toEqual({
+      endpointId: 'endpoint-id',
+      apiRouteId: 'route-id',
+      priority: 1,
+      enabled: true,
+    });
   });
 });

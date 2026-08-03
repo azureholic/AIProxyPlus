@@ -34,9 +34,10 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
-            endpointId, $"additional-coverage-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
+            endpointId, $"additional-coverage-test-endpoint-{endpointId:N}", baseUrl, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
-        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/openai/v1");
+        return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority, enabled: true);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Net;
 using AiProxy.Application.Abstractions;
+using AiProxy.Application.ApiRoutes;
 using AiProxy.Application.Consumers;
 using AiProxy.Application.Endpoints;
 using AiProxy.Application.Models;
@@ -68,6 +69,7 @@ builder.Services.AddSingleton<AiProxyMetrics>();
 builder.AddNpgsqlDbContext<AiProxyDbContext>("aiproxydb");
 builder.Services.AddScoped<IModelRepository, ModelRepository>();
 builder.Services.AddScoped<IEndpointRepository, EndpointRepository>();
+builder.Services.AddScoped<IApiRouteRepository, ApiRouteRepository>();
 builder.Services.AddScoped<IConsumerRepository, ConsumerRepository>();
 builder.Services.AddScoped<ISessionAffinityStore, SessionAffinityStore>();
 builder.Services.AddScoped<IUsageRecordRepository, UsageRecordRepository>();
@@ -91,22 +93,26 @@ builder.Services.AddSingleton<UsageRecordChannel>();
 builder.Services.AddHostedService<UsageRecordBackgroundWriter>();
 builder.Services.AddSingleton<IUsageExtractorResolver, UsageExtractorResolver>();
 
-foreach (var family in new[] { ApiFamily.OpenAI, ApiFamily.AzureOpenAI, ApiFamily.OpenAICompatible })
+foreach (var provider in new[] { Provider.OpenAI, Provider.MicrosoftAI })
 {
     foreach (var operation in new[] { OperationType.ChatCompletion, OperationType.Completion, OperationType.Embedding })
     {
-        var extractor = new OpenAiStyleTokenUsageExtractor(family, operation);
+        var extractor = new OpenAiStyleTokenUsageExtractor(provider, operation);
         builder.Services.AddSingleton<IUsageExtractor>(extractor);
     }
 
-    builder.Services.AddSingleton<IUsageExtractor>(new ResponsesUsageExtractor(family));
+    builder.Services.AddSingleton<IUsageExtractor>(new ResponsesUsageExtractor(provider));
 }
 
 builder.Services.AddSingleton<IUsageExtractor, AnthropicChatUsageExtractor>();
-builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(OperationType.ImageGeneration));
-builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(OperationType.ImageEdit));
-builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(OperationType.ImageVariation));
+foreach (var provider in new[] { Provider.OpenAI, Provider.MicrosoftAI })
+{
+    builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(provider, OperationType.ImageGeneration));
+    builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(provider, OperationType.ImageEdit));
+    builder.Services.AddSingleton<IUsageExtractor>(new ImageUsageExtractor(provider, OperationType.ImageVariation));
+}
 
+builder.Services.AddSingleton<UpstreamRouteResolver>();
 builder.Services.AddScoped<ProxyRoutingService>();
 builder.Services.AddScoped<RealtimeProxyService>();
 
@@ -217,6 +223,9 @@ builder.Services.AddSingleton<IValidator<CreateEndpointCommand>, CreateEndpointV
 builder.Services.AddSingleton<IValidator<UpdateEndpointConfigurationCommand>, UpdateEndpointConfigurationValidator>();
 builder.Services.AddSingleton<IValidator<DeleteEndpointCommand>, DeleteEndpointValidator>();
 builder.Services.AddSingleton<IValidator<SetEndpointSecretCommand>, SetEndpointSecretValidator>();
+builder.Services.AddSingleton<IValidator<CreateApiRouteCommand>, CreateApiRouteValidator>();
+builder.Services.AddSingleton<IValidator<UpdateApiRouteCommand>, UpdateApiRouteValidator>();
+builder.Services.AddSingleton<IValidator<DeleteApiRouteCommand>, DeleteApiRouteValidator>();
 builder.Services.AddSingleton<IValidator<CreateConsumerCommand>, CreateConsumerValidator>();
 builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsumerKeyValidator>();
 builder.Services.AddSingleton<IValidator<RevokeConsumerCommand>, RevokeConsumerValidator>();
@@ -232,6 +241,11 @@ builder.Services.AddScoped<CreateEndpointHandler>();
 builder.Services.AddScoped<UpdateEndpointConfigurationHandler>();
 builder.Services.AddScoped<DeleteEndpointHandler>();
 builder.Services.AddScoped<SetEndpointSecretHandler>();
+builder.Services.AddScoped<CreateApiRouteHandler>();
+builder.Services.AddScoped<UpdateApiRouteHandler>();
+builder.Services.AddScoped<DeleteApiRouteHandler>();
+builder.Services.AddScoped<GetApiRoutesHandler>();
+builder.Services.AddScoped<GetApiRouteHandler>();
 builder.Services.AddScoped<CreateConsumerHandler>();
 builder.Services.AddScoped<RotateConsumerKeyHandler>();
 builder.Services.AddScoped<RevokeConsumerHandler>();
@@ -242,6 +256,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 var app = builder.Build();
+
+if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<AiProxyDbContext>().Database.MigrateAsync();
+}
 
 app.UseExceptionHandler(errorApp => errorApp.Run(async httpContext =>
 {
@@ -340,7 +360,7 @@ config.MapPost("/models/{name}/endpoints", async (
     string name, AddEndpointBody body, AddEndpointHandler handler, CancellationToken ct) =>
 {
     var endpoint = await handler.HandleAsync(
-        new AddEndpointCommand(name, body.EndpointId, body.Priority, body.Enabled),
+        new AddEndpointCommand(name, body.EndpointId, body.ApiRouteId, body.Priority, body.Enabled),
         ct);
     return Results.Created($"/api/v1/config/models/{name}/endpoints/{endpoint.Id}", endpoint);
 });
@@ -405,6 +425,57 @@ config.MapPut("/endpoints/{id:guid}/secret", async (
     await handler.HandleAsync(new SetEndpointSecretCommand(id, body.ApiKeyPlaintext), ct);
     return Results.NoContent();
 });
+
+config.MapGet("/api-routes", async (GetApiRoutesHandler handler, CancellationToken ct) =>
+        Results.Ok(await handler.HandleAsync(ct)))
+    .WithName("ListApiRoutes")
+    .WithSummary("Lists reusable provider API routes")
+    .Produces<IReadOnlyList<ApiRoute>>();
+
+config.MapGet("/api-routes/{id:guid}", async (Guid id, GetApiRouteHandler handler, CancellationToken ct) =>
+        Results.Ok(await handler.HandleAsync(id, ct)))
+    .WithName("GetApiRoute")
+    .WithSummary("Gets a reusable provider API route")
+    .Produces<ApiRoute>()
+    .ProducesProblem(StatusCodes.Status404NotFound);
+
+config.MapPost("/api-routes", async (
+        CreateApiRouteCommand command, CreateApiRouteHandler handler, CancellationToken ct) =>
+    {
+        var route = await handler.HandleAsync(command, ct);
+        return Results.Created($"/api/v1/config/api-routes/{route.Id}", route);
+    })
+    .WithName("CreateApiRoute")
+    .WithSummary("Creates a reusable provider API route")
+    .Produces<ApiRoute>(StatusCodes.Status201Created)
+    .ProducesProblem(StatusCodes.Status400BadRequest)
+    .ProducesProblem(StatusCodes.Status409Conflict);
+
+config.MapPut("/api-routes/{id:guid}", async (
+        Guid id, ApiRouteBody body, UpdateApiRouteHandler handler, CancellationToken ct) =>
+    {
+        var route = await handler.HandleAsync(
+            new UpdateApiRouteCommand(id, body.Name, body.Provider, body.PathPrefix), ct);
+        return Results.Ok(route);
+    })
+    .WithName("UpdateApiRoute")
+    .WithSummary("Updates a reusable provider API route")
+    .Produces<ApiRoute>()
+    .ProducesProblem(StatusCodes.Status400BadRequest)
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
+
+config.MapDelete("/api-routes/{id:guid}", async (
+        Guid id, DeleteApiRouteHandler handler, CancellationToken ct) =>
+    {
+        await handler.HandleAsync(new DeleteApiRouteCommand(id), ct);
+        return Results.NoContent();
+    })
+    .WithName("DeleteApiRoute")
+    .WithSummary("Deletes an unassigned reusable provider API route")
+    .Produces(StatusCodes.Status204NoContent)
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
 
 config.MapGet("/consumers", async (IConsumerRepository repository, CancellationToken ct) =>
     Results.Ok((await repository.GetAllAsync(ct)).Select(ConsumerResponse.From)));
@@ -625,6 +696,7 @@ public sealed record UpdateModelBody(RoutingStrategy Strategy);
 
 public sealed record AddEndpointBody(
     Guid EndpointId,
+    Guid ApiRouteId,
     int Priority,
     bool Enabled = true);
 
@@ -641,6 +713,8 @@ public sealed record UpdateEndpointConfigurationBody(
     string? ManagedIdentityTenantId = null);
 
 public sealed record SetEndpointSecretBody(string ApiKeyPlaintext);
+
+public sealed record ApiRouteBody(string Name, Provider Provider, string PathPrefix);
 
 public sealed record ConsumerResponse(
     Guid Id,

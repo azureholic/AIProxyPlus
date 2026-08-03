@@ -12,7 +12,6 @@ public class EndpointTests
             id: Guid.NewGuid(),
             name: "OpenAI primary",
             baseUrl: "https://api.openai.com",
-            apiFamily: ApiFamily.OpenAI,
             authMode: AuthMode.ApiKey,
             secretRef: "secret/ai-proxy/endpoints/abc");
 
@@ -29,7 +28,7 @@ public class EndpointTests
     public void Create_WithApiKeyAuthAndNoSecretRef_Throws()
     {
         var act = () => Endpoint.Create(
-            Guid.NewGuid(), "OpenAI", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: null);
+            Guid.NewGuid(), "OpenAI", "https://api.openai.com", AuthMode.ApiKey, secretRef: null);
 
         act.Should().Throw<DomainException>().WithMessage("*SecretRef*");
     }
@@ -38,8 +37,8 @@ public class EndpointTests
     public void Create_WithManagedIdentityAuthAndNoScope_Throws()
     {
         var act = () => Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: null);
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: null);
 
         act.Should().Throw<DomainException>().WithMessage("*ManagedIdentityScope*");
     }
@@ -50,7 +49,7 @@ public class EndpointTests
     public void Create_WithEmptyBaseUrl_Throws(string baseUrl)
     {
         var act = () => Endpoint.Create(
-            Guid.NewGuid(), "OpenAI", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: "x");
+            Guid.NewGuid(), "OpenAI", baseUrl, AuthMode.ApiKey, secretRef: "x");
 
         act.Should().Throw<DomainException>().WithMessage("*BaseUrl*");
     }
@@ -59,7 +58,7 @@ public class EndpointTests
     public void Create_WithEmptyName_Throws()
     {
         var act = () => Endpoint.Create(
-            Guid.NewGuid(), "", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: "x");
+            Guid.NewGuid(), "", "https://api.openai.com", AuthMode.ApiKey, secretRef: "x");
 
         act.Should().Throw<DomainException>().WithMessage("*Name*");
     }
@@ -118,8 +117,8 @@ public class EndpointTests
     public void UpdateManagedIdentityScope_WithManagedIdentityEndpoint_UpdatesScope()
     {
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "https://cognitiveservices.azure.com/.default");
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://cognitiveservices.azure.com/.default");
 
         endpoint.UpdateManagedIdentityScope("https://ai.azure.com/.default");
 
@@ -132,8 +131,8 @@ public class EndpointTests
         const string tenantId = "72f988bf-86f1-41af-91ab-2d7cd011db47";
 
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default",
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://ai.azure.com/.default",
             managedIdentityTenantId: tenantId);
 
         endpoint.ManagedIdentityTenantId.Should().Be(tenantId);
@@ -143,8 +142,8 @@ public class EndpointTests
     public void Create_WithInvalidManagedIdentityTenantId_Throws()
     {
         var act = () => Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default",
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://ai.azure.com/.default",
             managedIdentityTenantId: "not-a-guid");
 
         act.Should().Throw<DomainException>().WithMessage("*ManagedIdentityTenantId*");
@@ -154,8 +153,8 @@ public class EndpointTests
     public void UpdateManagedIdentityTenantId_WithManagedIdentityEndpoint_UpdatesTenantId()
     {
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default");
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://ai.azure.com/.default");
 
         endpoint.UpdateManagedIdentityTenantId("72f988bf-86f1-41af-91ab-2d7cd011db47");
 
@@ -166,8 +165,8 @@ public class EndpointTests
     public void UpdateManagedIdentityTenantId_WithEmptyValue_ClearsTenantId()
     {
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
-            AuthMode.ManagedIdentity, managedIdentityScope: "https://ai.azure.com/.default",
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://ai.azure.com/.default",
             managedIdentityTenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47");
 
         endpoint.UpdateManagedIdentityTenantId(string.Empty);

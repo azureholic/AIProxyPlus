@@ -37,9 +37,10 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
-            endpointId, $"realtime-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
+            endpointId, $"realtime-test-endpoint-{endpointId:N}", baseUrl, AuthMode.ApiKey,
             secretRef: "endpoints/x");
-        return ModelEndpoint.Create(modelId, endpoint, priority, enabled: true);
+        var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/openai/v1");
+        return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority, enabled: true);
     }
 
     private WebSocketClient NewAuthenticatedWebSocketClient()

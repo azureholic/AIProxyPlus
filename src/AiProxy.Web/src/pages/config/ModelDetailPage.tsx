@@ -26,8 +26,9 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ArrowLeftRegular, DeleteRegular, EditRegular } from '@fluentui/react-icons';
 import { listEndpoints } from '../../api/endpoints';
+import { listApiRoutes } from '../../api/apiRoutes';
 import { addEndpoint, getModel, removeEndpoint, updateEndpoint } from '../../api/models';
-import type { Endpoint, EndpointConfig, Model } from '../../api/types';
+import type { ApiRoute, Endpoint, EndpointConfig, Model } from '../../api/types';
 import { ErrorBanner } from '../../components/Banners';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
@@ -37,9 +38,11 @@ export function ModelDetailPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState<Model | null>(null);
   const [availableEndpoints, setAvailableEndpoints] = useState<EndpointConfig[]>([]);
+  const [availableApiRoutes, setAvailableApiRoutes] = useState<ApiRoute[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [selectedEndpointId, setSelectedEndpointId] = useState('');
+  const [selectedApiRouteId, setSelectedApiRouteId] = useState('');
   const [priority, setPriority] = useState(1);
   const [enabled, setEnabled] = useState(true);
   const [editing, setEditing] = useState<Endpoint | null>(null);
@@ -48,11 +51,11 @@ export function ModelDetailPage() {
   const reload = () => {
     if (!name) return;
     setError(null);
-    Promise.all([getModel(name), listEndpoints()])
-      .then(([nextModel, endpoints]) => {
+    Promise.all([getModel(name), listEndpoints(), listApiRoutes()])
+      .then(([nextModel, endpoints, apiRoutes]) => {
         setModel(nextModel);
-        setAvailableEndpoints(endpoints.filter(endpoint =>
-          !nextModel.endpoints.some(assignment => assignment.id === endpoint.id)));
+        setAvailableEndpoints(endpoints);
+        setAvailableApiRoutes(apiRoutes);
       })
       .catch(setError);
   };
@@ -89,6 +92,7 @@ export function ModelDetailPage() {
                     icon={<AddRegular />}
                     onClick={() => {
                       setSelectedEndpointId('');
+                      setSelectedApiRouteId('');
                       setPriority(1);
                       setEnabled(true);
                     }}
@@ -113,8 +117,21 @@ export function ModelDetailPage() {
                           ))}
                         </Select>
                       </Field>
-                      {availableEndpoints.length === 0 && (
-                        <Body1>No unassigned endpoints are available. Create one in Config &gt; Endpoints.</Body1>
+                      <Field label="API route">
+                        <Select
+                          value={selectedApiRouteId}
+                          onChange={(_, data) => setSelectedApiRouteId(data.value)}
+                        >
+                          <option value="">Choose an API route</option>
+                          {availableApiRoutes.map(route => (
+                            <option key={route.id} value={route.id}>
+                              {route.name} ({route.provider} {route.pathPrefix})
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      {(availableEndpoints.length === 0 || availableApiRoutes.length === 0) && (
+                        <Body1>Create both an endpoint and an API route before assigning them to a model.</Body1>
                       )}
                       <Field label="Priority" hint="Endpoints sharing the lowest priority round-robin together.">
                         <Input type="number" value={String(priority)} onChange={(_, data) => setPriority(Number(data.value) || 0)} />
@@ -127,13 +144,18 @@ export function ModelDetailPage() {
                       </DialogTrigger>
                       <Button
                         appearance="primary"
-                        disabled={busy || !selectedEndpointId || priority < 1}
+                        disabled={busy || !selectedEndpointId || !selectedApiRouteId || priority < 1}
                         icon={busy ? <Spinner size="tiny" /> : undefined}
                         onClick={async () => {
                           setBusy(true);
                           setError(null);
                           try {
-                            await addEndpoint(name, { endpointId: selectedEndpointId, priority, enabled });
+                            await addEndpoint(name, {
+                              endpointId: selectedEndpointId,
+                              apiRouteId: selectedApiRouteId,
+                              priority,
+                              enabled,
+                            });
                             setAddOpen(false);
                             reload();
                           } catch (caught) {
@@ -159,7 +181,7 @@ export function ModelDetailPage() {
                 <TableRow>
                   <TableHeaderCell>Name</TableHeaderCell>
                   <TableHeaderCell>Base URL</TableHeaderCell>
-                  <TableHeaderCell>API family</TableHeaderCell>
+                  <TableHeaderCell>API route</TableHeaderCell>
                   <TableHeaderCell>Priority</TableHeaderCell>
                   <TableHeaderCell>Enabled</TableHeaderCell>
                   <TableHeaderCell>Health</TableHeaderCell>
@@ -171,7 +193,7 @@ export function ModelDetailPage() {
                   <TableRow key={endpoint.id}>
                     <TableCell><TableCellLayout>{endpoint.name}</TableCellLayout></TableCell>
                     <TableCell><TableCellLayout truncate>{endpoint.baseUrl}</TableCellLayout></TableCell>
-                    <TableCell>{endpoint.apiFamily}</TableCell>
+                    <TableCell>{endpoint.apiRoute.name} ({endpoint.provider} {endpoint.apiRoute.pathPrefix})</TableCell>
                     <TableCell>{endpoint.priority}</TableCell>
                     <TableCell><Badge color={endpoint.enabled ? 'success' : 'warning'}>{endpoint.enabled ? 'Yes' : 'No'}</Badge></TableCell>
                     <TableCell>
@@ -206,6 +228,7 @@ export function ModelDetailPage() {
             <DialogTitle>Edit assignment</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="Endpoint"><Input value={editing?.name ?? ''} disabled /></Field>
+              <Field label="API route"><Input value={editing?.apiRoute.name ?? ''} disabled /></Field>
               <Field label="Priority">
                 <Input
                   type="number"

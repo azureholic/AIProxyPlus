@@ -13,8 +13,9 @@ public sealed class ApiKeyCredentialProvider(ISecretResolver secretResolver, IMe
 {
     private readonly TimeSpan _cacheTtl = cacheTtl ?? TimeSpan.FromMinutes(5);
 
-    public async Task<EndpointCredential> GetCredentialAsync(Endpoint endpoint, CancellationToken cancellationToken = default)
+    public async Task<EndpointCredential> GetCredentialAsync(ModelEndpoint assignment, CancellationToken cancellationToken = default)
     {
+        var endpoint = assignment.Endpoint;
         if (endpoint.SecretRef is null)
         {
             throw new InvalidOperationException($"Endpoint '{endpoint.Id}' has AuthMode.ApiKey but no SecretRef.");
@@ -28,13 +29,13 @@ public sealed class ApiKeyCredentialProvider(ISecretResolver secretResolver, IMe
             cache.Set(cacheKey, apiKey, _cacheTtl);
         }
 
-        return BuildCredential(endpoint.ApiFamily, apiKey!);
+        return BuildCredential(assignment.Provider, apiKey!);
     }
 
-    private static EndpointCredential BuildCredential(ApiFamily apiFamily, string apiKey) => apiFamily switch
+    private static EndpointCredential BuildCredential(Provider provider, string apiKey) => provider switch
     {
-        ApiFamily.AzureOpenAI => new EndpointCredential("api-key", apiKey),
-        ApiFamily.Anthropic => new EndpointCredential("x-api-key", apiKey),
+        Provider.MicrosoftAI => new EndpointCredential("api-key", apiKey),
+        Provider.Anthropic => new EndpointCredential("x-api-key", apiKey),
         _ => new EndpointCredential("Authorization", $"Bearer {apiKey}"),
     };
 }
