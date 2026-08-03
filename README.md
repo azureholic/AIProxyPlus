@@ -49,7 +49,8 @@ Open the API or Vite URL and sign in to the `ai-proxy-local` realm as the develo
 Keycloak imports the realm only into a fresh `keycloak-data` volume; later starts reuse it without overwriting
 changed credentials. To reset only local identity data, stop the AppHost, remove its Keycloak container, run
 `docker volume rm keycloak-data`, and restart the AppHost. Postgres and Vault are unaffected. Never reuse these
-development credentials outside local testing.
+development credentials outside local testing. The seeded `proxy-admin` subject is pinned so resetting Keycloak
+does not create a different OIDC identity or collide with its Consumer row in persistent Postgres.
 
 On first run:
 

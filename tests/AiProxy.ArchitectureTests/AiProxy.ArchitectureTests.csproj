@@ -25,4 +25,10 @@
     <ProjectReference Include="..\..\src\AiProxy.Api\AiProxy.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\src\AiProxy.AppHost\keycloak\ai-proxy-local-realm.json"
+             Link="keycloak\ai-proxy-local-realm.json"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

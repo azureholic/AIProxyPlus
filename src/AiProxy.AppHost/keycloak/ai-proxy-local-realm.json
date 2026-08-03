@@ -40,6 +40,7 @@
   ],
   "users": [
     {
+      "id": "6c1b7227-3af9-445d-bc8f-613c723e9c49",
       "username": "proxy-admin",
       "enabled": true,
       "email": "proxy-admin@local.invalid",

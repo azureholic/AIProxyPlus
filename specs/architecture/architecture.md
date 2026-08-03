@@ -509,7 +509,8 @@ endpoints. One authority/issuer and client are supported per running deployment.
   - `api` (the .NET 10 API project resource)
   - `postgres` (official `postgres` image, with a named volume)
   - `vault` (official `hashicorp/vault` image, dev mode for local, config-file mode for anything shared)
-  - `keycloak` (pinned Keycloak 26.3.1 image with the development-only `ai-proxy-local` realm and `proxy-admin`)
+  - `keycloak` (pinned Keycloak 26.3.1 image with the development-only `ai-proxy-local` realm and `proxy-admin`;
+    the seeded user's explicit stable ID preserves its OIDC `sub` across realm reimports)
   - the **Aspire dashboard**, which receives OTLP traces/metrics/logs from the API via service-discovery-injected
     `OTEL_EXPORTER_OTLP_ENDPOINT`.
   - `AiProxy.ServiceDefaults` wires health checks, resilience, and OpenTelemetry consistently for the API project.
