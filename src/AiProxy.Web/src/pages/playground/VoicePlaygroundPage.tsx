@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Textarea, makeStyles, tokens } from '@fluentui/react-components';
-import { PlugConnectedRegular, PlugDisconnectedRegular, SendRegular } from '@fluentui/react-icons';
+import { MicRegular, PlugConnectedRegular, PlugDisconnectedRegular, SendRegular } from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
 import { ModelPicker } from '../../components/ModelPicker';
 import { adminJson } from '../../api/client';
+import { getAudioDelta, RealtimeAudioSession } from './realtimeAudio';
 
 const useStyles = makeStyles({
   controls: {
     display: 'flex',
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: tokens.spacingHorizontalM,
   },
   log: {
@@ -23,8 +25,21 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
   },
   eventRow: {
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) auto',
     gap: tokens.spacingHorizontalM,
+    alignItems: 'start',
+    '@media (max-width: 700px)': {
+      gridTemplateColumns: 'minmax(0, 1fr)',
+    },
+  },
+  talk: {
+    alignSelf: 'flex-start',
+    minWidth: '180px',
+  },
+  eventEditor: {
+    width: '100%',
+    minWidth: 0,
   },
 });
 
@@ -44,11 +59,16 @@ export function VoicePlaygroundPage() {
   const [model, setModel] = useState('');
   const [state, setState] = useState<ConnectionState>('disconnected');
   const [error, setError] = useState<unknown>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const [eventText, setEventText] = useState(exampleEvent);
   const [log, setLog] = useState<string[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
+  const audioRef = useRef<RealtimeAudioSession | null>(null);
 
-  useEffect(() => () => socketRef.current?.close(), []);
+  useEffect(() => () => {
+    void audioRef.current?.close();
+    socketRef.current?.close();
+  }, []);
 
   const appendLog = (line: string) => setLog((prev) => [...prev, `${new Date().toLocaleTimeString()}  ${line}`]);
 
@@ -63,12 +83,29 @@ export function VoicePlaygroundPage() {
       socketRef.current = socket;
 
       socket.onopen = () => {
+        const audio = new RealtimeAudioSession(socket);
+        audio.configure();
+        audioRef.current = audio;
         setState('connected');
         appendLog('[connected]');
       };
-      socket.onmessage = (event) => appendLog(`< ${event.data}`);
+      socket.onmessage = (message) => {
+        appendLog(`< ${message.data}`);
+        try {
+          const delta = getAudioDelta(JSON.parse(message.data));
+          if (delta) {
+            void audioRef.current?.play(delta).catch(setError);
+          }
+        } catch {
+          appendLog('[ignored non-JSON event]');
+        }
+      };
       socket.onerror = () => setError(new Error('WebSocket connection failed.'));
       socket.onclose = (event) => {
+        void audioRef.current?.close();
+        audioRef.current = null;
+        socketRef.current = null;
+        setIsRecording(false);
         setState('disconnected');
         appendLog(`[closed] code=${event.code}`);
       };
@@ -79,6 +116,32 @@ export function VoicePlaygroundPage() {
   };
 
   const disconnect = () => socketRef.current?.close();
+
+  const startTalking = async () => {
+    if (state !== 'connected' || isRecording || !audioRef.current) {
+      return;
+    }
+    setError(null);
+    try {
+      const started = await audioRef.current.startCapture();
+      setIsRecording(started);
+    } catch (reason) {
+      setError(reason);
+      await audioRef.current.stopCapture(false);
+    }
+  };
+
+  const stopTalking = async () => {
+    if (!isRecording || !audioRef.current) {
+      return;
+    }
+    setIsRecording(false);
+    try {
+      await audioRef.current.stopCapture(true);
+    } catch (reason) {
+      setError(reason);
+    }
+  };
 
   const sendEvent = () => {
     try {
@@ -112,8 +175,36 @@ export function VoicePlaygroundPage() {
 
       <ErrorBanner error={error} />
 
+      <Button
+        className={styles.talk}
+        appearance={isRecording ? 'primary' : 'secondary'}
+        icon={<MicRegular />}
+        disabled={state !== 'connected'}
+        aria-pressed={isRecording}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          void startTalking();
+        }}
+        onPointerUp={() => void stopTalking()}
+        onPointerCancel={() => void stopTalking()}
+        onKeyDown={(event) => {
+          if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+            event.preventDefault();
+            void startTalking();
+          }
+        }}
+        onKeyUp={(event) => {
+          if (event.key === ' ' || event.key === 'Enter') {
+            event.preventDefault();
+            void stopTalking();
+          }
+        }}
+      >
+        {isRecording ? 'Release to send' : 'Hold to talk'}
+      </Button>
+
       <div className={styles.eventRow}>
-        <Textarea style={{ flex: 1 }} rows={6} value={eventText} onChange={(_, data) => setEventText(data.value)} />
+        <Textarea className={styles.eventEditor} rows={6} value={eventText} onChange={(_, data) => setEventText(data.value)} />
         <Button icon={<SendRegular />} disabled={state !== 'connected'} onClick={sendEvent}>
           Send event
         </Button>

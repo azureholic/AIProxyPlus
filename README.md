@@ -86,8 +86,8 @@ A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboar
 container as the API — no separate frontend host/deployment.
 
 - **Pages**: Config → Models, Endpoints, API Routes, Consumers; Playground → Chat
-  (streaming/non-streaming), Images, Voice (Realtime connectivity + raw-event-log test tool — not full
-  duplex audio, see architecture.md §19.4); Dashboard → Usage (filters, table, token/request charts).
+  (streaming/non-streaming), Images, Voice (push-to-talk microphone input, streaming speaker output, and raw
+  Realtime event diagnostics, see architecture.md §19.4); Dashboard → Usage (filters, table, token/request charts).
 - **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it
   for you) writes the compiled static files straight into `src/AiProxy.Api/wwwroot`, which `AiProxy.Api` then
   serves at `/` (with a client-side-routing fallback to `index.html`) alongside its existing `/api/*`,
@@ -107,6 +107,10 @@ container as the API — no separate frontend host/deployment.
 - On first load, sign in through the configured OIDC provider. React receives only minimal session metadata;
   provider tokens and the confidential-client credential remain on the server. Config, Usage, Chat, and Images
   use the encrypted same-origin session. Voice exchanges that session for a 30-second, single-use Realtime ticket.
+- Voice requires a browser with Web Audio, AudioWorklet, and microphone support. Connect to a configured OpenAI
+  Realtime model, hold **Hold to talk** while speaking, and release to commit the turn. The browser requests
+  microphone permission on first use and plays response audio automatically. Microphone access requires HTTPS or
+  a loopback development origin such as `localhost`.
 - Frontend tests: `cd src/AiProxy.Web && npm test` (Vitest + React Testing Library).
 
 ## OIDC provider setup

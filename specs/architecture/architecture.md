@@ -672,8 +672,8 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Automatic Vault secret rotation workflows.
 - Audio (speech-to-text, text-to-speech) via traditional request/response endpoints, and moderation endpoints —
   supported in principle by the same pluggable ingress + usage-extractor design, but not implemented. The
-  Realtime (voice) WebSocket API is implemented (Iteration 2, §6.5/§9), but its usage/token capture is still
-  deferred to a later iteration.
+  Realtime voice WebSocket and browser microphone/speaker client are implemented (§6.5/§19.4), but Realtime
+  usage/token capture is still deferred to a later iteration.
 - Azure OpenAI Realtime and generic/self-hosted WebSocket backends for the Realtime API (Iteration 2 targets
   the OpenAI Realtime API only).
 - Additional providers beyond OpenAI-compatible and Anthropic (e.g. Google Gemini, Cohere).
@@ -735,13 +735,18 @@ when the header is absent — header auth still takes precedence everywhere, inc
 strings are more likely to end up in server/proxy access logs (§13). This is the one Infrastructure change
 Iteration 3 made outside the frontend project itself, beyond the SPA fallback wiring.
 
-The Voice tab is intentionally **not** a full duplex audio experience: full mic capture + PCM16 encode/decode
-+ playback against OpenAI's Realtime protocol (Web Audio API worklets, base64 frame chunking, barge-in
-handling) is a substantial standalone effort. Iteration 3 ships a connectivity + raw-event-log test tool
-instead — connect/disconnect, send a raw JSON event (pre-filled with a working `conversation.item.create`
-example), and watch everything received scroll by. This proves the WebSocket proxy end-to-end from a real
-browser without committing to full audio UX; real mic/speaker support remains a named follow-up (§18), not a
-silently-dropped requirement.
+Iteration 8 makes the Voice tab a full-duplex audio client while preserving the existing same-origin ticket and
+WebSocket proxy boundary. After the socket opens, the client configures a Realtime audio session, captures the
+microphone as mono PCM16 at 24 kHz in an `AudioWorklet`, and sends base64 `input_audio_buffer.append` events.
+Push-to-talk bounds each user turn: releasing the control sends `input_audio_buffer.commit` followed by
+`response.create`. Incoming base64 `response.audio.delta` or `response.output_audio.delta` PCM16 frames are
+scheduled through the Web Audio API for gap-free speaker playback. The raw JSON event sender and event log remain
+available as diagnostics, but are secondary to the microphone and speaker controls.
+
+Microphone permission is requested only after the user starts recording. Disconnect, socket closure, navigation,
+or capture failure stops every media track, tears down the worklet and audio contexts, clears queued playback, and
+returns the UI to a non-recording state. Audio never passes through an application HTTP endpoint and is not stored
+by the browser client; it travels only in the existing authenticated Realtime WebSocket session.
 
 ### 19.5 Usage dashboard limitation
 
