@@ -422,6 +422,7 @@ with a well-known root token confined to the dev environment is acceptable.
 | Realtime (voice) ingress (Iteration 2) | `GET /openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover — see §6.5/§9. Usage capture deferred |
 | Configuration | `/api/v1/config/*` | See §7.2, incl. `consumers` CRUD |
 | Usage query | `GET /api/v1/usage` | Chargeback / reporting, filterable by deployment and consumer |
+| Authentication (Iteration 4) | `/api/v1/auth/*`, `/signin-oidc`, `/signout-callback-oidc` | Same-origin OIDC BFF login/session/logout, antiforgery token, and Realtime ticket issuance |
 | Health | `GET /health/live`, `GET /health/ready` | Standard ASP.NET Core health checks (Postgres, Vault reachability) |
 | OpenAPI | `/openapi/v1.json`, Scalar/Swagger UI in dev | Generated from minimal API metadata |
 | Frontend (Iteration 3) | `GET /` and any other non-API path | Serves the built React SPA (`wwwroot`) with a client-side-routing fallback to `index.html` — see §19 |
@@ -451,6 +452,52 @@ with a well-known root token confined to the dev environment is acceptable.
   original repo's practice.
 - **Least privilege**: Vault AppRole policy scoped only to `secret/data/ai-proxy/*`; Postgres role for the app
   has no superuser/DDL rights outside of the migration step.
+
+### 13.1 OIDC browser authentication (Iteration 4)
+
+The browser uses a Backend-for-Frontend session rather than handling provider tokens. `AiProxy.Api` is a
+confidential OIDC client using Authorization Code flow with PKCE. It validates the authorization response through
+the provider's discovery document and JWKS, then creates an encrypted ASP.NET Core cookie session. Provider tokens,
+authorization codes, PKCE verifiers, and the client secret never enter frontend JavaScript or browser storage.
+
+The supported provider boundary is capability-based. A provider must expose standards-compliant OIDC discovery,
+authorization/token/JWKS endpoints, confidential Authorization Code flow, signed ID tokens with exact `iss`, the
+configured client id in `aud`, stable `sub`, and either the configured username claim or a standards-based UserInfo
+endpoint. Only asymmetric signing algorithms on an explicit allow-list are accepted. Issuers are compared exactly;
+partial, alias, and trailing-slash repair is forbidden. RP-Initiated Logout is optional and used only when advertised
+by compatible discovery metadata. Providers requiring proprietary browser SDKs, opaque identity tokens, SAML, or
+OAuth without OIDC are outside this iteration.
+
+Every user whom the configured provider permits to complete login is an AI Proxy administrator. Iteration 4 does
+not map provider roles or groups. Deployments in a shared identity domain must therefore restrict client assignment
+or login eligibility at the provider. Config and Usage routes accept the OIDC session; the static Admin API Key is a
+configurable migration/break-glass fallback and is disabled by default after migration. External inference clients
+continue to use Consumer API keys.
+
+OIDC-backed inference resolves the authenticated identity to a `Consumer`. API-key Consumers have an API-key hash
+and no OIDC identity; OIDC Consumers have an immutable normalized `(issuer, subject)` pair and no API-key hash. The
+database enforces this exclusive choice and uniqueness of `(issuer, subject)`. The configured username claim is
+required as mutable display/chargeback metadata, not identity. First inference atomically provisions the OIDC
+Consumer. A username collision with another identity is rejected explicitly and never merged or silently suffixed.
+Local disable/revoke remains a kill switch but does not revoke the upstream provider account.
+
+The session cookie is `Secure`, `HttpOnly`, host-scoped, and uses the strictest `SameSite` mode compatible with the
+OIDC callback. Session fixation is prevented by issuing a new ticket after a validated callback. Unsafe
+cookie-authenticated requests require an antiforgery cookie/header pair; API-key requests remain header-authenticated
+and do not use browser CSRF mechanics. API requests return `401`/`403` instead of HTML redirects. Login return paths
+are restricted to validated same-origin relative paths. Authentication material and raw claim sets are redacted
+from logs, telemetry, browser history, and error responses.
+
+Native browser WebSockets cannot set authentication headers, so the Voice Playground exchanges its authenticated
+session for a cryptographically random, short-lived, single-use ticket. Only the ticket appears in the WebSocket
+query string; its hash, Consumer identity, route binding, expiry, and consumption state are stored server-side and
+consumed atomically before upgrade. Existing Consumer API-key header/query behavior remains for non-frontend clients.
+
+`AiProxy.AppHost` is the only deploy-time configuration owner. It binds provider-neutral `Authentication:Oidc`
+settings, resolves the client credential from an Aspire secret parameter, and forwards only required values to the
+API through `Authentication__Oidc__*` environment variables. Child projects do not duplicate provider settings.
+The frontend receives no OIDC configuration because it uses same-origin login, session, antiforgery, and logout
+endpoints. One authority/issuer and client are supported per running deployment.
 
 ## 14. Deployment Topology & Local Development
 
@@ -520,12 +567,13 @@ Clean Architecture is enforced and verified, not just aspirational:
 | Frontend UI library | FluentUI v9 (`@fluentui/react-components`) | Explicitly requested |
 | Frontend charting | `recharts` | Smallest well-maintained React charting library for the Usage dashboard (§19) |
 | Frontend testing | Vitest + React Testing Library | Matches the Vite toolchain; scoped to smoke/interaction tests, not exhaustive coverage (§19) |
+| Browser authentication (Iteration 4) | ASP.NET Core OpenID Connect + cookie authentication | Provider-neutral BFF keeps tokens and the confidential-client credential out of frontend JavaScript |
 | Testing | xUnit, FluentAssertions, NSubstitute, Testcontainers, WireMock.Net, NetArchTest | Standard, well-supported .NET test stack covering unit/integration/architecture tests |
 
 ## 17. Assumptions & Open Questions
 
-- The config API's admin authentication is a placeholder (static API key) for Iteration 1; a follow-up iteration
-  should evaluate OAuth2/Entra ID/mTLS depending on where the proxy is deployed.
+- The static admin key remains only as an explicitly enabled migration/break-glass mechanism after Iteration 4;
+  normal browser administration uses the provider-neutral OIDC BFF session described in §13.1.
 - Session/conversation affinity is **not** derived from a client-supplied session id (Iteration 2 removed that
   generic mechanism entirely) — only the Responses API's `previous_response_id` and the Realtime API's
   connection lifetime carry affinity. If a future operation type needs stickiness without an inherent protocol
@@ -546,18 +594,15 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Responses API affinity rows (keyed by OpenAI response id) are written with an expiry mirroring OpenAI's default
   30-day response retention (configurable); this needs revisiting once real usage patterns/retention settings
   are known.
-- The frontend's admin/consumer key entry (`sessionStorage`, §19) is an explicit stand-in for real
-  authentication, matching the backend's own placeholder admin-key posture — both need revisiting together
-  if/when real auth (OAuth2/Entra ID) is scoped.
+- OIDC provider logout is best-effort because `end_session_endpoint` is optional. Local session termination is
+  always authoritative for AI Proxy access even when the upstream provider session remains active.
 
 ## 18. Non-Goals / Future Iterations
 
 - Rate limiting & per-client quotas.
 - Cross-protocol request/response translation.
-- A general-purpose/end-user admin UI with real authentication — Iteration 3 adds a small **ops/config**
-  frontend (§19) covering Config/Playground/Dashboard, but its own auth is a `sessionStorage` key stand-in,
-  not a login system, and it has no RBAC/multi-user concept of its own beyond the backend's existing
-  admin-key/consumer-key split.
+- Per-user RBAC or provider role/group mapping. Iteration 4 authenticates the existing ops/config frontend, but every
+  user admitted by the configured OIDC client is an administrator.
 - Multi-region / multi-instance cache invalidation via Postgres `LISTEN/NOTIFY` (Iteration 1 uses TTL-based cache
   expiry, which is acceptable for a single-instance or short-TTL multi-instance deployment).
 - Automatic Vault secret rotation workflows.
@@ -605,13 +650,13 @@ frontend development, `npm run dev` runs the Vite dev server with a proxy (`/api
 `/health`) to a locally-running API, avoiding a rebuild loop — the production/container path is always
 "build once, serve as static files."
 
-### 19.3 Auth stand-in
+### 19.3 Authentication (Iteration 4)
 
-There is no real auth system in this codebase (§17) — the frontend's **Settings** page collects an Admin API
-Key (`X-Admin-Api-Key`, for Config + Usage) and a Consumer API Key (`X-Api-Key`, for the Playground), kept in
-`sessionStorage` only (cleared when the tab closes, never `localStorage`, never logged). The **Consumers**
-page itself is a small addition beyond what was explicitly requested, added purely because the Playground is
-unusable without a valid Consumer key and `POST /api/v1/config/consumers` is the only way to obtain one.
+The frontend uses the same-origin BFF endpoints described in §13.1. It receives minimal session metadata and an
+antiforgery token, never provider tokens or OIDC client configuration. Settings shows the signed-in identity and
+logout action. Config, Usage, Chat, and Images use the encrypted session; external inference clients and explicit
+migration mode retain API-key authentication. The Consumers page continues to manage API-key Consumers and displays
+the authentication type for JIT-provisioned OIDC Consumers, for which key rotation is unavailable.
 
 ### 19.4 Realtime (Voice) Playground — scope and the query-param auth exception
 

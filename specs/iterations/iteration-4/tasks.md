@@ -91,27 +91,27 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
 
 ## Phase 0 — Architecture decision and provider compatibility spike
 
-- [ ] Write the authentication/authorization threat model: authorization-response theft, login CSRF/state, nonce
+- [x] Write the authentication/authorization threat model: authorization-response theft, login CSRF/state, nonce
   and PKCE handling, session fixation/theft, request CSRF, open redirects, issuer confusion, signing-key rotation,
   replay, clock skew, logout behavior, provider-side login eligibility, and accidental logging of tokens or claims.
-- [ ] Decide and document the supported deployment model: one authority/issuer, confidential web client ID and
+- [x] Decide and document the supported deployment model: one authority/issuer, confidential web client ID and
   secret reference, `openid` plus optional identity scopes, callback URI, post-logout URI, session lifetime, and a
   fixed allow-list of asymmetric signing algorithms.
-- [ ] Define a provider-neutral configuration contract using OIDC terms (`authority`, `issuer`, `clientId`,
+- [x] Define a provider-neutral configuration contract using OIDC terms (`authority`, `issuer`, `clientId`,
   `clientSecretRef`, `scopes`, `usernameClaim`, `getClaimsFromUserInfo`, callback/logout paths, cookie settings, and
   validated additional authorization parameters). Do not add provider product concepts to Domain or Application.
-- [ ] Make `AiProxy.AppHost` the single owner of deploy-time configuration. API and frontend projects must not
+- [x] Make `AiProxy.AppHost` the single owner of deploy-time configuration. API and frontend projects must not
   duplicate provider settings in their own `appsettings*.json` files; AppHost reads configuration, resolves secret
   parameters, and supplies each child resource only the values it needs through environment variables. Document
   the environment-variable names as the contract between AppHost and each resource.
-- [ ] Define the admin policy contract as a valid server session established by the configured OIDC issuer/client;
+- [x] Define the admin policy contract as a valid server session established by the configured OIDC issuer/client;
   do not introduce role or group claim mapping in this iteration.
-- [ ] Define provider-side admission requirements generically: the provider's client assignment, policy, or tenant
+- [x] Define provider-side admission requirements generically: the provider's client assignment, policy, or tenant
   controls must ensure only intended administrators can complete login.
-- [ ] Define the OIDC Consumer lifecycle: immutable normalized issuer + `sub`, configurable username claim,
+- [x] Define the OIDC Consumer lifecycle: immutable normalized issuer + `sub`, configurable username claim,
   just-in-time creation on first inference, display-name refresh, local disable/re-enable behavior, name-collision
   handling, and what the Consumers admin page may modify. Never generate a placeholder API key for an OIDC user.
-- [ ] Decide the collision policy before implementation. Recommended: require the configured username claim to be
+- [x] Decide the collision policy before implementation. Recommended: require the configured username claim to be
   present and unique, reject a conflicting identity with an actionable `409`/`403`, and never suffix or merge names
   silently. If duplicate display names must be supported, redesign Consumer addressing away from unique names and
   name-based config routes as a separate, explicitly accepted schema/API change.
@@ -124,9 +124,9 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
   PKCE method, asymmetric ID-token algorithm overlap, callback, stable `iss` + `sub`, client-ID audience, configured
   username claim or UserInfo fallback, logout capability, and key rotation. Reject wrong issuer/client, state,
   nonce, signature, lifetime, callback, or algorithm; never repair issuer mismatches with partial comparisons.
-- [ ] Record unsupported capabilities explicitly: providers without OIDC discovery/JWKS, confidential Code flow,
+- [x] Record unsupported capabilities explicitly: providers without OIDC discovery/JWKS, confidential Code flow,
   stable `iss` + `sub`, or a usable username source require a separately designed adapter and are out of scope.
-- [ ] Update `specs/architecture/architecture.md` with the accepted decisions and amend this plan if the spike
+- [x] Update `specs/architecture/architecture.md` with the accepted decisions and amend this plan if the spike
   disproves any assumption. Do not begin Phase 1 until the security and identity decisions are accepted.
 
 ## Phase 1 — API authentication and authorization foundation
