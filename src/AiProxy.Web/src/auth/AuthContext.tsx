@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { adminFetch, sessionExpiredEvent } from '../api/client';
+import { sessionExpiredEvent, submitLogout } from '../api/client';
 
 export interface UserSession {
   authenticated: true;
@@ -61,10 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    const response = await adminFetch('/api/v1/auth/logout', { method: 'POST' });
-    if (response.ok || response.redirected) {
-      setSession(null);
-    }
+    await submitLogout();
   };
 
   return (

@@ -33,7 +33,7 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/##http://localhost:5205/##https://localhost:7194/"
+        "post.logout.redirect.uris": "http://localhost:5173/signout-callback-oidc##http://localhost:5205/signout-callback-oidc##https://localhost:7194/signout-callback-oidc"
       },
       "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"]
     }
@@ -42,7 +42,10 @@
     {
       "username": "proxy-admin",
       "enabled": true,
+      "email": "proxy-admin@local.invalid",
       "emailVerified": true,
+      "firstName": "Proxy",
+      "lastName": "Administrator",
       "requiredActions": [],
       "credentials": [
         {

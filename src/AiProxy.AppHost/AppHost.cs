@@ -48,7 +48,8 @@ var keycloak = builder.AddContainer("keycloak", "quay.io/keycloak/keycloak", "26
     .WithBindMount("./keycloak", "/opt/keycloak/data/import", isReadOnly: true)
     .WithVolume("keycloak-data", "/opt/keycloak/data")
     .WithHttpEndpoint(port: 8081, targetPort: 8080, name: "http")
-    .WithHttpHealthCheck("/health/ready")
+    .WithHttpEndpoint(targetPort: 9000, name: "management")
+    .WithHttpHealthCheck("/health/ready", endpointName: "management")
     .WithLifetime(ContainerLifetime.Persistent);
 
 var api = builder.AddProject<Projects.AiProxy_Api>("api")

@@ -47,8 +47,9 @@ dotnet user-secrets set "Parameters:proxy-admin-password" "<local-proxy-admin-pa
 
 Open the API or Vite URL and sign in to the `ai-proxy-local` realm as the development-only user `proxy-admin`.
 Keycloak imports the realm only into a fresh `keycloak-data` volume; later starts reuse it without overwriting
-changed credentials. To reset only local identity data, remove the `keycloak-data` Docker volume and restart the
-AppHost. Never reuse these development credentials outside local testing.
+changed credentials. To reset only local identity data, stop the AppHost, remove its Keycloak container, run
+`docker volume rm keycloak-data`, and restart the AppHost. Postgres and Vault are unaffected. Never reuse these
+development credentials outside local testing.
 
 On first run:
 

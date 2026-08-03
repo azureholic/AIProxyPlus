@@ -50,6 +50,21 @@ async function getAntiforgeryToken(): Promise<string> {
   return antiforgeryToken;
 }
 
+export async function submitLogout(): Promise<void> {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/api/v1/auth/logout';
+
+  const token = document.createElement('input');
+  token.type = 'hidden';
+  token.name = '__RequestVerificationToken';
+  token.value = await getAntiforgeryToken();
+  form.append(token);
+
+  document.body.append(form);
+  form.submit();
+}
+
 async function buildInit(init: RequestInit | undefined): Promise<RequestInit> {
   const headers = new Headers(init?.headers);
   if (init?.body !== undefined && !headers.has('Content-Type')) {

@@ -1,8 +1,9 @@
 # Iteration 4 — Tasks
 
 Companion to [specs/architecture/architecture.md](../../architecture/architecture.md). Implementation is complete
-for the core OIDC BFF, Consumer identity, frontend session, Realtime ticket, and local AppHost paths. External
-provider conformance and Docker-backed end-to-end verification remain open and are intentionally unchecked below.
+for the core OIDC BFF, Consumer identity, frontend session, Realtime ticket, and local AppHost paths. Local Keycloak
+login/logout and session-security acceptance is complete. External provider conformance and upstream model
+inference remain open and are intentionally unchecked below.
 
 ## Motivation
 
@@ -194,6 +195,18 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
   never permit session cookies or provider tokens to be copied into WebSocket query strings.
 
 ## Phase 4 — Tests and security verification
+
+Verified against a fresh Docker-backed Keycloak 26.3.1 realm on 2026-08-03:
+
+- [x] Authorization Code + PKCE login establishes the encrypted browser session for `proxy-admin`; the session
+  reports the exact configured issuer, and no session cookie is readable through JavaScript.
+- [x] Cookie-authenticated unsafe requests reject a missing antiforgery token and accept the issued token.
+- [x] The Realtime ticket endpoint provisions/reuses the OIDC Consumer and returns a 30-second ticket.
+- [x] Provider logout accepts the exact `/signout-callback-oidc` URI, returns to the application, clears the local
+  session, and leaves the session endpoint returning `401` with the sign-in UI displayed.
+
+This acceptance does not prove an independent provider, signing-key rotation, upstream Chat/Images/Realtime
+inference, or the complete provider conformance matrix.
 
 - [ ] Unit-test OIDC configuration validation, issuer/subject normalization, ID-token and UserInfo username
   extraction, session settings, Consumer type invariants, collision handling, concurrent provisioning, antiforgery,

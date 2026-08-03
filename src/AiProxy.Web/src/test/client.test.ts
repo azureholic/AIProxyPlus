@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { adminFetch, consumerFetch, adminJson, ApiError } from '../api/client';
+import { adminFetch, consumerFetch, adminJson, ApiError, submitLogout } from '../api/client';
 
 describe('api client', () => {
   afterEach(() => {
@@ -36,6 +36,21 @@ describe('api client', () => {
 
     const [, init] = fetchMock.mock.calls[1];
     expect((init.headers as Headers).get('X-CSRF-TOKEN')).toBe('csrf-token');
+  });
+
+  it('submits logout as an antiforgery-protected form navigation', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => undefined);
+
+    await submitLogout();
+
+    const form = document.querySelector<HTMLFormElement>('form[action="/api/v1/auth/logout"]');
+    expect(form?.method).toBe('post');
+    expect(form?.querySelector<HTMLInputElement>('input[name="__RequestVerificationToken"]')?.value)
+      .toBe('csrf-token');
+    expect(submit).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('signals session expiry without retrying a 401 response', async () => {

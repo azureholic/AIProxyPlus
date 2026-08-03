@@ -150,6 +150,10 @@ if (oidcOptions.Enabled)
     authentication.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
     {
         options.Authority = oidcOptions.Authority.TrimEnd('/');
+        options.RequireHttpsMetadata = !(
+            builder.Environment.IsDevelopment() &&
+            Uri.TryCreate(oidcOptions.Authority, UriKind.Absolute, out var authority) &&
+            authority.IsLoopback);
         options.ClientId = oidcOptions.ClientId;
         options.ClientSecret = oidcOptions.ClientSecret;
         options.ResponseType = "code";
@@ -169,6 +173,24 @@ if (oidcOptions.Enabled)
         {
             NameClaimType = oidcOptions.UsernameClaim,
             ValidAlgorithms = oidcOptions.AllowedSigningAlgorithms,
+        };
+        options.Events.OnTicketReceived = context =>
+        {
+            var issuer = options.Configuration?.Issuer ?? options.Authority;
+
+            if (context.Principal?.Identity is System.Security.Claims.ClaimsIdentity identity &&
+                !identity.HasClaim(claim => claim.Type == "iss") &&
+                !string.IsNullOrWhiteSpace(issuer))
+            {
+                identity.AddClaim(new System.Security.Claims.Claim("iss", issuer.TrimEnd('/')));
+            }
+
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToIdentityProviderForSignOut = context =>
+        {
+            context.ProtocolMessage.ClientId = options.ClientId;
+            return Task.CompletedTask;
         };
     });
 }

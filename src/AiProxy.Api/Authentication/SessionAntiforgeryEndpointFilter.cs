@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace AiProxy.Api.Authentication;
@@ -9,17 +10,19 @@ public sealed class SessionAntiforgeryEndpointFilter : IEndpointFilter
     {
         var httpContext = context.HttpContext;
         if (!HttpMethods.IsGet(httpContext.Request.Method) &&
-            !HttpMethods.IsHead(httpContext.Request.Method) &&
-            httpContext.User.Identities.Any(identity =>
-                identity.IsAuthenticated && identity.AuthenticationType == CookieAuthenticationDefaults.AuthenticationScheme))
+            !HttpMethods.IsHead(httpContext.Request.Method))
         {
-            try
+            var cookieAuthentication = await httpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (cookieAuthentication.Succeeded)
             {
-                await httpContext.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(httpContext);
-            }
-            catch (AntiforgeryValidationException)
-            {
-                return Results.BadRequest(new { error = "A valid antiforgery token is required." });
+                try
+                {
+                    await httpContext.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(httpContext);
+                }
+                catch (AntiforgeryValidationException)
+                {
+                    return Results.BadRequest(new { error = "A valid antiforgery token is required." });
+                }
             }
         }
 
