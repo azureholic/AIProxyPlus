@@ -7,10 +7,12 @@ namespace AiProxy.Domain.Tests.Entities;
 
 public class ModelDeploymentTests
 {
-    private static Endpoint CreateEndpoint(Guid modelDeploymentId, int priority) =>
-        Endpoint.Create(
-            Guid.NewGuid(), modelDeploymentId, "https://api.openai.com", ApiFamily.OpenAI, priority,
-            AuthMode.ApiKey, secretRef: "secret/x");
+    private static ModelDeploymentEndpoint CreateEndpoint(Guid modelDeploymentId, int priority, Endpoint? endpoint = null) =>
+        ModelDeploymentEndpoint.Create(
+            modelDeploymentId,
+            endpoint ?? Endpoint.Create(Guid.NewGuid(), "OpenAI", "https://api.openai.com", ApiFamily.OpenAI,
+                AuthMode.ApiKey, secretRef: "secret/x"),
+            priority);
 
     [Theory]
     [InlineData("")]
@@ -61,6 +63,34 @@ public class ModelDeploymentTests
         var act = () => deployment.AddEndpoint(foreignEndpoint);
 
         act.Should().Throw<DomainException>().WithMessage("*ModelDeploymentId*");
+    }
+
+    [Fact]
+    public void AddEndpoint_SameReusableEndpointAcrossDeployments_Succeeds()
+    {
+        var endpoint = Endpoint.Create(Guid.NewGuid(), "Shared", "https://api.openai.com", ApiFamily.OpenAI,
+            AuthMode.ApiKey, secretRef: "secret/x");
+        var first = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o");
+        var second = ModelDeployment.Create(Guid.NewGuid(), "gpt-4.1");
+
+        first.AddEndpoint(CreateEndpoint(first.Id, 1, endpoint));
+        second.AddEndpoint(CreateEndpoint(second.Id, 2, endpoint));
+
+        first.Endpoints.Single().Endpoint.Should().BeSameAs(endpoint);
+        second.Endpoints.Single().Endpoint.Should().BeSameAs(endpoint);
+    }
+
+    [Fact]
+    public void AddEndpoint_DuplicateAssignment_Throws()
+    {
+        var endpoint = Endpoint.Create(Guid.NewGuid(), "Shared", "https://api.openai.com", ApiFamily.OpenAI,
+            AuthMode.ApiKey, secretRef: "secret/x");
+        var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o");
+        deployment.AddEndpoint(CreateEndpoint(deployment.Id, 1, endpoint));
+
+        var act = () => deployment.AddEndpoint(CreateEndpoint(deployment.Id, 2, endpoint));
+
+        act.Should().Throw<DomainException>().WithMessage("*already assigned*");
     }
 
     [Fact]

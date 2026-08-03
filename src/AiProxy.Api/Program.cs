@@ -1,6 +1,7 @@
 using System.Net;
 using AiProxy.Application.Abstractions;
 using AiProxy.Application.Consumers;
+using AiProxy.Application.Endpoints;
 using AiProxy.Application.ModelDeployments;
 using AiProxy.Application.Usage;
 using AiProxy.Api.Authentication;
@@ -66,6 +67,7 @@ builder.Services.AddSingleton<AiProxyMetrics>();
 // (injected by AiProxy.AppHost via WithReference) and wires resiliency/health checks/OTel automatically.
 builder.AddNpgsqlDbContext<AiProxyDbContext>("aiproxydb");
 builder.Services.AddScoped<IModelDeploymentRepository, ModelDeploymentRepository>();
+builder.Services.AddScoped<IEndpointRepository, EndpointRepository>();
 builder.Services.AddScoped<IConsumerRepository, ConsumerRepository>();
 builder.Services.AddScoped<ISessionAffinityStore, SessionAffinityStore>();
 builder.Services.AddScoped<IUsageRecordRepository, UsageRecordRepository>();
@@ -211,6 +213,9 @@ builder.Services.AddSingleton<IValidator<DeleteModelDeploymentCommand>, DeleteMo
 builder.Services.AddSingleton<IValidator<AddEndpointCommand>, AddEndpointValidator>();
 builder.Services.AddSingleton<IValidator<UpdateEndpointCommand>, UpdateEndpointValidator>();
 builder.Services.AddSingleton<IValidator<RemoveEndpointCommand>, RemoveEndpointValidator>();
+builder.Services.AddSingleton<IValidator<CreateEndpointCommand>, CreateEndpointValidator>();
+builder.Services.AddSingleton<IValidator<UpdateEndpointConfigurationCommand>, UpdateEndpointConfigurationValidator>();
+builder.Services.AddSingleton<IValidator<DeleteEndpointCommand>, DeleteEndpointValidator>();
 builder.Services.AddSingleton<IValidator<SetEndpointSecretCommand>, SetEndpointSecretValidator>();
 builder.Services.AddSingleton<IValidator<CreateConsumerCommand>, CreateConsumerValidator>();
 builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsumerKeyValidator>();
@@ -223,6 +228,9 @@ builder.Services.AddScoped<DeleteModelDeploymentHandler>();
 builder.Services.AddScoped<AddEndpointHandler>();
 builder.Services.AddScoped<UpdateEndpointHandler>();
 builder.Services.AddScoped<RemoveEndpointHandler>();
+builder.Services.AddScoped<CreateEndpointHandler>();
+builder.Services.AddScoped<UpdateEndpointConfigurationHandler>();
+builder.Services.AddScoped<DeleteEndpointHandler>();
 builder.Services.AddScoped<SetEndpointSecretHandler>();
 builder.Services.AddScoped<CreateConsumerHandler>();
 builder.Services.AddScoped<RotateConsumerKeyHandler>();
@@ -332,9 +340,7 @@ config.MapPost("/model-deployments/{name}/endpoints", async (
     string name, AddEndpointBody body, AddEndpointHandler handler, CancellationToken ct) =>
 {
     var endpoint = await handler.HandleAsync(
-        new AddEndpointCommand(
-            name, body.BaseUrl, body.ApiFamily, body.Priority, body.AuthMode, body.ApiKeyPlaintext,
-            body.ManagedIdentityScope, body.Enabled, body.TimeoutSeconds, body.MaxRetries, body.ManagedIdentityTenantId),
+        new AddEndpointCommand(name, body.EndpointId, body.Priority, body.Enabled),
         ct);
     return Results.Created($"/api/v1/config/model-deployments/{name}/endpoints/{endpoint.Id}", endpoint);
 });
@@ -343,9 +349,7 @@ config.MapPut("/model-deployments/{name}/endpoints/{id:guid}", async (
     string name, Guid id, UpdateEndpointBody body, UpdateEndpointHandler handler, CancellationToken ct) =>
 {
     var endpoint = await handler.HandleAsync(
-        new UpdateEndpointCommand(
-            name, id, body.BaseUrl, body.ManagedIdentityScope, body.Priority, body.Enabled, body.TimeoutSeconds,
-            body.MaxRetries, body.ManagedIdentityTenantId), ct);
+        new UpdateEndpointCommand(name, id, body.Priority, body.Enabled), ct);
     return Results.Ok(endpoint);
 });
 
@@ -356,10 +360,49 @@ config.MapDelete("/model-deployments/{name}/endpoints/{id:guid}", async (
     return Results.NoContent();
 });
 
-config.MapPut("/model-deployments/{name}/endpoints/{id:guid}/secret", async (
-    string name, Guid id, SetEndpointSecretBody body, SetEndpointSecretHandler handler, CancellationToken ct) =>
+config.MapGet("/endpoints", async (IEndpointRepository repository, CancellationToken ct) =>
+    Results.Ok(await repository.GetAllAsync(ct)));
+
+config.MapGet("/endpoints/{id:guid}", async (Guid id, IEndpointRepository repository, CancellationToken ct) =>
 {
-    await handler.HandleAsync(new SetEndpointSecretCommand(name, id, body.ApiKeyPlaintext), ct);
+    var endpoint = await repository.GetByIdAsync(id, ct);
+    return endpoint is null
+        ? Results.NotFound(new { error = $"Endpoint '{id}' was not found." })
+        : Results.Ok(endpoint);
+});
+
+config.MapPost("/endpoints", async (
+    CreateEndpointCommand command, CreateEndpointHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(command, ct);
+    return Results.Created($"/api/v1/config/endpoints/{endpoint.Id}", endpoint);
+});
+
+config.MapPut("/endpoints/{id:guid}", async (
+    Guid id, UpdateEndpointConfigurationBody body, UpdateEndpointConfigurationHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(new UpdateEndpointConfigurationCommand(
+        id,
+        body.Name,
+        body.BaseUrl,
+        body.ManagedIdentityScope,
+        body.TimeoutSeconds,
+        body.MaxRetries,
+        body.ManagedIdentityTenantId), ct);
+    return Results.Ok(endpoint);
+});
+
+config.MapDelete("/endpoints/{id:guid}", async (
+    Guid id, DeleteEndpointHandler handler, CancellationToken ct) =>
+{
+    await handler.HandleAsync(new DeleteEndpointCommand(id), ct);
+    return Results.NoContent();
+});
+
+config.MapPut("/endpoints/{id:guid}/secret", async (
+    Guid id, SetEndpointSecretBody body, SetEndpointSecretHandler handler, CancellationToken ct) =>
+{
+    await handler.HandleAsync(new SetEndpointSecretCommand(id, body.ApiKeyPlaintext), ct);
     return Results.NoContent();
 });
 
@@ -581,24 +624,20 @@ static class HealthChecks
 public sealed record UpdateModelDeploymentBody(RoutingStrategy Strategy);
 
 public sealed record AddEndpointBody(
-    string BaseUrl,
-    ApiFamily ApiFamily,
+    Guid EndpointId,
     int Priority,
-    AuthMode AuthMode,
-    string? ApiKeyPlaintext = null,
-    string? ManagedIdentityScope = null,
-    bool Enabled = true,
-    int TimeoutSeconds = 100,
-    int MaxRetries = 2,
-    string? ManagedIdentityTenantId = null);
+    bool Enabled = true);
 
 public sealed record UpdateEndpointBody(
-    string? BaseUrl = null,
-    string? ManagedIdentityScope = null,
     int? Priority = null,
-    bool? Enabled = null,
-    int? TimeoutSeconds = null,
-    int? MaxRetries = null,
+    bool? Enabled = null);
+
+public sealed record UpdateEndpointConfigurationBody(
+    string Name,
+    string BaseUrl,
+    string? ManagedIdentityScope,
+    int TimeoutSeconds,
+    int MaxRetries,
     string? ManagedIdentityTenantId = null);
 
 public sealed record SetEndpointSecretBody(string ApiKeyPlaintext);

@@ -7,16 +7,17 @@ namespace AiProxy.Domain.Tests.Services;
 
 public class EndpointSelectorTests
 {
-    private static Endpoint Healthy(Guid deploymentId, int priority)
+    private static ModelDeploymentEndpoint Healthy(Guid deploymentId, int priority)
     {
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), deploymentId, "https://api.example.com", ApiFamily.OpenAI, priority,
+            Guid.NewGuid(), "Endpoint", "https://api.example.com", ApiFamily.OpenAI,
             AuthMode.ApiKey, secretRef: "secret/x");
-        endpoint.MarkHealthy();
-        return endpoint;
+        var assignment = ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority);
+        assignment.MarkHealthy();
+        return assignment;
     }
 
-    private static Endpoint Unhealthy(Guid deploymentId, int priority)
+    private static ModelDeploymentEndpoint Unhealthy(Guid deploymentId, int priority)
     {
         var endpoint = Healthy(deploymentId, priority);
         endpoint.MarkUnhealthy();

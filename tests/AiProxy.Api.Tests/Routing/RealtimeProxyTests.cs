@@ -33,9 +33,14 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static Endpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority) =>
-        Endpoint.Create(
-            Guid.NewGuid(), deploymentId, baseUrl, ApiFamily.OpenAI, priority, AuthMode.ApiKey, secretRef: "endpoints/x");
+    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"realtime-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
+            secretRef: "endpoints/x");
+        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+    }
 
     private WebSocketClient NewAuthenticatedWebSocketClient()
     {

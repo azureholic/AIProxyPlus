@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import {
   Board24Regular,
   Chat24Regular,
+  CloudDatabaseRegular,
   DataUsage24Regular,
   Image24Regular,
   MicRecord24Regular,
@@ -9,6 +10,7 @@ import {
   Settings24Regular,
 } from '@fluentui/react-icons';
 import { ModelDeploymentsPage } from '../pages/config/ModelDeploymentsPage';
+import { EndpointsPage } from '../pages/config/EndpointsPage';
 import { ConsumersPage } from '../pages/config/ConsumersPage';
 import { ChatPlaygroundPage } from '../pages/playground/ChatPlaygroundPage';
 import { ImagePlaygroundPage } from '../pages/playground/ImagePlaygroundPage';
@@ -34,6 +36,7 @@ export const navSections: NavSection[] = [
     title: 'Config',
     routes: [
       { path: '/config/model-deployments', label: 'Model Deployments', icon: <Board24Regular />, element: <ModelDeploymentsPage /> },
+      { path: '/config/endpoints', label: 'Endpoints', icon: <CloudDatabaseRegular />, element: <EndpointsPage /> },
       { path: '/config/consumers', label: 'Consumers', icon: <PeopleTeam24Regular />, element: <ConsumersPage /> },
     ],
   },

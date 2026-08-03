@@ -56,7 +56,7 @@ public sealed class RealtimeProxyService(
                 return new RoutingFailure(RoutingFailureReason.NoHealthyEndpoint, selection.FailureReason!);
             }
 
-            var endpoint = selection.SelectedEndpoint!;
+            var endpoint = selection.SelectedEndpoint!.Endpoint;
             EndpointCredential credential;
             using (AiProxyActivitySource.Instance.StartActivity("secret_resolution"))
             {

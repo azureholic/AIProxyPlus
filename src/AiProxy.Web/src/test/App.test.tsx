@@ -30,6 +30,7 @@ describe('App shell + navigation', () => {
     render(<App />);
 
     for (const [navLabel, pageBodyText] of [
+      ['Endpoints', 'New endpoint'],
       ['Consumers', 'New consumer'],
       ['Chat', 'Send'],
       ['Images', 'Generate'],

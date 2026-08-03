@@ -32,10 +32,14 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static Endpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority) =>
-        Endpoint.Create(
-            Guid.NewGuid(), deploymentId, baseUrl, ApiFamily.OpenAI, priority, AuthMode.ApiKey,
+    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"responses-affinity-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
+        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+    }
 
     [Fact]
     public async Task FollowUpTurn_WithPreviousResponseId_PinsToOriginatingBackend()

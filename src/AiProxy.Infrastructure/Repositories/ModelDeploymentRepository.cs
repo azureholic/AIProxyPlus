@@ -10,11 +10,13 @@ public sealed class ModelDeploymentRepository(AiProxyDbContext dbContext) : IMod
     public Task<ModelDeployment?> GetByNameAsync(string name, CancellationToken cancellationToken = default) =>
         dbContext.ModelDeployments
             .Include(d => d.Endpoints)
+            .ThenInclude(e => e.Endpoint)
             .FirstOrDefaultAsync(d => d.Name == name, cancellationToken);
 
     public async Task<IReadOnlyList<ModelDeployment>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await dbContext.ModelDeployments
             .Include(d => d.Endpoints)
+            .ThenInclude(e => e.Endpoint)
             .OrderBy(d => d.Name)
             .ToListAsync(cancellationToken);
 

@@ -19,6 +19,7 @@ export type OperationType =
 export interface Endpoint {
   id: string;
   modelDeploymentId: string;
+  name: string;
   baseUrl: string;
   apiFamily: ApiFamily;
   priority: number;
@@ -30,6 +31,19 @@ export interface Endpoint {
   timeoutSeconds: number;
   maxRetries: number;
   health: EndpointHealthState;
+}
+
+export interface EndpointConfig {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiFamily: ApiFamily;
+  authMode: AuthMode;
+  secretRef: string | null;
+  managedIdentityScope: string | null;
+  managedIdentityTenantId: string | null;
+  timeoutSeconds: number;
+  maxRetries: number;
 }
 
 export interface ModelDeployment {

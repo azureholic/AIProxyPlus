@@ -30,10 +30,14 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static Domain.Entities.Endpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl) =>
-        Domain.Entities.Endpoint.Create(
-            Guid.NewGuid(), deploymentId, baseUrl, ApiFamily.OpenAI, priority: 1, AuthMode.ApiKey,
+    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority = 1)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"additional-coverage-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
+        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+    }
 
     [Fact]
     public async Task ImageEdit_NonStreaming_CapturesUsageMetrics()
@@ -80,9 +84,7 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
         try
         {
             deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!));
-            deployment.AddEndpoint(Domain.Entities.Endpoint.Create(
-                Guid.NewGuid(), deployment.Id, backend2.Url!, ApiFamily.OpenAI, priority: 2, AuthMode.ApiKey,
-                secretRef: "endpoints/x", maxRetries: 0));
+            deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, backend2.Url!, priority: 2));
             _factory.Deployments.Seed(deployment);
 
             const string responseId = "resp_stream_abc";

@@ -20,12 +20,12 @@ public static class EndpointSelector
     /// </param>
     /// <param name="roundRobinCounter">
     /// A monotonically-increasing value supplied by the caller (one per incoming request, not per retry) used
-    /// to rotate the pick across endpoints that share the lowest surviving <see cref="Endpoint.Priority"/>.
+    /// to rotate the pick across assignments that share the lowest surviving priority.
     /// Endpoints are the sole priority holder, or the tier has already been narrowed by failed attempts, this
     /// has no visible effect. Ignored when <paramref name="stickyEndpointId"/> is set.
     /// </param>
     public static EndpointSelectionResult SelectEndpoint(
-        IReadOnlyList<Endpoint> endpoints,
+        IReadOnlyList<ModelDeploymentEndpoint> endpoints,
         Guid? stickyEndpointId = null,
         IReadOnlySet<Guid>? excludedEndpointIds = null,
         int roundRobinCounter = 0)

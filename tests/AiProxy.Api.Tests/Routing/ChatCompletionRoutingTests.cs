@@ -32,10 +32,14 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static Endpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority, int maxRetries = 0) =>
-        Endpoint.Create(
-            Guid.NewGuid(), deploymentId, baseUrl, ApiFamily.OpenAI, priority, AuthMode.ApiKey,
+    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority, int maxRetries = 0)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"chat-completion-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: maxRetries);
+        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+    }
 
     private static object ChatBody(string model) => new { model, messages = new[] { new { role = "user", content = "hi" } } };
 

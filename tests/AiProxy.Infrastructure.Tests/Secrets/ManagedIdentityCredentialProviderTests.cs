@@ -13,7 +13,7 @@ public class ManagedIdentityCredentialProviderTests
         string? scope = "https://cognitiveservices.azure.com/.default",
         string? tenantId = null) =>
         Endpoint.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
             AuthMode.ManagedIdentity, managedIdentityScope: scope, managedIdentityTenantId: tenantId);
 
     [Fact]

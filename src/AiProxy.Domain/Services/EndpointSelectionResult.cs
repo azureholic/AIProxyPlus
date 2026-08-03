@@ -6,17 +6,17 @@ namespace AiProxy.Domain.Services;
 public sealed class EndpointSelectionResult
 {
     public bool IsSuccess { get; }
-    public Endpoint? SelectedEndpoint { get; }
+    public ModelDeploymentEndpoint? SelectedEndpoint { get; }
     public string? FailureReason { get; }
 
-    private EndpointSelectionResult(bool isSuccess, Endpoint? selectedEndpoint, string? failureReason)
+    private EndpointSelectionResult(bool isSuccess, ModelDeploymentEndpoint? selectedEndpoint, string? failureReason)
     {
         IsSuccess = isSuccess;
         SelectedEndpoint = selectedEndpoint;
         FailureReason = failureReason;
     }
 
-    public static EndpointSelectionResult Success(Endpoint endpoint) => new(true, endpoint, null);
+    public static EndpointSelectionResult Success(ModelDeploymentEndpoint endpoint) => new(true, endpoint, null);
 
     public static EndpointSelectionResult Failure(string reason) => new(false, null, reason);
 }

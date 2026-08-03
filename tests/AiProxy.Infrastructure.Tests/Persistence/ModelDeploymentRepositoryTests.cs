@@ -12,10 +12,12 @@ public class ModelDeploymentRepositoryTests(PostgresContainerFixture fixture)
     private static ModelDeployment NewDeployment(string? name = null) =>
         ModelDeployment.Create(Guid.NewGuid(), name ?? $"gpt-4o-{Guid.NewGuid():N}");
 
-    private static Endpoint NewEndpoint(Guid modelDeploymentId, int priority = 1) =>
-        Endpoint.Create(
-            Guid.NewGuid(), modelDeploymentId, "https://api.openai.com", ApiFamily.OpenAI, priority,
-            AuthMode.ApiKey, secretRef: $"endpoints/{Guid.NewGuid()}");
+    private static ModelDeploymentEndpoint NewEndpoint(Guid modelDeploymentId, int priority = 1) =>
+        ModelDeploymentEndpoint.Create(
+            modelDeploymentId,
+            Endpoint.Create(Guid.NewGuid(), $"OpenAI {Guid.NewGuid():N}", "https://api.openai.com",
+                ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: $"endpoints/{Guid.NewGuid()}"),
+            priority);
 
     [Fact]
     public async Task AddAsync_Then_GetByNameAsync_RoundTripsDeploymentWithEndpoints()
@@ -106,7 +108,7 @@ public class ModelDeploymentRepositoryTests(PostgresContainerFixture fixture)
     }
 
     [Fact]
-    public async Task DeleteAsync_CascadesToEndpoints()
+    public async Task DeleteAsync_CascadesAssignmentsAndPreservesReusableEndpoint()
     {
         await using var writeContext = fixture.CreateDbContext();
         var repository = new ModelDeploymentRepository(writeContext);
@@ -119,7 +121,8 @@ public class ModelDeploymentRepositoryTests(PostgresContainerFixture fixture)
 
         await using var readContext = fixture.CreateDbContext();
         (await new ModelDeploymentRepository(readContext).GetByNameAsync(deployment.Name)).Should().BeNull();
-        (await readContext.Set<Endpoint>().AnyAsync(e => e.Id == endpoint.Id)).Should().BeFalse();
+        (await readContext.Set<Endpoint>().AnyAsync(e => e.Id == endpoint.Id)).Should().BeTrue();
+        (await readContext.Set<ModelDeploymentEndpoint>().AnyAsync(e => e.EndpointId == endpoint.Id)).Should().BeFalse();
     }
 
     [Fact]

@@ -23,8 +23,8 @@ public class RemoveEndpointTests
     {
         var deployment = ModelDeployment.Create(Guid.NewGuid(), "gpt-4o-prod");
         var endpoint = Endpoint.Create(
-            Guid.NewGuid(), deployment.Id, "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, secretRef: "x");
-        deployment.AddEndpoint(endpoint);
+            Guid.NewGuid(), "OpenAI primary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey, secretRef: "x");
+        deployment.AddEndpoint(ModelDeploymentEndpoint.Create(deployment.Id, endpoint, 1));
         _repository.GetByNameAsync(deployment.Name, Arg.Any<CancellationToken>()).Returns(deployment);
 
         await _handler.HandleAsync(new RemoveEndpointCommand(deployment.Name, endpoint.Id));

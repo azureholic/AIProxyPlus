@@ -30,7 +30,7 @@ it is not tied to Azure:
 | 5 | OpenTelemetry (traces, logs, metrics) | OTLP exporter → Aspire dashboard locally, OTLP collector in prod |
 | 6 | Configuration | see §7 |
 | 6.1 | Model-deployment name | `ModelDeployment.Name` (routing key) |
-| 6.2 | 1+ endpoints, priority + failover | `Endpoint.Priority`, `EndpointSelector` (Domain): lowest-priority tier first, round-robin across endpoints that share a priority, failover on `429`/`5xx` (Iteration 2) |
+| 6.2 | 1+ endpoints, priority + failover | `ModelDeploymentEndpoint.Priority`, `EndpointSelector` (Domain): lowest-priority tier first, round-robin across assignments that share a priority, failover on `429`/`5xx` (Iteration 2) |
 | 6.3 | Sticky sessions for stateful calls | **Automatic, protocol-inherent affinity only** — no config flag (Iteration 2). Responses API: `previous_response_id`-keyed affinity (`ISessionAffinityStore`, persisted in Postgres). Realtime API: the WebSocket connection itself is the affinity (§6.5/§9) |
 | 6.4 | API key vs Managed Identity per endpoint | `Endpoint.AuthMode` + `ICredentialProvider` strategy |
 | 6.5 | Configuration REST API | `/api/v1/config/*` CRUD endpoints, incl. `Consumer` (API key) management |
@@ -89,13 +89,16 @@ ai-proxy/
 
 ### Layer responsibilities
 
-- **Domain** — `ModelDeployment`, `Endpoint`, `UsageRecord`, `SessionAffinityEntry`, `Consumer`, value objects
+- **Domain** — `ModelDeployment`, `Endpoint`, `ModelDeploymentEndpoint`, `UsageRecord`, `SessionAffinityEntry`,
+  `Consumer`, value objects
   (`ApiFamily`, `AuthMode`, `RoutingStrategy`, `OperationType` — ChatCompletion, Completion, Embedding,
   ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, `RealtimeVoice` (Iteration 2), extensible to more),
   `EndpointSelector` (the priority + round-robin selection algorithm — Iteration 2 rework, see §9), domain
   invariants (a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at least
-  one usage signal — tokens or `UsageMetrics` — must be present). Endpoints on the same deployment sharing a
-  `Priority` is intentional (they round-robin together, Iteration 2) rather than a constraint violation. A
+  one usage signal — tokens or `UsageMetrics` — must be present). `Endpoint` is a reusable aggregate containing
+  target and credential configuration. `ModelDeploymentEndpoint` assigns one endpoint to a deployment and owns
+  routing-specific priority, enabled state, and health. Assignments on the same deployment sharing a `Priority`
+  intentionally round-robin together (Iteration 2) rather than violating a constraint. A
   deployment with zero or no *enabled* endpoints is a valid domain state (`ModelDeployment.HasUsableEndpoint`
   reports it) — routing simply fails with `NoHealthyEndpoint` for it at request time; it's not a
   constructor-enforced invariant.
@@ -187,7 +190,8 @@ exists for future use, but no `IUsageExtractor` reads a Realtime session yet).
 | Table | Purpose | Key columns |
 |---|---|---|
 | `model_deployments` | Routing key + policy | `id`, `name` (unique), `strategy` |
-| `endpoints` | Backend targets per deployment | `id`, `model_deployment_id`, `base_url`, `api_family`, `priority`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `enabled` |
+| `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `api_family`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries` |
+| `model_deployment_endpoints` | Deployment-to-endpoint routing assignments | `model_deployment_id`, `endpoint_id`, `priority`, `enabled`, `health` |
 | `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), `api_key_hash`, `enabled`, `created_at`, `revoked_at` |
 | `usage_records` | Usage log (append-only) | `id`, `timestamp`, `model_deployment_name`, `consumer_id`, `consumer_name`, `endpoint_id`, `operation_type`, `prompt_tokens?`, `completion_tokens?`, `total_tokens?`, `usage_metrics` (jsonb), `streaming`, `status_code`, `duration_ms` |
 | `session_affinity` | Sticky session map | `session_id`, `model_deployment_id`, `endpoint_id`, `expires_at` |
@@ -217,11 +221,16 @@ schema migration.
 | GET | `/api/v1/config/model-deployments/{name}` | Get one deployment |
 | POST | `/api/v1/config/model-deployments` | Create deployment |
 | PUT | `/api/v1/config/model-deployments/{name}` | Update deployment (policy fields) |
-| DELETE | `/api/v1/config/model-deployments/{name}` | Delete deployment (cascades endpoints) |
-| POST | `/api/v1/config/model-deployments/{name}/endpoints` | Add endpoint |
-| PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Update endpoint base URL, managed-identity scope/tenant ID, priority, enabled state, timeout, and retries |
-| DELETE | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Remove endpoint |
-| PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}/secret` | Set/replace the API key (writes to Vault, never returned by GET) |
+| DELETE | `/api/v1/config/model-deployments/{name}` | Delete deployment (cascades assignments, not reusable endpoints) |
+| POST | `/api/v1/config/model-deployments/{name}/endpoints` | Assign an existing endpoint with priority and enabled state |
+| PUT | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Update assignment priority and enabled state |
+| DELETE | `/api/v1/config/model-deployments/{name}/endpoints/{id}` | Remove an endpoint assignment |
+| GET | `/api/v1/config/endpoints` | List reusable endpoints |
+| GET | `/api/v1/config/endpoints/{id}` | Get one reusable endpoint |
+| POST | `/api/v1/config/endpoints` | Create a reusable endpoint; API-key plaintext is written to Vault |
+| PUT | `/api/v1/config/endpoints/{id}` | Update reusable target/auth configuration |
+| DELETE | `/api/v1/config/endpoints/{id}` | Delete an unassigned endpoint; returns conflict while assigned |
+| PUT | `/api/v1/config/endpoints/{id}/secret` | Set/replace the API key (writes to Vault, never returned by GET) |
 | GET | `/api/v1/config/consumers` | List consumers (name, enabled, created/revoked — never the key or its hash) |
 | POST | `/api/v1/config/consumers` | Create a consumer; response includes the **plaintext API key exactly once** — only its hash is persisted |
 | PUT | `/api/v1/config/consumers/{name}/rotate` | Rotate a consumer's API key; returns the new plaintext key once, invalidates the old one |
@@ -287,7 +296,7 @@ with a well-known root token confined to the dev environment is acceptable.
   this is the one place the proxy must buffer the body, and it's covered by a dedicated integration test. The
   same `model`-field peek covers every OpenAI-compatible operation type (chat completions, completions,
   embeddings, images) since they all carry a `model` field — no per-operation-type routing logic is needed.
-- **Priority + round-robin (Iteration 2)**: endpoints are grouped by `Endpoint.Priority`; `EndpointSelector`
+- **Priority + round-robin (Iteration 2)**: assigned endpoints are grouped by `ModelDeploymentEndpoint.Priority`; `EndpointSelector`
   (Domain) narrows to the healthy/enabled candidates, picks the **lowest surviving priority number**, and, if
   more than one endpoint shares that priority, **round-robins** across them using a per-request counter
   (`IEndpointRoundRobinCounter`, snapshotted once per incoming request/connection so a single request's
@@ -632,6 +641,10 @@ Voice) for exercising the ingress routes manually, and a Usage dashboard — ser
 as the API. No new backend endpoints; the frontend is just another consumer of the surface described in
 §7.2/§12, with two narrow, necessary exceptions (the SPA fallback route itself, and the Realtime route's
 query-param auth fallback — both called out below).
+
+The Endpoints config page owns reusable backend target configuration. Model Deployment detail pages only assign
+an existing endpoint and configure deployment-specific priority and enabled state; they never duplicate target
+URLs, authentication mode, credentials, timeouts, or retry settings.
 
 ### 19.1 Stack
 

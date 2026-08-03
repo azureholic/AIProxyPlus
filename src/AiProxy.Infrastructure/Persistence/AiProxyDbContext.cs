@@ -7,6 +7,10 @@ public sealed class AiProxyDbContext(DbContextOptions<AiProxyDbContext> options)
 {
     public DbSet<ModelDeployment> ModelDeployments => Set<ModelDeployment>();
 
+    public DbSet<Endpoint> Endpoints => Set<Endpoint>();
+
+    public DbSet<ModelDeploymentEndpoint> ModelDeploymentEndpoints => Set<ModelDeploymentEndpoint>();
+
     public DbSet<Consumer> Consumers => Set<Consumer>();
 
     public DbSet<UsageRecord> UsageRecords => Set<UsageRecord>();

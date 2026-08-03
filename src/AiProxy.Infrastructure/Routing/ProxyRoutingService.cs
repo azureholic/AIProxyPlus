@@ -107,7 +107,8 @@ public sealed class ProxyRoutingService(
                 return new RoutingFailure(reason, selection.FailureReason!, firstFailureSnapshot);
             }
 
-            var endpoint = selection.SelectedEndpoint!;
+            var assignment = selection.SelectedEndpoint!;
+            var endpoint = assignment.Endpoint;
 
             if (previouslyFailedEndpoint is not null && previouslyFailedEndpoint.Id != endpoint.Id)
             {

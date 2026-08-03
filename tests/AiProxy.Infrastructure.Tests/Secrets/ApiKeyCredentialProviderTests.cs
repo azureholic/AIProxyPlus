@@ -12,7 +12,7 @@ public class ApiKeyCredentialProviderTests
 {
     private static Endpoint NewEndpoint(ApiFamily apiFamily, string? secretRef = "endpoints/abc") =>
         Endpoint.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "https://api.example.com", apiFamily, 1, AuthMode.ApiKey, secretRef: secretRef);
+            Guid.NewGuid(), "API endpoint", "https://api.example.com", apiFamily, AuthMode.ApiKey, secretRef: secretRef);
 
     [Theory]
     [InlineData(ApiFamily.OpenAI, "Authorization", "Bearer sk-abc")]

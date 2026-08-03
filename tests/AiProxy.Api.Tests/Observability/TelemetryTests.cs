@@ -36,14 +36,21 @@ public class TelemetryTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
+    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl, int priority)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"telemetry-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
+            secretRef: "endpoints/x", maxRetries: 0);
+        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority, enabled: true);
+    }
+
     [Fact]
     public async Task SuccessfulRequest_EmitsExpectedActivitiesAndMetrics()
     {
         var deploymentName = $"gpt-4o-{Guid.NewGuid():N}";
         var deployment = ModelDeployment.Create(Guid.NewGuid(), deploymentName);
-        deployment.AddEndpoint(Domain.Entities.Endpoint.Create(
-            Guid.NewGuid(), deployment.Id, _backend.Url!, ApiFamily.OpenAI, priority: 1, AuthMode.ApiKey,
-            secretRef: "endpoints/x", maxRetries: 0));
+        deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!, priority: 1));
         _factory.Deployments.Seed(deployment);
 
         _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
@@ -95,12 +102,8 @@ public class TelemetryTests : IAsyncLifetime, IDisposable
         var backend2 = WireMockServer.Start();
         try
         {
-            deployment.AddEndpoint(Domain.Entities.Endpoint.Create(
-                Guid.NewGuid(), deployment.Id, _backend.Url!, ApiFamily.OpenAI, priority: 1, AuthMode.ApiKey,
-                secretRef: "endpoints/x", maxRetries: 0));
-            deployment.AddEndpoint(Domain.Entities.Endpoint.Create(
-                Guid.NewGuid(), deployment.Id, backend2.Url!, ApiFamily.OpenAI, priority: 2, AuthMode.ApiKey,
-                secretRef: "endpoints/x", maxRetries: 0));
+            deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, _backend.Url!, priority: 1));
+            deployment.AddEndpoint(NewApiKeyEndpoint(deployment.Id, backend2.Url!, priority: 2));
             _factory.Deployments.Seed(deployment);
 
             _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())

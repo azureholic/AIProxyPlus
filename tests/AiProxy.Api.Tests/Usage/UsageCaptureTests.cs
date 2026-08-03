@@ -29,15 +29,23 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static Domain.Entities.Endpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl) =>
-        Domain.Entities.Endpoint.Create(
-            Guid.NewGuid(), deploymentId, baseUrl, ApiFamily.OpenAI, priority: 1, AuthMode.ApiKey,
+    private static ModelDeploymentEndpoint NewApiKeyEndpoint(Guid deploymentId, string baseUrl)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"usage-capture-openai-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
+        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority: 1, enabled: true);
+    }
 
-    private static Domain.Entities.Endpoint NewAnthropicEndpoint(Guid deploymentId, string baseUrl) =>
-        Domain.Entities.Endpoint.Create(
-            Guid.NewGuid(), deploymentId, baseUrl, ApiFamily.Anthropic, priority: 1, AuthMode.ApiKey,
+    private static ModelDeploymentEndpoint NewAnthropicEndpoint(Guid deploymentId, string baseUrl)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"usage-capture-anthropic-test-endpoint-{endpointId:N}", baseUrl, ApiFamily.Anthropic, AuthMode.ApiKey,
             secretRef: "endpoints/x", maxRetries: 0);
+        return ModelDeploymentEndpoint.Create(deploymentId, endpoint, priority: 1, enabled: true);
+    }
 
     private static HttpRequestMessage BuildRequest(string path, object body) =>
         new(HttpMethod.Post, path) { Content = JsonContent.Create(body) };

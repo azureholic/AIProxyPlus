@@ -13,12 +13,12 @@ public class CredentialProviderTests
 {
     private static Endpoint ApiKeyEndpoint() =>
         Endpoint.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey,
+            Guid.NewGuid(), "OpenAI", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey,
             secretRef: "endpoints/abc");
 
     private static Endpoint ManagedIdentityEndpoint() =>
         Endpoint.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "https://foundry.example.com", ApiFamily.AzureOpenAI, 1,
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", ApiFamily.AzureOpenAI,
             AuthMode.ManagedIdentity, managedIdentityScope: "scope");
 
     private static CredentialProvider CreateSut(out ISecretResolver secretResolver, out TokenCredential tokenCredential)

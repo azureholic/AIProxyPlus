@@ -22,6 +22,8 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public FakeModelDeploymentRepository Deployments { get; } = new();
 
+    public FakeEndpointRepository Endpoints { get; }
+
     public FakeSessionAffinityStore Affinity { get; } = new();
 
     public FakeUsageRecordRepository UsageRecords { get; } = new();
@@ -36,6 +38,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public ApiTestFactory()
     {
+        Endpoints = new FakeEndpointRepository(Deployments);
         Secrets.Seed("consumer-key-pepper", TestPepper);
         Secrets.Seed("admin-api-key-hash", AdminApiKeyAuthenticator.Hash(AdminApiKey));
 
@@ -52,6 +55,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IModelDeploymentRepository>(Deployments);
+            services.AddSingleton<IEndpointRepository>(Endpoints);
             services.AddSingleton<ISessionAffinityStore>(Affinity);
             services.AddSingleton<ICredentialProvider, FakeCredentialProvider>();
             services.AddSingleton<IUsageRecordRepository>(UsageRecords);

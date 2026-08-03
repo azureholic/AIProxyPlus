@@ -4,7 +4,6 @@ using AiProxy.Application.ModelDeployments;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
 using FluentAssertions;
-using FluentValidation;
 using NSubstitute;
 
 namespace AiProxy.Application.Tests.ModelDeployments;
@@ -12,12 +11,12 @@ namespace AiProxy.Application.Tests.ModelDeployments;
 public class AddEndpointTests
 {
     private readonly IModelDeploymentRepository _repository = Substitute.For<IModelDeploymentRepository>();
-    private readonly ISecretResolver _secretResolver = Substitute.For<ISecretResolver>();
+    private readonly IEndpointRepository _endpointRepository = Substitute.For<IEndpointRepository>();
     private readonly AddEndpointHandler _handler;
 
     public AddEndpointTests()
     {
-        _handler = new AddEndpointHandler(_repository, _secretResolver, new AddEndpointValidator());
+        _handler = new AddEndpointHandler(_repository, _endpointRepository, new AddEndpointValidator());
     }
 
     private ModelDeployment GivenDeployment(string name = "gpt-4o-prod")
@@ -28,51 +27,20 @@ public class AddEndpointTests
     }
 
     [Fact]
-    public async Task HandleAsync_WithApiKeyAuth_StoresSecretAndAddsEndpoint()
+    public async Task HandleAsync_WithReusableEndpoint_AddsAssignment()
     {
         var deployment = GivenDeployment();
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), "OpenAI primary", "https://api.openai.com", ApiFamily.OpenAI, AuthMode.ApiKey,
+            secretRef: "endpoints/abc");
+        _endpointRepository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
 
-        var endpoint = await _handler.HandleAsync(new AddEndpointCommand(
-            deployment.Name, "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, ApiKeyPlaintext: "sk-abc"));
+        var assignment = await _handler.HandleAsync(new AddEndpointCommand(deployment.Name, endpoint.Id, 1));
 
-        endpoint.SecretRef.Should().Be($"endpoints/{endpoint.Id}");
-        await _secretResolver.Received(1).StoreAsync(endpoint.SecretRef!, "sk-abc", Arg.Any<CancellationToken>());
+        assignment.Endpoint.Should().BeSameAs(endpoint);
+        assignment.Priority.Should().Be(1);
         deployment.Endpoints.Should().ContainSingle(e => e.Id == endpoint.Id);
-    }
-
-    [Fact]
-    public async Task HandleAsync_WithManagedIdentityAuth_DoesNotTouchSecretResolver()
-    {
-        GivenDeployment();
-
-        var endpoint = await _handler.HandleAsync(new AddEndpointCommand(
-            "gpt-4o-prod", "https://foundry.example.com", ApiFamily.AzureOpenAI, 1, AuthMode.ManagedIdentity,
-            ManagedIdentityScope: "https://cognitiveservices.azure.com/.default"));
-
-        endpoint.SecretRef.Should().BeNull();
-        await _secretResolver.DidNotReceiveWithAnyArgs().StoreAsync(default!, default!, default);
-    }
-
-    [Fact]
-    public async Task HandleAsync_WithHttpNonLocalhostUrl_ThrowsValidationException()
-    {
-        GivenDeployment();
-
-        var act = () => _handler.HandleAsync(new AddEndpointCommand(
-            "gpt-4o-prod", "http://example.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, ApiKeyPlaintext: "sk-abc"));
-
-        await act.Should().ThrowAsync<ValidationException>();
-    }
-
-    [Fact]
-    public async Task HandleAsync_WithApiKeyAuthAndNoPlaintext_ThrowsValidationException()
-    {
-        GivenDeployment();
-
-        var act = () => _handler.HandleAsync(new AddEndpointCommand(
-            "gpt-4o-prod", "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey));
-
-        await act.Should().ThrowAsync<ValidationException>();
+        await _repository.Received(1).UpdateAsync(deployment, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -80,23 +48,20 @@ public class AddEndpointTests
     {
         _repository.GetByNameAsync("missing", Arg.Any<CancellationToken>()).Returns((ModelDeployment?)null);
 
-        var act = () => _handler.HandleAsync(new AddEndpointCommand(
-            "missing", "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, ApiKeyPlaintext: "sk-abc"));
+        var act = () => _handler.HandleAsync(new AddEndpointCommand("missing", Guid.NewGuid(), 1));
 
         await act.Should().ThrowAsync<NotFoundException>();
     }
 
     [Fact]
-    public async Task HandleAsync_WithDuplicatePriority_IsAllowed_ForRoundRobin()
+    public async Task HandleAsync_WithUnknownEndpoint_ThrowsNotFoundException()
     {
         var deployment = GivenDeployment();
-        deployment.AddEndpoint(Endpoint.Create(
-            Guid.NewGuid(), deployment.Id, "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, secretRef: "x"));
+        var endpointId = Guid.NewGuid();
+        _endpointRepository.GetByIdAsync(endpointId, Arg.Any<CancellationToken>()).Returns((Endpoint?)null);
 
-        var endpoint = await _handler.HandleAsync(new AddEndpointCommand(
-            deployment.Name, "https://api.openai.com", ApiFamily.OpenAI, 1, AuthMode.ApiKey, ApiKeyPlaintext: "sk-abc"));
+        var act = () => _handler.HandleAsync(new AddEndpointCommand(deployment.Name, endpointId, 1));
 
-        endpoint.Priority.Should().Be(1);
-        deployment.Endpoints.Should().HaveCount(2);
+        await act.Should().ThrowAsync<NotFoundException>();
     }
 }

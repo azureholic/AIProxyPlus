@@ -1,5 +1,5 @@
 import { adminJson } from './client';
-import type { ApiFamily, AuthMode, ModelDeployment, RoutingStrategy } from './types';
+import type { ModelDeployment, RoutingStrategy } from './types';
 
 export function listModelDeployments(): Promise<ModelDeployment[]> {
   return adminJson('/api/v1/config/model-deployments');
@@ -28,16 +28,9 @@ export function deleteModelDeployment(name: string): Promise<void> {
 }
 
 export interface AddEndpointInput {
-  baseUrl: string;
-  apiFamily: ApiFamily;
+  endpointId: string;
   priority: number;
-  authMode: AuthMode;
-  apiKeyPlaintext?: string;
-  managedIdentityScope?: string;
-  managedIdentityTenantId?: string;
   enabled: boolean;
-  timeoutSeconds: number;
-  maxRetries: number;
 }
 
 export function addEndpoint(deploymentName: string, input: AddEndpointInput): Promise<ModelDeployment['endpoints'][number]> {
@@ -48,13 +41,8 @@ export function addEndpoint(deploymentName: string, input: AddEndpointInput): Pr
 }
 
 export interface UpdateEndpointInput {
-  baseUrl?: string;
-  managedIdentityScope?: string;
-  managedIdentityTenantId?: string;
   priority?: number;
   enabled?: boolean;
-  timeoutSeconds?: number;
-  maxRetries?: number;
 }
 
 export function updateEndpoint(
@@ -71,12 +59,5 @@ export function updateEndpoint(
 export function removeEndpoint(deploymentName: string, endpointId: string): Promise<void> {
   return adminJson(`/api/v1/config/model-deployments/${encodeURIComponent(deploymentName)}/endpoints/${endpointId}`, {
     method: 'DELETE',
-  });
-}
-
-export function setEndpointSecret(deploymentName: string, endpointId: string, apiKeyPlaintext: string): Promise<void> {
-  return adminJson(`/api/v1/config/model-deployments/${encodeURIComponent(deploymentName)}/endpoints/${endpointId}/secret`, {
-    method: 'PUT',
-    body: JSON.stringify({ apiKeyPlaintext }),
   });
 }
