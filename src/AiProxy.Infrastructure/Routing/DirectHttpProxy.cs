@@ -19,7 +19,12 @@ internal static class DirectHttpProxy
     private static readonly HashSet<string> HopByHopRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         "Connection", "Keep-Alive", "Transfer-Encoding", "TE", "Trailer", "Upgrade", "Proxy-Authorization",
-        "Proxy-Connection", "Host", "Content-Length", "Content-Type", "X-Api-Key",
+        "Proxy-Connection", "Host", "Content-Length", "Content-Type",
+    };
+
+    private static readonly HashSet<string> ProxyLocalRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Cookie", "Origin", "Referer", "X-Api-Key", "X-Admin-Api-Key", "X-CSRF-TOKEN", "Forwarded",
     };
 
     private static readonly HashSet<string> HopByHopResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
@@ -42,7 +47,7 @@ internal static class DirectHttpProxy
 
         foreach (var header in httpContext.Request.Headers)
         {
-            if (HopByHopRequestHeaders.Contains(header.Key) || string.Equals(header.Key, credential.HeaderName, StringComparison.OrdinalIgnoreCase))
+            if (ShouldExcludeRequestHeader(header.Key, credential.HeaderName))
             {
                 continue;
             }
@@ -54,6 +59,13 @@ internal static class DirectHttpProxy
         request.Headers.TryAddWithoutValidation(credential.HeaderName, credential.HeaderValue);
         return request;
     }
+
+    private static bool ShouldExcludeRequestHeader(string headerName, string credentialHeaderName) =>
+        HopByHopRequestHeaders.Contains(headerName) ||
+        ProxyLocalRequestHeaders.Contains(headerName) ||
+        string.Equals(headerName, credentialHeaderName, StringComparison.OrdinalIgnoreCase) ||
+        headerName.StartsWith("Sec-Fetch-", StringComparison.OrdinalIgnoreCase) ||
+        headerName.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Streams a non-buffered upstream response straight through to the client.</summary>
     public static async Task CopyResponseAsync(HttpResponseMessage response, HttpContext httpContext, CancellationToken cancellationToken)

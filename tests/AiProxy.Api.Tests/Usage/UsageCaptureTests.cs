@@ -225,6 +225,49 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task AnthropicMessages_WithBrowserSecurityHeaders_DoesNotForwardProxyLocalHeaders()
+    {
+        var modelName = $"claude-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewAnthropicEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
+
+        _backend.Given(Request.Create().WithPath("/anthropic/v1/messages").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new
+            {
+                content = Array.Empty<object>(),
+                usage = new { input_tokens = 1, output_tokens = 0 },
+            }));
+
+        using var request = BuildRequest(
+            "/anthropic/v1/messages",
+            new { model = modelName, max_tokens = 1, messages = new[] { new { role = "user", content = "hi" } } });
+        request.Headers.Add("anthropic-version", "2023-06-01");
+        request.Headers.Add("Origin", "https://localhost:7194");
+        request.Headers.Add("Referer", "https://localhost:7194/playground/chat");
+        request.Headers.Add("Cookie", ".AspNetCore.Cookies=session-value");
+        request.Headers.Add("X-CSRF-TOKEN", "antiforgery-value");
+        request.Headers.Add("Sec-Fetch-Site", "same-origin");
+        request.Headers.Add("X-Forwarded-Host", "localhost:7194");
+
+        var response = await _factory.CreateClient().SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var receivedRequest = _backend.LogEntries.Should().ContainSingle().Which.RequestMessage;
+        receivedRequest.Should().NotBeNull();
+        var receivedHeaders = receivedRequest!.Headers;
+        receivedHeaders.Should().ContainKey("anthropic-version").WhoseValue.Should().Contain("2023-06-01");
+        receivedHeaders.Should().ContainKey("Authorization").WhoseValue.Should().Contain("Bearer test-token");
+        receivedHeaders.Should().NotContainKey("Origin");
+        receivedHeaders.Should().NotContainKey("Referer");
+        receivedHeaders.Should().NotContainKey("Cookie");
+        receivedHeaders.Should().NotContainKey("X-CSRF-TOKEN");
+        receivedHeaders.Should().NotContainKey("Sec-Fetch-Site");
+        receivedHeaders.Should().NotContainKey("X-Forwarded-Host");
+        receivedHeaders.Should().NotContainKey("X-Admin-Api-Key");
+    }
+
+    [Fact]
     public async Task ResponseWithNoUsageSignal_SucceedsWithoutCapturingUsageRecord()
     {
         var modelName = $"gpt-4o-{Guid.NewGuid():N}";

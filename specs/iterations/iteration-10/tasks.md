@@ -26,3 +26,16 @@ provider retained the previous Vault value in its five-minute memory cache after
 - [x] Add an Application cache-invalidation port and invoke it only after a successful endpoint secret write.
 - [x] Implement invalidation in the Infrastructure credential provider while preserving normal short-TTL caching.
 - [x] Add focused Application and Infrastructure regression tests for immediate key rotation.
+
+## Bug 3 — Browser headers make native Anthropic reject proxied requests
+
+The native Anthropic request still returned `401` after restarting with the current Vault credential. Replaying the
+same successful direct request with browser header groups proved that `Origin` changes Anthropic's response to
+`401 CORS requests must set 'anthropic-dangerous-direct-browser-access' header`. The proxy also forwarded session,
+antiforgery, and reverse-proxy context that must remain inside its security boundary.
+
+- [x] Compare the exact configured Vault credential and route with a direct Anthropic request; it returned `200`.
+- [x] Isolate forwarded browser header groups and prove that `Origin` causes Anthropic's CORS rejection.
+- [x] Strip proxy-local browser, ingress credential, antiforgery, Fetch Metadata, and reverse-proxy headers upstream.
+- [x] Preserve provider protocol headers, content headers/body, and endpoint credential replacement.
+- [x] Add API-to-WireMock regression coverage for the outbound header boundary.
