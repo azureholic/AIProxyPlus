@@ -319,7 +319,7 @@ ingress.MapPost("/openai/v1/audio/transcriptions", (HttpContext ctx, ProxyRoutin
 ingress.MapPost("/openai/v1/audio/speech", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.TextToSpeech, ct));
 ingress.MapPost("/anthropic/v1/messages", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
-    RouteOrFailAsync(ctx, router, OperationType.ChatCompletion, ct));
+    RouteOrFailAsync(ctx, router, OperationType.MessagesApi, ct));
 ingress.MapGet("/openai/v1/realtime", async (HttpContext ctx, RealtimeProxyService router, CancellationToken ct) =>
 {
     var failure = await router.ProxyAsync(ctx, ct);

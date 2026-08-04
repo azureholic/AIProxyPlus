@@ -33,11 +33,21 @@ public class UsageExtractorResolverTests
     public void Resolve_WithSameOperationTypeButDifferentApiFamily_PicksCorrectOne()
     {
         var openAiExtractor = FakeExtractor(Provider.OpenAI, OperationType.ChatCompletion);
-        var anthropicExtractor = FakeExtractor(Provider.Anthropic, OperationType.ChatCompletion);
+        var microsoftAiExtractor = FakeExtractor(Provider.MicrosoftAI, OperationType.ChatCompletion);
+        var resolver = new UsageExtractorResolver([openAiExtractor, microsoftAiExtractor]);
+
+        resolver.Resolve(Provider.MicrosoftAI, OperationType.ChatCompletion).Should().Be(microsoftAiExtractor);
+        resolver.Resolve(Provider.OpenAI, OperationType.ChatCompletion).Should().Be(openAiExtractor);
+    }
+
+    [Fact]
+    public void Resolve_ForAnthropicMessagesApi_ReturnsRegisteredExtractor()
+    {
+        var openAiExtractor = FakeExtractor(Provider.OpenAI, OperationType.ChatCompletion);
+        var anthropicExtractor = FakeExtractor(Provider.Anthropic, OperationType.MessagesApi);
         var resolver = new UsageExtractorResolver([openAiExtractor, anthropicExtractor]);
 
-        resolver.Resolve(Provider.Anthropic, OperationType.ChatCompletion).Should().Be(anthropicExtractor);
-        resolver.Resolve(Provider.OpenAI, OperationType.ChatCompletion).Should().Be(openAiExtractor);
+        resolver.Resolve(Provider.Anthropic, OperationType.MessagesApi).Should().Be(anthropicExtractor);
     }
 
     [Fact]

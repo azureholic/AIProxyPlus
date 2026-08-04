@@ -61,6 +61,49 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
     }
 
     [Fact]
+    public async Task ReclassifyAnthropicMessagesApiUsageMigration_BackfillsHistoricalRecords()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync();
+        try
+        {
+            await using var dbContext = PostgresContainerFixture.CreateDbContext(connectionString);
+            var migrator = dbContext.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260804100338_RenameFoundryProviderRoutes");
+
+            var recordId = Guid.NewGuid();
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                """
+                INSERT INTO usage_records (
+                    "Id", "Timestamp", "ModelName", "ConsumerId", "ConsumerName", "EndpointId", "Provider",
+                    "OperationType", "RequestId", "Streaming", "HttpStatusCode", "DurationMs")
+                VALUES (
+                    @recordId, NOW(), 'claude-haiku-4-5', @consumerId, 'legacy-consumer', @endpointId, 'Anthropic',
+                    'ChatCompletion', 'legacy-anthropic-request', FALSE, 200, 10)
+                """,
+                connection);
+            command.Parameters.AddWithValue("recordId", recordId);
+            command.Parameters.AddWithValue("consumerId", Guid.NewGuid());
+            command.Parameters.AddWithValue("endpointId", Guid.NewGuid());
+            await command.ExecuteNonQueryAsync();
+
+            await migrator.MigrateAsync();
+
+            command.CommandText = "SELECT \"OperationType\" FROM usage_records WHERE \"Id\" = @recordId";
+            (await command.ExecuteScalarAsync()).Should().Be("MessagesApi");
+
+            await migrator.MigrateAsync("20260804100338_RenameFoundryProviderRoutes");
+
+            (await command.ExecuteScalarAsync()).Should().Be("ChatCompletion");
+        }
+        finally
+        {
+            await fixture.DropIsolatedDatabaseAsync(connectionString);
+        }
+    }
+
+    [Fact]
     public async Task NativeAnthropicRouteMigration_PromotesExistingCustomRouteInPlace()
     {
         var connectionString = await fixture.CreateIsolatedDatabaseAsync();

@@ -93,7 +93,8 @@ ai-proxy/
   `Consumer`, value objects
   (`Provider`, `AuthMode`, `RoutingStrategy`, `ModelCapability` — Chat, ImageGeneration, Realtime,
   SpeechToText, TextToSpeech; `OperationType` — ChatCompletion, Completion, Embedding, ImageGeneration,
-  ImageEdit, ImageVariation, ResponsesApi, `RealtimeVoice` (Iteration 2), SpeechToText, TextToSpeech),
+  ImageEdit, ImageVariation, ResponsesApi, `MessagesApi` (Anthropic's native Messages API, distinct from
+  OpenAI-style ChatCompletion), `RealtimeVoice` (Iteration 2), SpeechToText, TextToSpeech),
   `EndpointSelector` (the priority + round-robin selection algorithm — Iteration 2 rework, see §9), domain
   invariants (a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at least
   one usage signal — tokens or `UsageMetrics` — must be present). `Endpoint` is a reusable aggregate containing
@@ -357,8 +358,8 @@ with a well-known root token confined to the dev environment is acceptable.
   `Endpoint.BaseUrl + ApiRoute.PathPrefix + operation suffix + incoming query`, with exactly one slash at each
   boundary. The proxy ingress prefix is never forwarded. OpenAI and Microsoft AI support chat completions,
   completions, embeddings, image generation/edit/variation, and Responses API; OpenAI additionally supports
-  Realtime. Anthropic supports messages through `ChatCompletion` only. Unsupported combinations fail locally
-  with a configuration/routing error before an upstream request is sent.
+  Realtime. Anthropic supports messages through its own `MessagesApi` operation type only. Unsupported
+  combinations fail locally with a configuration/routing error before an upstream request is sent.
 - **Provider adapter boundary (Iteration 7)**: adapters own operation suffixes, API-key header placement
   (`Authorization: Bearer` for OpenAI, `api-key` for Microsoft AI, `x-api-key` for Anthropic), provider-specific
   request mutation, and usage-extractor selection. Managed identity still uses bearer authentication from the
@@ -770,7 +771,8 @@ upstream authentication failures in the Playground as request errors. Chat Playg
 from the chosen model's active highest-priority endpoint assignment: OpenAI-compatible providers use Chat Completions,
 while Anthropic uses native Messages request, response, and streaming semantics. This keeps the protocol passthrough
 boundary in §9 explicit and does not add OpenAI/Anthropic translation to the proxy. OpenAI-compatible models additionally
-offer a Responses API toggle (hidden for Anthropic, which only supports Messages via `ChatCompletion`, §9): each turn
+offer a Responses API toggle (hidden for Anthropic, which only supports Messages via its own `MessagesApi` operation
+type, §9): each turn
 is sent as `{ model, input, stream, previous_response_id? }` — only the new turn, not the full transcript — chaining
 `previous_response_id` from each reply into the next request to exercise the same stateful affinity described in §6.4.
 Switching API mode or model resets the conversation and clears `previous_response_id`, since that id only resolves on

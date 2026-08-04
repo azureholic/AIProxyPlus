@@ -16,6 +16,9 @@ public enum OperationType
     SpeechToText,
     TextToSpeech,
 
+    /// <summary>Anthropic's native Messages API (§9) — distinct from OpenAI-style ChatCompletion passthrough.</summary>
+    MessagesApi,
+
     /// <summary>WebSocket-based realtime/voice API (§9) — connection-scoped affinity, no usage capture yet.</summary>
     RealtimeVoice
 }

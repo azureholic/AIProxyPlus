@@ -29,6 +29,7 @@ const operationTypes: OperationType[] = [
   'ImageEdit',
   'ImageVariation',
   'ResponsesApi',
+  'MessagesApi',
   'RealtimeVoice',
 ];
 

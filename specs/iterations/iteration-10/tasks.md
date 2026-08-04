@@ -119,3 +119,15 @@ default "Chat Completions" value) rendered even with no model selected, implying
 - [x] Add frontend regression coverage for the selector being hidden before any model is selected.
 - [x] Run the complete frontend test suite and production build.
 
+## Feature — Distinguish Anthropic's native Messages API from ChatCompletion
+
+The Usage Dashboard reported native Anthropic Messages requests as `ChatCompletion`, the same operation type as
+OpenAI-style chat completions, making it impossible to tell the two protocols apart from usage data alone.
+
+- [x] Add a dedicated `MessagesApi` operation type instead of reusing `ChatCompletion` for Anthropic.
+- [x] Update the Anthropic usage extractor, upstream route resolver, and `/anthropic/v1/messages` ingress to use it.
+- [x] Add a migration backfilling historical `usage_records` rows from `ChatCompletion` to `MessagesApi` for
+  `Provider = Anthropic`, reversible on `Down`.
+- [x] Update the domain model diagram, architecture docs, and backend/frontend tests for the new operation type.
+- [x] Run the complete backend and frontend test suites and the frontend production build.
+

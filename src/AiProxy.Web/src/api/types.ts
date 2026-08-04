@@ -15,6 +15,7 @@ export type OperationType =
   | 'ImageEdit'
   | 'ImageVariation'
   | 'ResponsesApi'
+  | 'MessagesApi'
   | 'RealtimeVoice'
   | 'SpeechToText'
   | 'TextToSpeech';

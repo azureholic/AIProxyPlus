@@ -29,7 +29,7 @@ public class UpstreamRouteResolverTests
     {
         var assignment = CreateAssignment(Provider.Anthropic, "/anthropic/v1");
 
-        var result = _resolver.ResolveHttp(assignment, OperationType.ChatCompletion, string.Empty);
+        var result = _resolver.ResolveHttp(assignment, OperationType.MessagesApi, string.Empty);
 
         result.Should().Be(new Uri("https://foundry.example.com/anthropic/v1/messages"));
     }

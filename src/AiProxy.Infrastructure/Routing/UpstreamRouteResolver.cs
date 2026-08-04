@@ -29,7 +29,7 @@ public sealed class UpstreamRouteResolver
         (Provider.OpenAI or Provider.MicrosoftAI, OperationType.SpeechToText) => "/audio/transcriptions",
         (Provider.OpenAI or Provider.MicrosoftAI, OperationType.TextToSpeech) => "/audio/speech",
         (Provider.OpenAI, OperationType.RealtimeVoice) => "/realtime",
-        (Provider.Anthropic, OperationType.ChatCompletion) => "/messages",
+        (Provider.Anthropic, OperationType.MessagesApi) => "/messages",
         _ => throw new NotSupportedException($"Provider '{provider}' does not support operation '{operationType}'."),
     };
 

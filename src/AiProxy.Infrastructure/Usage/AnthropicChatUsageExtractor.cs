@@ -14,7 +14,7 @@ public sealed class AnthropicChatUsageExtractor : IUsageExtractor
 {
     public Provider Provider => Provider.Anthropic;
 
-    public OperationType OperationType => OperationType.ChatCompletion;
+    public OperationType OperationType => OperationType.MessagesApi;
 
     public UsageExtractionResult? ExtractFromResponseBody(string responseBodyJson)
     {
