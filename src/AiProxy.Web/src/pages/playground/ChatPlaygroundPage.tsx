@@ -177,7 +177,8 @@ export function ChatPlaygroundPage() {
 
   const isAnthropic = provider === 'Anthropic';
   // Anthropic only supports Messages via ChatCompletion (architecture.md §9) — Responses API isn't offered for it.
-  const isResponsesCapable = !isAnthropic;
+  // Also requires a selected model, since `provider` defaults to 'OpenAI' before any model is chosen.
+  const isResponsesCapable = Boolean(model) && !isAnthropic;
   const isResponses = apiMode === 'ResponsesApi' && isResponsesCapable;
 
   const resetConversation = () => {

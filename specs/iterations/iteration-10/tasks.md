@@ -110,3 +110,12 @@ which was easy to confuse with the Native Anthropic and Native OpenAI routes tha
 - [x] Only rename rows still holding the original default name, preserving any administrator's own rename.
 - [x] Update persistence coverage and documentation for the new built-in names.
 
+## Bug 8 — Responses API selector shows before a model is selected
+
+`provider` defaulted to `'OpenAI'` before any model was chosen, so the Chat Playground's API selector (and its
+default "Chat Completions" value) rendered even with no model selected, implying an OpenAI model was already active.
+
+- [x] Only show the API selector once a model is selected, in addition to the existing Anthropic exclusion.
+- [x] Add frontend regression coverage for the selector being hidden before any model is selected.
+- [x] Run the complete frontend test suite and production build.
+

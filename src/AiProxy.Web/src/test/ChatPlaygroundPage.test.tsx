@@ -125,6 +125,24 @@ describe('ChatPlaygroundPage', () => {
     expect(screen.queryByLabelText('API')).not.toBeInTheDocument();
   });
 
+  it('hides the Responses API selector before any model is selected', async () => {
+    const model = {
+      id: '5',
+      name: 'gpt-4o',
+      strategy: 'Priority',
+      capabilities: ['Chat'],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      endpoints: [],
+    };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(url.includes('models') ? [model] : [])));
+
+    render(<ChatPlaygroundPage />);
+
+    expect(await screen.findByPlaceholderText('Select a model…')).toBeInTheDocument();
+    expect(screen.queryByLabelText('API')).not.toBeInTheDocument();
+  });
+
   it('sends a Responses API request without streaming and chains previous_response_id across turns', async () => {
     const model = {
       id: '4',
