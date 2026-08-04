@@ -41,14 +41,16 @@ it is not tied to Azure:
 
 - Cross-protocol translation (e.g. client speaks OpenAI schema, backend is Anthropic-only). Iteration 1 requires the
   ingress protocol family to match the backend protocol family for a given deployment.
-- Multi-tenant RBAC / OAuth2 for the configuration API (a single admin API key is used as a placeholder).
+- Multi-tenant RBAC / per-user authorization for the configuration API — superseded in part by Iteration 4's OIDC
+  BFF login (§13.1), but every user the configured OIDC client admits is still an administrator; there is no
+  role/group mapping, and this remains a non-goal (see §18).
 - Rate limiting / quota enforcement per client.
 - Response caching / semantic caching.
-- Admin UI (only REST API + OpenAPI).
 - Automatic secret rotation workflows (Vault supports it; wiring it up is future work).
 - Realtime (voice) API — added in Iteration 2 (§6.5/§9); out of scope for Iteration 1.
-- Admin UI — added in Iteration 3 (§19) as a small ops/config frontend; still no end-user-facing UI, and the
-  frontend's own auth remains a `sessionStorage`-based stand-in, not a real login system (§19).
+- Admin UI — added in Iteration 3 (§19) as a small ops/config frontend; still no end-user-facing UI. Its
+  authentication was originally a `sessionStorage`-based stand-in, since superseded by Iteration 4's real OIDC
+  BFF cookie session (§13.1/§19.3) — the frontend no longer touches `sessionStorage` for auth at all.
 
 ## 3. High-Level Architecture
 
@@ -145,6 +147,12 @@ transcription model and a synthesis model are not interchangeable. Persistence u
 `model_capabilities` relation keyed by `(model_id, capability)`. Deleting a model cascades to its capabilities.
 Existing models are backfilled with Chat, ImageGeneration, and Realtime to preserve pre-upgrade Playground
 visibility; speech capabilities always require explicit administrator selection.
+
+The diagram also depicts `RealtimeTicket` (§13.1's single-use WebSocket authentication ticket) for a complete
+entity-relationship view of what's persisted, but it is intentionally an `AiProxy.Infrastructure`-owned
+persistence type (`Infrastructure/Persistence/RealtimeTicket.cs`), not an `AiProxy.Domain` entity — it models a
+security mechanism (a hashed, expiring, single-consumption credential), not a business concept, so it doesn't
+belong to the Domain layer's dependency-free core alongside `Model`/`Endpoint`/`Consumer`/etc.
 
 ## 6. Request Flow
 
@@ -465,7 +473,23 @@ with a well-known root token confined to the dev environment is acceptable.
     single globally-synchronized counter. `IEndpointHealthTracker`'s per-replica view isn't actually consulted
     by `EndpointSelector` for candidate filtering today — the only health signal that drives same-request
     failover is the request-scoped `excludedEndpointIds` set — so replica-local health state has no correctness
-    impact either way; it's tracked for future use (e.g. an admin health-status view), not selection.
+    impact either way.
+    **Risk — endpoint health is currently write-only in two different places, not just deferred:**
+    `IEndpointHealthTracker.MarkHealthy`/`MarkUnhealthy` are called from `ProxyRoutingService`/
+    `RealtimeProxyService`, but `GetHealth` has **zero** call sites anywhere in the codebase — nothing reads
+    this in-memory state back, not even an admin diagnostics view. Separately, `EndpointSelector` *does* filter
+    candidates on the **persisted** `ModelEndpoint.Health` column (`Enums/EndpointHealthState`), but that
+    column's own `MarkUnhealthy()`/`MarkHealthy()` domain methods are likewise only ever invoked from unit
+    tests — no production code path (no admin endpoint, no background health-check job) ever transitions it
+    away from its `Unknown` default. Net effect: the "Health" badge shown on the Models/Endpoints frontend
+    pages is decorative today (it can never become `Healthy`/`Unhealthy` in a running deployment), and
+    persisted-health-based candidate filtering in `EndpointSelector` is currently a no-op in production — the
+    *only* thing that actually prevents retrying a just-failed endpoint is the request-scoped
+    `excludedEndpointIds` set, which resets on every new incoming request (i.e. there is no cross-request
+    circuit breaker yet, despite two separate health-tracking mechanisms existing in the codebase). Either wire
+    up a real health-check/circuit-breaker path that updates one of these (and remove the other to avoid two
+    parallel, unused health concepts), or explicitly document today's per-request-only failover as the accepted
+    behavior and stop implying persistent health tracking exists.
 
   Route selection does not otherwise change retry/failover semantics. Health and same-request exclusion remain
   keyed to the physical endpoint because connectivity and credentials are endpoint concerns; a failed host is not
@@ -564,10 +588,24 @@ with a well-known root token confined to the dev environment is acceptable.
   partially parsed (enough to read `model`/session id) and otherwise streamed through unmodified — the proxy
   does not attempt to fully validate arbitrary upstream API schemas.
 - **Transport security**: TLS to all backends; HSTS + TLS termination in front of the proxy in real deployments.
-- **Dependency hygiene**: Dependabot-equivalent (e.g. `dotnet outdated` / GitHub Dependabot) retained from the
-  original repo's practice.
-- **Least privilege**: Vault AppRole policy scoped only to `secret/data/ai-proxy/*`; Postgres role for the app
-  has no superuser/DDL rights outside of the migration step.
+- **Risk — dependency hygiene is not actually in place, despite claiming to be "retained":** there is no
+  `.github/dependabot.yml`, no CI workflow (`.github/workflows/` doesn't exist), and no scheduled
+  `dotnet outdated`/`npm audit` job in this repository today — dependency updates are ad hoc/manual. This
+  should either be added (Dependabot config for NuGet + npm is the lowest-effort option) or this bullet should
+  stop claiming a practice that isn't in place.
+- **Risk — Postgres least privilege is not actually implemented:** `AiProxy.AppHost` (`builder.AddPostgres(...)`)
+  and `docker-compose.yml` both provision a single Postgres role/credential that runs EF Core migrations
+  (DDL) at startup **and** all runtime application queries — there is no separate, narrower-scoped runtime
+  role created after migrations complete. The connection string and its permissions are identical for both
+  phases. If this matters for the target deployment, add a second, DDL-less role for the running app and have
+  migrations run under the privileged one only at startup/deploy time; otherwise, correct this bullet to
+  describe the current single-role reality.
+- **Least privilege (Vault)**: the AppRole *mechanism* is implemented (`VaultClientFactory` supports
+  `AppRoleAuthMethodInfo`, §8), but the specific least-privilege policy (e.g. scoped only to
+  `secret/data/ai-proxy/*`) is deployment/operator-owned Vault configuration, not something this repository
+  defines or ships (no `.hcl` policy file exists here) — local dev deliberately uses a dev-mode root token
+  instead (§8/§14). A real deployment must author and attach that scoped policy itself; this repo does not
+  verify or enforce it.
 
 ### 13.1 OIDC browser authentication (Iteration 4)
 
@@ -708,17 +746,25 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Vault is chosen over alternatives (Docker Secrets, SOPS, age-encrypted files) because it offers dynamic
   secrets, an HTTP API, audit logging, and a mature .NET client (VaultSharp) while still running fully in a
   container — this can be revisited if operational overhead proves too high for the target environment.
-- Consumer API keys are presented by callers as a bearer/`api-key`-style header (exact header name to be finalized
-  during implementation, e.g. `X-Api-Key`); the plaintext key is shown to the admin **exactly once** at
+- Consumer API keys are presented by callers as a header, finalized as `X-Api-Key` (the admin key uses
+  `X-Admin-Api-Key`); the plaintext key is shown to the admin **exactly once** at
   creation/rotation time and only its salted hash is ever persisted — losing the plaintext means rotating, not
   recovering, the key.
 - Not all providers return a token-style `usage` object for image generation (behavior varies by model/provider
   and is still evolving); `UsageRecord.UsageMetrics` is intentionally a flexible jsonb bag rather than fixed
   columns so Iteration 1 can capture whatever signal is actually available (image count/size/quality) without
   guessing at a universal schema.
-- Responses API affinity rows (keyed by OpenAI response id) are written with an expiry mirroring OpenAI's default
-  30-day response retention (configurable); this needs revisiting once real usage patterns/retention settings
-  are known.
+- **Risk — Responses API affinity TTL does not match documented intent:** the original design called for an
+  expiry mirroring OpenAI's default 30-day response retention. The implemented default
+  (`ProxyRoutingService`'s `sessionAffinityTtl` parameter) is **30 minutes**, not 30 days, and there is no
+  configuration key wired up anywhere (`Program.cs` registers `ProxyRoutingService` with `AddScoped` and never
+  supplies a non-default value) — so it is not actually configurable today despite earlier drafts of this
+  document implying it was. In practice: a Responses API conversation left idle for more than 30 minutes loses
+  its sticky-endpoint mapping; the *next* `previous_response_id` call then falls back to normal (non-sticky)
+  routing (§9) and, if it lands on a different backend than the one that created that response id, the
+  provider itself will reject/fail the call — surfacing as a confusing upstream error rather than the intended
+  30-day affinity window. This should be revisited: either wire up a configurable TTL close to the provider's
+  actual retention window, or explicitly document 30 minutes as the accepted trade-off.
 - OIDC provider logout is best-effort because `end_session_endpoint` is optional. Local session termination is
   always authoritative for AI Proxy access even when the upstream provider session remains active.
 
