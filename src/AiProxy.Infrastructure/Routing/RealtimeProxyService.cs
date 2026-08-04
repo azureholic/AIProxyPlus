@@ -49,6 +49,16 @@ public sealed class RealtimeProxyService(
         var roundRobinSeed = roundRobinCounter.Next(model.Id);
         var excludedEndpointIds = new HashSet<Guid>();
 
+        // Cross-request passive circuit breaker (architecture.md §9) — see ProxyRoutingService for the HTTP
+        // ingress equivalent of this same seeding.
+        foreach (var candidate in model.Endpoints)
+        {
+            if (endpointHealthTracker.GetHealth(candidate.EndpointId) == EndpointHealthState.Unhealthy)
+            {
+                excludedEndpointIds.Add(candidate.EndpointId);
+            }
+        }
+
         while (true)
         {
             var selection = EndpointSelector.SelectEndpoint(model.Endpoints, excludedEndpointIds: excludedEndpointIds, roundRobinCounter: roundRobinSeed);

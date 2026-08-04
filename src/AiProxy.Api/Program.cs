@@ -58,7 +58,11 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
     EnableMultipleHttp2Connections = true,
     ConnectTimeout = TimeSpan.FromSeconds(15),
 }));
-builder.Services.AddSingleton<EndpointHealthTracker>();
+builder.Services.AddSingleton(_ =>
+{
+    var cooldown = builder.Configuration.GetValue<TimeSpan?>("Routing:UnhealthyCooldown");
+    return new EndpointHealthTracker(cooldown);
+});
 builder.Services.AddSingleton<AiProxy.Application.Abstractions.IEndpointHealthTracker>(
     sp => sp.GetRequiredService<EndpointHealthTracker>());
 builder.Services.AddSingleton<IEndpointRoundRobinCounter, EndpointRoundRobinCounter>();
@@ -114,7 +118,18 @@ foreach (var provider in new[] { Provider.OpenAI, Provider.MicrosoftAI })
 }
 
 builder.Services.AddSingleton<UpstreamRouteResolver>();
-builder.Services.AddScoped<ProxyRoutingService>();
+builder.Services.AddScoped<ProxyRoutingService>(sp => new ProxyRoutingService(
+    sp.GetRequiredService<IModelRepository>(),
+    sp.GetRequiredService<ISessionAffinityStore>(),
+    sp.GetRequiredService<AiProxy.Application.Abstractions.IEndpointHealthTracker>(),
+    sp.GetRequiredService<IEndpointRoundRobinCounter>(),
+    sp.GetRequiredService<ICredentialProvider>(),
+    sp.GetRequiredService<UpstreamRouteResolver>(),
+    sp.GetRequiredService<IUsageExtractorResolver>(),
+    sp.GetRequiredService<UsageRecordChannel>(),
+    sp.GetRequiredService<AiProxyMetrics>(),
+    sp.GetRequiredService<HttpMessageInvoker>(),
+    builder.Configuration.GetValue<TimeSpan?>("Routing:SessionAffinityTtl")));
 builder.Services.AddScoped<RealtimeProxyService>();
 
 // Secrets/auth — pepper and admin key hash are auto-provisioned from Vault on first read (§8); ISecretResolver
@@ -260,8 +275,22 @@ var app = builder.Build();
 
 if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
 {
-    await using var scope = app.Services.CreateAsyncScope();
-    await scope.ServiceProvider.GetRequiredService<AiProxyDbContext>().Database.MigrateAsync();
+    // Least-privilege support (architecture.md §13): when a distinct, more-privileged connection string is
+    // configured for migrations, use it only for this startup DDL step — the regular DI-registered
+    // AiProxyDbContext (used by every runtime query) keeps using the standard, narrower-scoped connection
+    // string. Falls back to the single-connection-string behavior when the migrations key isn't set.
+    var migrationsConnectionString = builder.Configuration.GetConnectionString("aiproxydb-migrations");
+    if (string.IsNullOrWhiteSpace(migrationsConnectionString))
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<AiProxyDbContext>().Database.MigrateAsync();
+    }
+    else
+    {
+        var migrationsOptions = new DbContextOptionsBuilder<AiProxyDbContext>().UseNpgsql(migrationsConnectionString).Options;
+        await using var migrationsContext = new AiProxyDbContext(migrationsOptions);
+        await migrationsContext.Database.MigrateAsync();
+    }
 }
 
 app.UseExceptionHandler(errorApp => errorApp.Run(async httpContext =>

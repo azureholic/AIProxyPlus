@@ -11,6 +11,31 @@ namespace AiProxy.Infrastructure.Tests.Persistence;
 public class DatabaseSchemaTests(PostgresContainerFixture fixture)
 {
     [Fact]
+    public async Task Migrations_ApplyCleanly_ViaADistinctMigrationsConnectionString()
+    {
+        // Iteration 12 least-privilege support (architecture.md §13): Program.cs applies migrations through a
+        // dedicated AiProxyDbContext built from a separate connection string when one is configured, rather
+        // than the regular DI-registered context used for runtime queries. This proves that code path — a
+        // context built directly from a raw connection string — still applies every migration correctly.
+        var migrationsConnectionString = await fixture.CreateIsolatedDatabaseAsync();
+        try
+        {
+            var options = new DbContextOptionsBuilder<AiProxyDbContext>().UseNpgsql(migrationsConnectionString).Options;
+            await using var migrationsContext = new AiProxyDbContext(options);
+
+            await migrationsContext.Database.MigrateAsync();
+
+            (await migrationsContext.Database.GetAppliedMigrationsAsync()).Should().NotBeEmpty();
+            (await migrationsContext.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+            (await migrationsContext.Database.CanConnectAsync()).Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DropIsolatedDatabaseAsync(migrationsConnectionString);
+        }
+    }
+
+    [Fact]
     public async Task Migrations_ApplyCleanly_AndExpectedTablesExist()
     {
         await using var dbContext = fixture.CreateDbContext();

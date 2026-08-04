@@ -79,6 +79,40 @@ Brings up Postgres, dev-mode Vault, and the API (built from `src/AiProxy.Api/Doc
 Apply migrations the same way as above, pointing at `localhost:5432`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` in
 `docker-compose.yml` if you have an external OTLP collector; leave it blank to disable OTLP export.
 
+### Routing configuration (Iteration 12)
+
+Two previously-hardcoded values are now configurable via `appsettings`/environment variables — local dev needs
+neither, both fall back to their existing defaults when unset:
+
+| Key | Default | Purpose |
+|---|---|---|
+| `Routing:SessionAffinityTtl` | `00:30:00` (30 minutes) | How long a Responses API `previous_response_id` stays pinned to its originating endpoint (architecture.md §9/§17). |
+| `Routing:UnhealthyCooldown` | `00:00:30` (30 seconds) | How long a same-tier endpoint that just failed is skipped on *subsequent* requests before becoming eligible again (the cross-request passive circuit breaker, architecture.md §9). |
+
+### Least-privilege Postgres role (production)
+
+Local Aspire/docker-compose dev intentionally uses one Postgres role for both migrations and runtime queries —
+the same trade-off already made for dev-mode Vault. A real deployment should instead create two roles and set
+`ConnectionStrings:aiproxydb-migrations` to the privileged one:
+
+```sql
+-- Privileged role: runs EF Core migrations (DDL) at startup/deploy time only.
+CREATE ROLE aiproxy_migrator WITH LOGIN PASSWORD '...';
+GRANT ALL PRIVILEGES ON DATABASE aiproxydb TO aiproxy_migrator;
+
+-- Narrow role: what the running API actually connects as.
+CREATE ROLE aiproxy_app WITH LOGIN PASSWORD '...';
+GRANT CONNECT ON DATABASE aiproxydb TO aiproxy_app;
+GRANT USAGE ON SCHEMA public TO aiproxy_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO aiproxy_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO aiproxy_app;
+```
+
+Point `ConnectionStrings:aiproxydb-migrations` at `aiproxy_migrator` and `ConnectionStrings:aiproxydb` at the
+narrower `aiproxy_app` — the API applies migrations through the first connection at startup only, then serves
+every runtime request through the second. Omitting `ConnectionStrings:aiproxydb-migrations` keeps today's
+single-connection-string behavior unchanged.
+
 ## Frontend (`src/AiProxy.Web`)
 
 A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboard — see

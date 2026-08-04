@@ -93,6 +93,20 @@ public sealed class ProxyRoutingService(
         }
 
         var excludedEndpointIds = new HashSet<Guid>();
+        if (stickyAssignmentId is null)
+        {
+            // Cross-request passive circuit breaker (architecture.md §9): an endpoint that failed recently
+            // enough to still be within the tracker's cooldown window is skipped on this new request too,
+            // instead of being retried from a cold start every single time.
+            foreach (var candidate in model.Endpoints)
+            {
+                if (endpointHealthTracker.GetHealth(candidate.EndpointId) == EndpointHealthState.Unhealthy)
+                {
+                    excludedEndpointIds.Add(candidate.EndpointId);
+                }
+            }
+        }
+
         Endpoint? previouslyFailedEndpoint = null;
 
         // The first endpoint tried this request (typically priority 1) is the one whose error is most

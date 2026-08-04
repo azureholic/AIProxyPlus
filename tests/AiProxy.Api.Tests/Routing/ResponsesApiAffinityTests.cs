@@ -139,4 +139,30 @@ public class ResponsesApiAffinityTests : IAsyncLifetime, IDisposable
         second.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         _backend2.LogEntries.Should().BeEmpty("a failed sticky endpoint must fail fast, not silently reroute a stateful conversation");
     }
+
+    [Fact]
+    public async Task ConfiguredSessionAffinityTtl_IsAppliedToTheAffinityRow()
+    {
+        // Iteration 12: the previously-hardcoded 30-minute TTL is now bound from Routing:SessionAffinityTtl.
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        _factory.Models.Seed(model);
+
+        const string responseId = "resp_ttl-config";
+        _backend1.Given(Request.Create().WithPath("/openai/v1/responses").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = responseId, output = Array.Empty<object>() }));
+
+        using var client = _factory.WithWebHostBuilder(
+                builder => builder.UseSetting("Routing:SessionAffinityTtl", "00:00:05"))
+            .CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", ApiTestFactory.DefaultConsumerApiKey);
+
+        var response = await client.PostAsJsonAsync("/openai/v1/responses", new { model = modelName, input = "hello" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var entry = await _factory.Affinity.GetAsync(responseId);
+        entry.Should().NotBeNull();
+        (entry!.ExpiresAt - entry.LastUsedAt).Should().BeCloseTo(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(1));
+    }
 }

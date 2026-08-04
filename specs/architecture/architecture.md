@@ -466,30 +466,27 @@ with a well-known root token confined to the dev environment is acceptable.
     how L7 ingress proxying works (the ingress doesn't/can't migrate an established WebSocket to a different
     backend pod mid-connection), not something the application has to implement or configure.
   - **`IEndpointRoundRobinCounter`/`IEndpointHealthTracker`**, by contrast, *are* per-replica in-memory state
-    (a `ConcurrentDictionary`, not persisted) — each replica keeps its own round-robin cursor and passive
-    health view. This is an accepted trade-off, not a bug: round-robin fairness only needs to be "even in
-    aggregate", which holds as long as the ingress spreads requests across replicas reasonably (each replica
-    independently cycling through the same priority tier still balances out overall); it does not need to be a
-    single globally-synchronized counter. `IEndpointHealthTracker`'s per-replica view isn't actually consulted
-    by `EndpointSelector` for candidate filtering today — the only health signal that drives same-request
-    failover is the request-scoped `excludedEndpointIds` set — so replica-local health state has no correctness
-    impact either way.
-    **Risk — endpoint health is currently write-only in two different places, not just deferred:**
-    `IEndpointHealthTracker.MarkHealthy`/`MarkUnhealthy` are called from `ProxyRoutingService`/
-    `RealtimeProxyService`, but `GetHealth` has **zero** call sites anywhere in the codebase — nothing reads
-    this in-memory state back, not even an admin diagnostics view. Separately, `EndpointSelector` *does* filter
-    candidates on the **persisted** `ModelEndpoint.Health` column (`Enums/EndpointHealthState`), but that
-    column's own `MarkUnhealthy()`/`MarkHealthy()` domain methods are likewise only ever invoked from unit
-    tests — no production code path (no admin endpoint, no background health-check job) ever transitions it
-    away from its `Unknown` default. Net effect: the "Health" badge shown on the Models/Endpoints frontend
-    pages is decorative today (it can never become `Healthy`/`Unhealthy` in a running deployment), and
-    persisted-health-based candidate filtering in `EndpointSelector` is currently a no-op in production — the
-    *only* thing that actually prevents retrying a just-failed endpoint is the request-scoped
-    `excludedEndpointIds` set, which resets on every new incoming request (i.e. there is no cross-request
-    circuit breaker yet, despite two separate health-tracking mechanisms existing in the codebase). Either wire
-    up a real health-check/circuit-breaker path that updates one of these (and remove the other to avoid two
-    parallel, unused health concepts), or explicitly document today's per-request-only failover as the accepted
-    behavior and stop implying persistent health tracking exists.
+    (a `ConcurrentDictionary`, not persisted) — each replica keeps its own round-robin cursor and health view.
+    This is an accepted trade-off, not a bug: round-robin fairness only needs to be "even in aggregate", which
+    holds as long as the ingress spreads requests across replicas reasonably; it does not need to be a single
+    globally-synchronized counter. `IEndpointHealthTracker`'s per-replica view drives a **cross-request passive
+    circuit breaker** (Iteration 12): `MarkUnhealthy` records when the mark happened, and `GetHealth` reports
+    `Unhealthy` only for a bounded, configurable cooldown (`Routing:UnhealthyCooldown`, default 30 seconds)
+    before self-healing back to `Unknown` — no active health-check polling, no explicit `MarkHealthy` call
+    required to recover. `ProxyRoutingService`/`RealtimeProxyService` seed each new request's
+    `excludedEndpointIds` from any endpoint currently within its cooldown, *before* that request's own
+    same-request retry loop begins — additive to, not a replacement for, existing request-scoped exclusion.
+    Because the cooldown is per-replica in-memory state, this circuit breaker is itself per-replica: a request
+    landing on a different replica than the one that observed the failure doesn't benefit from it, which is
+    the same accepted per-replica trade-off as the round-robin counter above.
+    The **persisted** `ModelEndpoint.Health` column remains a separate concern: `EndpointSelector` still filters
+    on it, but its `MarkUnhealthy()`/`MarkHealthy()` domain methods are only ever invoked from unit tests today
+    — no production code path (no admin endpoint, no background health-check job) updates it, so the
+    Models/Endpoints frontend "Health" badge stays `Unknown` in a running deployment. This is intentionally out
+    of scope for Iteration 12 (wiring a real background health-check job that updates persisted health is a
+    larger feature, not a passive-circuit-breaker fix) — the in-memory tracker above is what actually drives
+    cross-request routing behavior today; the persisted column is administrator/future-health-check-owned
+    display state only.
 
   Route selection does not otherwise change retry/failover semantics. Health and same-request exclusion remain
   keyed to the physical endpoint because connectivity and credentials are endpoint concerns; a failed host is not
@@ -588,18 +585,17 @@ with a well-known root token confined to the dev environment is acceptable.
   partially parsed (enough to read `model`/session id) and otherwise streamed through unmodified — the proxy
   does not attempt to fully validate arbitrary upstream API schemas.
 - **Transport security**: TLS to all backends; HSTS + TLS termination in front of the proxy in real deployments.
-- **Risk — dependency hygiene is not actually in place, despite claiming to be "retained":** there is no
-  `.github/dependabot.yml`, no CI workflow (`.github/workflows/` doesn't exist), and no scheduled
-  `dotnet outdated`/`npm audit` job in this repository today — dependency updates are ad hoc/manual. This
-  should either be added (Dependabot config for NuGet + npm is the lowest-effort option) or this bullet should
-  stop claiming a practice that isn't in place.
-- **Risk — Postgres least privilege is not actually implemented:** `AiProxy.AppHost` (`builder.AddPostgres(...)`)
-  and `docker-compose.yml` both provision a single Postgres role/credential that runs EF Core migrations
-  (DDL) at startup **and** all runtime application queries — there is no separate, narrower-scoped runtime
-  role created after migrations complete. The connection string and its permissions are identical for both
-  phases. If this matters for the target deployment, add a second, DDL-less role for the running app and have
-  migrations run under the privileged one only at startup/deploy time; otherwise, correct this bullet to
-  describe the current single-role reality.
+- **Dependency hygiene**: `.github/dependabot.yml` (Iteration 12) covers both ecosystems in this repository —
+  `nuget` (root, covering every `.csproj` via `AiProxy.sln`) and `npm` (`src/AiProxy.Web`) — on a weekly
+  schedule. There is still no CI workflow that runs tests/builds automatically; that remains a separate gap
+  from dependency update hygiene specifically.
+- **Least privilege (Postgres)**: `Program.cs` supports an optional `ConnectionStrings:aiproxydb-migrations`
+  connection string (Iteration 12) — when configured, only the startup `Database.MigrateAsync()` step uses it,
+  while every runtime query keeps using the regular, narrower-scoped `ConnectionStrings:aiproxydb`. Local
+  Aspire/docker-compose dev intentionally keeps a single role/connection string for both (the same trade-off
+  already made for dev-mode Vault, below); a real deployment should create the two Postgres roles described in
+  README.md's "Least-privilege Postgres role" section and set both connection strings accordingly. This
+  repository does not create those roles itself — it only supports pointing at them once an operator has.
 - **Least privilege (Vault)**: the AppRole *mechanism* is implemented (`VaultClientFactory` supports
   `AppRoleAuthMethodInfo`, §8), but the specific least-privilege policy (e.g. scoped only to
   `secret/data/ai-proxy/*`) is deployment/operator-owned Vault configuration, not something this repository
@@ -754,17 +750,13 @@ Clean Architecture is enforced and verified, not just aspirational:
   and is still evolving); `UsageRecord.UsageMetrics` is intentionally a flexible jsonb bag rather than fixed
   columns so Iteration 1 can capture whatever signal is actually available (image count/size/quality) without
   guessing at a universal schema.
-- **Risk — Responses API affinity TTL does not match documented intent:** the original design called for an
-  expiry mirroring OpenAI's default 30-day response retention. The implemented default
-  (`ProxyRoutingService`'s `sessionAffinityTtl` parameter) is **30 minutes**, not 30 days, and there is no
-  configuration key wired up anywhere (`Program.cs` registers `ProxyRoutingService` with `AddScoped` and never
-  supplies a non-default value) — so it is not actually configurable today despite earlier drafts of this
-  document implying it was. In practice: a Responses API conversation left idle for more than 30 minutes loses
-  its sticky-endpoint mapping; the *next* `previous_response_id` call then falls back to normal (non-sticky)
-  routing (§9) and, if it lands on a different backend than the one that created that response id, the
-  provider itself will reject/fail the call — surfacing as a confusing upstream error rather than the intended
-  30-day affinity window. This should be revisited: either wire up a configurable TTL close to the provider's
-  actual retention window, or explicitly document 30 minutes as the accepted trade-off.
+- Responses API affinity's expiry is configurable via `Routing:SessionAffinityTtl` (Iteration 12), defaulting
+  to 30 minutes rather than mirroring OpenAI's 30-day response retention: a `session_affinity` row references a
+  specific `ModelEndpoint` assignment, which can be reconfigured or deleted independently of an OpenAI-side
+  response that might still be resolvable for up to 30 days — a 30-day-old affinity row is far more likely to
+  point at a stale/removed assignment than a 30-minute-old one. Operators who want a longer window (closer to
+  the provider's actual retention) can configure it explicitly; an unrecognized/expired affinity key still
+  falls back to normal (non-sticky) routing rather than erroring (§9).
 - OIDC provider logout is best-effort because `end_session_endpoint` is optional. Local session termination is
   always authoritative for AI Proxy access even when the upstream provider session remains active.
 
