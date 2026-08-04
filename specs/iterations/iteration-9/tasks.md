@@ -113,7 +113,7 @@ request/response speech-to-text and text-to-speech workflows alongside the exist
 - [x] Update README model configuration and Playground guidance with capability examples, Speech workflows, supported
   browser APIs, upload limits, and the distinction between Speech and Realtime Voice.
 - [x] Run focused domain, application, infrastructure, API, architecture, and frontend tests after each phase.
-- [ ] Run `dotnet test AiProxy.sln`, then `npm test` and `npm run build` from `src/AiProxy.Web`.
+- [x] Run `dotnet test AiProxy.sln`, then `npm test` and `npm run build` from `src/AiProxy.Web`.
 - [ ] Validate live model filtering for Chat, Images, Voice, speech-to-text, and text-to-speech in Chromium.
 - [ ] Validate microphone transcription, local-file transcription, synthesized playback, and synthesized download
   against configured speech models without exposing audio or credentials in logs or telemetry.
