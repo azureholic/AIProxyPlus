@@ -16,6 +16,7 @@ public sealed class ConsumerAuthEndpointFilter : IEndpointFilter
 {
     public const string ConsumerIdItemKey = "AiProxy.ConsumerId";
     public const string ConsumerNameItemKey = "AiProxy.ConsumerName";
+    public const string AllowedModelIdsItemKey = "AiProxy.AllowedModelIds";
 
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
@@ -110,6 +111,9 @@ public sealed class ConsumerAuthEndpointFilter : IEndpointFilter
     {
         httpContext.Items[ConsumerIdItemKey] = consumer.Id;
         httpContext.Items[ConsumerNameItemKey] = consumer.Name;
+        httpContext.Items[AllowedModelIdsItemKey] = consumer.HasUnrestrictedModelAccess
+            ? null
+            : consumer.AllowedModelIds.ToHashSet();
     }
 
     /// <summary>

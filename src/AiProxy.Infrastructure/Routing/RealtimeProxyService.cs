@@ -22,7 +22,11 @@ public sealed class RealtimeProxyService(
     ICredentialProvider credentialProvider,
     UpstreamRouteResolver upstreamRouteResolver)
 {
-    public async Task<RoutingFailure?> ProxyAsync(HttpContext httpContext, CancellationToken cancellationToken)
+    public async Task<RoutingFailure?> ProxyAsync(
+        HttpContext httpContext,
+        CancellationToken cancellationToken,
+        IReadOnlySet<Guid>? allowedModelIds = null,
+        string? consumerName = null)
     {
         using var rootActivity = AiProxyActivitySource.Instance.StartActivity("ai_proxy.request");
         rootActivity?.SetTag("operation_type", OperationType.RealtimeVoice.ToString());
@@ -42,6 +46,13 @@ public sealed class RealtimeProxyService(
         if (model is null)
         {
             return new RoutingFailure(RoutingFailureReason.ModelNotFound, $"Model '{modelName}' was not found.");
+        }
+
+        if (allowedModelIds is not null && !allowedModelIds.Contains(model.Id))
+        {
+            return new RoutingFailure(
+                RoutingFailureReason.ModelAccessDenied,
+                $"Consumer '{consumerName}' is not allowed to use model '{model.Name}'.");
         }
 
         rootActivity?.SetTag("model", model.Name);

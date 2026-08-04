@@ -20,18 +20,21 @@ public class CreateConsumerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WithNewName_GeneratesKeyStoresHashAndReturnsPlaintextOnce()
+    public async Task HandleAsync_WithNewName_GeneratesBothKeysStoresHashesAndReturnsPlaintextsOnce()
     {
         _repository.ExistsByNameAsync("team-checkout", Arg.Any<CancellationToken>()).Returns(false);
-        _keyGenerator.Generate().Returns("aip_plaintext-key");
-        _hasher.Hash("aip_plaintext-key").Returns("hashed-value");
+        _keyGenerator.Generate().Returns("aip_key-1", "aip_key-2");
+        _hasher.Hash("aip_key-1").Returns("hash-1");
+        _hasher.Hash("aip_key-2").Returns("hash-2");
 
         var result = await _handler.HandleAsync(new CreateConsumerCommand("team-checkout"));
 
-        result.PlaintextApiKey.Should().Be("aip_plaintext-key");
-        result.Consumer.ApiKeyHash.Should().Be("hashed-value");
+        result.ApiKey1.Should().Be("aip_key-1");
+        result.ApiKey2.Should().Be("aip_key-2");
+        result.Consumer.ApiKeyHash.Should().Be("hash-1");
+        result.Consumer.ApiKeyHash2.Should().Be("hash-2");
         await _repository.Received(1).AddAsync(
-            Arg.Is<Consumer>(c => c.Name == "team-checkout" && c.ApiKeyHash == "hashed-value"),
+            Arg.Is<Consumer>(c => c.Name == "team-checkout" && c.ApiKeyHash == "hash-1" && c.ApiKeyHash2 == "hash-2"),
             Arg.Any<CancellationToken>());
     }
 

@@ -65,6 +65,10 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("ApiKeyHash2")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -93,6 +97,10 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("\"ApiKeyHash\" IS NOT NULL");
 
+                    b.HasIndex("ApiKeyHash2")
+                        .IsUnique()
+                        .HasFilter("\"ApiKeyHash2\" IS NOT NULL");
+
                     b.HasIndex("Name")
                         .IsUnique();
 
@@ -103,7 +111,24 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.ToTable("consumers", null, t =>
                         {
                             t.HasCheckConstraint("CK_consumers_authentication_identity", "(\"ApiKeyHash\" IS NOT NULL AND \"OidcIssuer\" IS NULL AND \"OidcSubject\" IS NULL) OR (\"ApiKeyHash\" IS NULL AND \"OidcIssuer\" IS NOT NULL AND \"OidcSubject\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_consumers_secondary_key_requires_primary", "\"ApiKeyHash2\" IS NULL OR \"ApiKeyHash\" IS NOT NULL");
                         });
+                });
+
+            modelBuilder.Entity("AiProxy.Domain.Entities.ConsumerAllowedModel", b =>
+                {
+                    b.Property<Guid>("ConsumerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ModelId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ConsumerId", "ModelId");
+
+                    b.HasIndex("ModelId");
+
+                    b.ToTable("consumer_allowed_models", (string)null);
                 });
 
             modelBuilder.Entity("AiProxy.Domain.Entities.Endpoint", b =>
@@ -367,6 +392,21 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.ToTable("realtime_tickets", (string)null);
                 });
 
+            modelBuilder.Entity("AiProxy.Domain.Entities.ConsumerAllowedModel", b =>
+                {
+                    b.HasOne("AiProxy.Domain.Entities.Consumer", null)
+                        .WithMany("_allowedModels")
+                        .HasForeignKey("ConsumerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AiProxy.Domain.Entities.Model", null)
+                        .WithMany()
+                        .HasForeignKey("ModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("AiProxy.Domain.Entities.ModelCapabilityAssignment", b =>
                 {
                     b.HasOne("AiProxy.Domain.Entities.Model", null)
@@ -410,6 +450,11 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Consumer");
+                });
+
+            modelBuilder.Entity("AiProxy.Domain.Entities.Consumer", b =>
+                {
+                    b.Navigation("_allowedModels");
                 });
 
             modelBuilder.Entity("AiProxy.Domain.Entities.Model", b =>

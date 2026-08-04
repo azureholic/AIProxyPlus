@@ -245,6 +245,8 @@ builder.Services.AddSingleton<IValidator<DeleteApiRouteCommand>, DeleteApiRouteV
 builder.Services.AddSingleton<IValidator<CreateConsumerCommand>, CreateConsumerValidator>();
 builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsumerKeyValidator>();
 builder.Services.AddSingleton<IValidator<RevokeConsumerCommand>, RevokeConsumerValidator>();
+builder.Services.AddSingleton<IValidator<AllowConsumerModelCommand>, AllowConsumerModelValidator>();
+builder.Services.AddSingleton<IValidator<RevokeConsumerModelCommand>, RevokeConsumerModelValidator>();
 builder.Services.AddSingleton<IValidator<UsageRecordQuery>, UsageRecordQueryValidator>();
 
 builder.Services.AddScoped<CreateModelHandler>();
@@ -265,6 +267,8 @@ builder.Services.AddScoped<GetApiRouteHandler>();
 builder.Services.AddScoped<CreateConsumerHandler>();
 builder.Services.AddScoped<RotateConsumerKeyHandler>();
 builder.Services.AddScoped<RevokeConsumerHandler>();
+builder.Services.AddScoped<AllowConsumerModelHandler>();
+builder.Services.AddScoped<RevokeConsumerModelHandler>();
 builder.Services.AddScoped<QueryUsageRecordsHandler>();
 
 builder.Services.AddOpenApi(options => options.AddDocumentTransformer<AuthenticationOpenApiTransformer>());
@@ -351,7 +355,13 @@ ingress.MapPost("/anthropic/v1/messages", (HttpContext ctx, ProxyRoutingService 
     RouteOrFailAsync(ctx, router, OperationType.MessagesApi, ct));
 ingress.MapGet("/openai/v1/realtime", async (HttpContext ctx, RealtimeProxyService router, CancellationToken ct) =>
 {
-    var failure = await router.ProxyAsync(ctx, ct);
+    var allowedModelIds = ctx.Items.TryGetValue(ConsumerAuthEndpointFilter.AllowedModelIdsItemKey, out var allowedValue)
+        ? (IReadOnlySet<Guid>?)allowedValue
+        : null;
+    var consumerName = ctx.Items.TryGetValue(ConsumerAuthEndpointFilter.ConsumerNameItemKey, out var nameValue)
+        ? (string?)nameValue
+        : null;
+    var failure = await router.ProxyAsync(ctx, ct, allowedModelIds, consumerName);
     if (failure is not null)
     {
         await WriteRoutingFailureAsync(ctx, failure);
@@ -519,13 +529,34 @@ config.MapPost("/consumers", async (CreateConsumerCommand command, CreateConsume
     var result = await handler.HandleAsync(command, ct);
     return Results.Created(
         $"/api/v1/config/consumers/{result.Consumer.Name}",
-        new { consumer = ConsumerResponse.From(result.Consumer), apiKey = result.PlaintextApiKey });
+        new { consumer = ConsumerResponse.From(result.Consumer), apiKey1 = result.ApiKey1, apiKey2 = result.ApiKey2 });
 });
 
-config.MapPut("/consumers/{name}/rotate", async (string name, RotateConsumerKeyHandler handler, CancellationToken ct) =>
+config.MapPut("/consumers/{name}/rotate", async (
+    string name, int? slot, RotateConsumerKeyHandler handler, CancellationToken ct) =>
 {
-    var result = await handler.HandleAsync(new RotateConsumerKeyCommand(name), ct);
-    return Results.Ok(new { consumer = ConsumerResponse.From(result.Consumer), apiKey = result.PlaintextApiKey });
+    if (slot is not 1 and not 2)
+    {
+        return Results.BadRequest(new { error = "Query parameter 'slot' is required and must be 1 or 2." });
+    }
+
+    var keySlot = slot == 1 ? ApiKeySlot.Primary : ApiKeySlot.Secondary;
+    var result = await handler.HandleAsync(new RotateConsumerKeyCommand(name, keySlot), ct);
+    return Results.Ok(new { consumer = ConsumerResponse.From(result.Consumer), slot, apiKey = result.PlaintextApiKey });
+});
+
+config.MapPut("/consumers/{name}/allowed-models/{modelName}", async (
+    string name, string modelName, AllowConsumerModelHandler handler, CancellationToken ct) =>
+{
+    var consumer = await handler.HandleAsync(new AllowConsumerModelCommand(name, modelName), ct);
+    return Results.Ok(ConsumerResponse.From(consumer));
+});
+
+config.MapDelete("/consumers/{name}/allowed-models/{modelName}", async (
+    string name, string modelName, RevokeConsumerModelHandler handler, CancellationToken ct) =>
+{
+    var consumer = await handler.HandleAsync(new RevokeConsumerModelCommand(name, modelName), ct);
+    return Results.Ok(ConsumerResponse.From(consumer));
 });
 
 config.MapDelete("/consumers/{name}", async (string name, RevokeConsumerHandler handler, CancellationToken ct) =>
@@ -659,8 +690,12 @@ static async Task RouteOrFailAsync(
     var consumerName = httpContext.Items.TryGetValue(ConsumerAuthEndpointFilter.ConsumerNameItemKey, out var nameValue)
         ? (string?)nameValue
         : null;
+    var allowedModelIds = httpContext.Items.TryGetValue(ConsumerAuthEndpointFilter.AllowedModelIdsItemKey, out var allowedValue)
+        ? (IReadOnlySet<Guid>?)allowedValue
+        : null;
 
-    var failure = await router.RouteAsync(httpContext, operationType, cancellationToken, consumerId, consumerName);
+    var failure = await router.RouteAsync(
+        httpContext, operationType, cancellationToken, consumerId, consumerName, allowedModelIds);
     if (failure is not null)
     {
         await WriteRoutingFailureAsync(httpContext, failure);
@@ -680,6 +715,7 @@ static async Task WriteRoutingFailureAsync(HttpContext httpContext, RoutingFailu
     httpContext.Response.StatusCode = failure.Reason switch
     {
         RoutingFailureReason.ModelNotFound => StatusCodes.Status404NotFound,
+        RoutingFailureReason.ModelAccessDenied => StatusCodes.Status403Forbidden,
         RoutingFailureReason.NoHealthyEndpoint => StatusCodes.Status503ServiceUnavailable,
         RoutingFailureReason.StickyEndpointUnavailable => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status500InternalServerError,
@@ -758,7 +794,10 @@ public sealed record ConsumerResponse(
     string AuthenticationType,
     bool Enabled,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? RevokedAt)
+    DateTimeOffset? RevokedAt,
+    bool HasApiKey1,
+    bool HasApiKey2,
+    IReadOnlyList<Guid> AllowedModelIds)
 {
     public static ConsumerResponse From(Consumer consumer) => new(
         consumer.Id,
@@ -766,7 +805,10 @@ public sealed record ConsumerResponse(
         consumer.IsOidc ? "oidc" : "apiKey",
         consumer.Enabled,
         consumer.CreatedAt,
-        consumer.RevokedAt);
+        consumer.RevokedAt,
+        consumer.ApiKeyHash is not null,
+        consumer.ApiKeyHash2 is not null,
+        consumer.AllowedModelIds);
 }
 
 /// <summary>Exposes the top-level program to <c>WebApplicationFactory&lt;Program&gt;</c> in tests.</summary>

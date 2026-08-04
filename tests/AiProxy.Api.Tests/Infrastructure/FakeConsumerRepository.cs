@@ -15,7 +15,7 @@ public sealed class FakeConsumerRepository : IConsumerRepository
         Task.FromResult(_byName.GetValueOrDefault(name));
 
     public Task<Consumer?> GetByApiKeyHashAsync(string apiKeyHash, CancellationToken cancellationToken = default) =>
-        Task.FromResult(_byName.Values.FirstOrDefault(c => c.ApiKeyHash == apiKeyHash));
+        Task.FromResult(_byName.Values.FirstOrDefault(c => c.ApiKeyHash == apiKeyHash || c.ApiKeyHash2 == apiKeyHash));
 
     public Task<Consumer?> GetByOidcIdentityAsync(
         string oidcIssuer,

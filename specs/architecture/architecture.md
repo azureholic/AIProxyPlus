@@ -242,15 +242,18 @@ only when the provider returns a real token or non-token usage signal; the proxy
 | `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries` |
 | `api_routes` | Reusable provider API surfaces | `id`, `name` (unique), `provider`, `path_prefix`, `is_built_in`; `(provider, path_prefix)` unique |
 | `model_endpoints` | Model-to-endpoint/API-route assignments | `id`, `model_id`, `endpoint_id`, `api_route_id`, `priority`, `enabled`, `health`; `(model_id, endpoint_id, api_route_id)` unique |
-| `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), `api_key_hash`, `enabled`, `created_at`, `revoked_at` |
+| `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), `api_key_hash`, `api_key_hash2?`, `enabled`, `created_at`, `revoked_at` |
+| `consumer_allowed_models` | Optional per-consumer model allow-list | `consumer_id`, `model_id`; composite primary key, cascades with consumer or model |
 | `usage_records` | Usage log (append-only) | `id`, `timestamp`, `model_name`, `consumer_id`, `consumer_name`, `endpoint_id`, `endpoint_name`, `operation_type`, `prompt_tokens?`, `completion_tokens?`, `total_tokens?`, `usage_metrics` (jsonb), `streaming`, `status_code`, `duration_ms` |
 | `session_affinity` | Responses API affinity map | `session_id`, `model_id`, `model_endpoint_id`, `endpoint_id`, `expires_at` |
 | `__ef_migrations_history` | EF Core migrations | standard |
 
 Access via EF Core + Npgsql, code-first migrations applied before the API begins serving requests. `usage_records` is append-only and indexed on
 `(model_name, timestamp)` and `(consumer_id, timestamp)` for chargeback queries per deployment and per
-consumer. `consumers.api_key_hash` stores a salted one-way hash (e.g. HMAC-SHA256 with a server-side pepper) of the
-consumer's inbound API key — never the key itself — so a Postgres read compromise does not leak usable credentials.
+consumer. `consumers.api_key_hash` and `api_key_hash2` store salted one-way hashes (HMAC-SHA256 with a server-side
+pepper) of two independently rotatable inbound keys — never plaintext keys. Existing rows may have a null second
+slot; newly created API-key consumers receive both. An empty `consumer_allowed_models` set means unrestricted
+access for backward compatibility; any non-empty set restricts that consumer to exactly those models.
 `prompt_tokens`/`completion_tokens`/`total_tokens` are nullable — only token-based operations (chat completions,
 completions, embeddings) populate them; other operation types (e.g. image generation) populate the flexible
 `usage_metrics` jsonb column instead, so new modalities can report whatever billing signal they have without a
@@ -308,8 +311,10 @@ enabled state, health, or endpoint credentials.
 | PUT | `/api/v1/config/api-routes/{id}` | Update a reusable API route |
 | DELETE | `/api/v1/config/api-routes/{id}` | Delete an unassigned API route; returns conflict while assigned |
 | GET | `/api/v1/config/consumers` | List consumers (name, enabled, created/revoked — never the key or its hash) |
-| POST | `/api/v1/config/consumers` | Create a consumer; response includes the **plaintext API key exactly once** — only its hash is persisted |
-| PUT | `/api/v1/config/consumers/{name}/rotate` | Rotate a consumer's API key; returns the new plaintext key once, invalidates the old one |
+| POST | `/api/v1/config/consumers` | Create a consumer; response includes plaintext `apiKey1` and `apiKey2` exactly once — only hashes are persisted |
+| PUT | `/api/v1/config/consumers/{name}/rotate?slot=1\|2` | Rotate one required key slot; returns only its new plaintext key and leaves the other slot valid |
+| PUT | `/api/v1/config/consumers/{name}/allowed-models/{modelName}` | Add a model to the consumer's allow-list (idempotent) |
+| DELETE | `/api/v1/config/consumers/{name}/allowed-models/{modelName}` | Remove a model from the consumer's allow-list (idempotent); an empty list is unrestricted |
 | DELETE | `/api/v1/config/consumers/{name}` | Revoke a consumer (soft delete via `revoked_at`; historical `usage_records` are preserved) |
 | GET | `/api/v1/usage` | Query usage records (filter by deployment, consumer, date range) |
 
@@ -349,7 +354,7 @@ with a well-known root token confined to the dev environment is acceptable.
 - **Scope note**: Vault holds secrets the proxy must *present outbound* (endpoint credentials, the admin key hash).
   Inbound **Consumer** API keys (see the domain model in §5 and authentication in §13) are a different concern —
   the proxy only ever needs to *verify* them, never retrieve or replay them — so they are stored as a salted
-  one-way hash directly in `consumers.api_key_hash` (Postgres), avoiding a Vault round trip on every single
+  one-way hashes directly in `consumers.api_key_hash` / `api_key_hash2` (Postgres), avoiding a Vault round trip on every single
   ingress request. The **pepper** (a server-wide secret mixed into that hash to resist offline cracking if the
   `consumers` table ever leaks) is itself a real secret the app must retrieve, so it lives in Vault at
   `secret/ai-proxy/consumer-key-pepper`, read once at startup and cached in memory — not the individual consumer
@@ -573,7 +578,7 @@ with a well-known root token confined to the dev environment is acceptable.
   misconfiguration pointing at internal metadata endpoints.
 - **AuthN/AuthZ**: the configuration API requires an admin key (hashed at rest in Vault, compared with a
   constant-time comparison). Ingress inference routes require every caller to present an API key that resolves to
-  an enabled `Consumer` (`consumers.api_key_hash` lookup, constant-time comparison) — this is what lets every
+  an enabled `Consumer` (either consumer key hash matches) — this is what lets every
   `UsageRecord` attribute tokens back to the calling application/team for chargeback, and stops the proxy from
   being an open relay. Requests with no key, an unknown key, or a revoked consumer are rejected with `401` before
   any routing/forwarding work happens. The Realtime route additionally accepts the consumer key via an
@@ -581,6 +586,10 @@ with a well-known root token confined to the dev environment is acceptable.
   headers — the header is still checked first and preferred everywhere the caller can set one; query strings
   are more likely to be captured in server/proxy access logs, so this is a deliberate, narrow fallback, not a
   general alternative to header auth.
+- **Model authorization**: authentication carries the consumer's allowed model IDs into request context. After
+  resolving the requested model, but before endpoint selection, affinity, round-robin, health, or usage side
+  effects, HTTP and Realtime routing reject a model outside a non-empty allow-list with `403 Forbidden`. An empty
+  allow-list remains unrestricted.
 - **Input validation**: FluentValidation on all configuration DTOs; request bodies for ingress routes are only
   partially parsed (enough to read `model`/session id) and otherwise streamed through unmodified — the proxy
   does not attempt to fully validate arbitrary upstream API schemas.

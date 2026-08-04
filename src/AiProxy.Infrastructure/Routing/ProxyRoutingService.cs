@@ -40,7 +40,8 @@ public sealed class ProxyRoutingService(
         OperationType operationType,
         CancellationToken cancellationToken,
         Guid? consumerId = null,
-        string? consumerName = null)
+        string? consumerName = null,
+        IReadOnlySet<Guid>? allowedModelIds = null)
     {
         using var rootActivity = AiProxyActivitySource.Instance.StartActivity("ai_proxy.request");
         rootActivity?.SetTag("operation_type", operationType.ToString());
@@ -68,6 +69,13 @@ public sealed class ProxyRoutingService(
         if (model is null)
         {
             return new RoutingFailure(RoutingFailureReason.ModelNotFound, $"Model '{fields.Model}' was not found.");
+        }
+
+        if (allowedModelIds is not null && !allowedModelIds.Contains(model.Id))
+        {
+            return new RoutingFailure(
+                RoutingFailureReason.ModelAccessDenied,
+                $"Consumer '{consumerName}' is not allowed to use model '{model.Name}'.");
         }
 
         rootActivity?.SetTag("model", model.Name);

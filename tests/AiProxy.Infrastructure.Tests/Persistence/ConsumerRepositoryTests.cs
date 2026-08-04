@@ -1,4 +1,5 @@
 using AiProxy.Domain.Entities;
+using AiProxy.Domain.Enums;
 using AiProxy.Infrastructure.Repositories;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +38,22 @@ public class ConsumerRepositoryTests(PostgresContainerFixture fixture)
 
         loaded.Should().NotBeNull();
         loaded!.Name.Should().Be(consumer.Name);
+    }
+
+    [Fact]
+    public async Task GetByApiKeyHashAsync_FindsConsumerBySecondaryKey()
+    {
+        var secondaryHash = $"hash-2-{Guid.NewGuid():N}";
+        var consumer = Consumer.CreateApiKey(
+            Guid.NewGuid(), $"team-{Guid.NewGuid():N}", $"hash-1-{Guid.NewGuid():N}", secondaryHash);
+        await using var writeContext = fixture.CreateDbContext();
+        await new ConsumerRepository(writeContext).AddAsync(consumer);
+
+        await using var readContext = fixture.CreateDbContext();
+        var loaded = await new ConsumerRepository(readContext).GetByApiKeyHashAsync(secondaryHash);
+
+        loaded.Should().NotBeNull();
+        loaded!.Id.Should().Be(consumer.Id);
     }
 
     [Fact]
@@ -110,7 +127,7 @@ public class ConsumerRepositoryTests(PostgresContainerFixture fixture)
         var repository = new ConsumerRepository(writeContext);
         await repository.AddAsync(consumer);
 
-        consumer.RotateKey($"new-hash-{Guid.NewGuid():N}");
+        consumer.RotateKey(ApiKeySlot.Primary, $"new-hash-{Guid.NewGuid():N}");
         consumer.Revoke();
         await repository.UpdateAsync(consumer);
 
@@ -120,5 +137,31 @@ public class ConsumerRepositoryTests(PostgresContainerFixture fixture)
         loaded!.ApiKeyHash.Should().Be(consumer.ApiKeyHash);
         loaded.Enabled.Should().BeFalse();
         loaded.RevokedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PersistsAllowedModels()
+    {
+        var model = Model.Create(Guid.NewGuid(), $"model-{Guid.NewGuid():N}");
+        await using (var modelContext = fixture.CreateDbContext())
+        {
+            await new ModelRepository(modelContext).AddAsync(model);
+        }
+
+        var consumer = NewConsumer();
+        await using (var writeContext = fixture.CreateDbContext())
+        {
+            var repository = new ConsumerRepository(writeContext);
+            await repository.AddAsync(consumer);
+            consumer.AllowModel(model.Id);
+            await repository.UpdateAsync(consumer);
+        }
+
+        await using var readContext = fixture.CreateDbContext();
+        var loaded = await new ConsumerRepository(readContext).GetByNameAsync(consumer.Name);
+
+        loaded!.AllowedModelIds.Should().ContainSingle().Which.Should().Be(model.Id);
+        loaded.CanUseModel(model.Id).Should().BeTrue();
+        loaded.CanUseModel(Guid.NewGuid()).Should().BeFalse();
     }
 }

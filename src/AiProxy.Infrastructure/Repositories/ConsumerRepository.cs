@@ -8,22 +8,24 @@ namespace AiProxy.Infrastructure.Repositories;
 
 public sealed class ConsumerRepository(AiProxyDbContext dbContext) : IConsumerRepository
 {
+    private IQueryable<Consumer> Consumers => dbContext.Consumers.Include("_allowedModels");
+
     public Task<Consumer?> GetByNameAsync(string name, CancellationToken cancellationToken = default) =>
-        dbContext.Consumers.FirstOrDefaultAsync(c => c.Name == name, cancellationToken);
+        Consumers.FirstOrDefaultAsync(c => c.Name == name, cancellationToken);
 
     public Task<Consumer?> GetByApiKeyHashAsync(string apiKeyHash, CancellationToken cancellationToken = default) =>
-        dbContext.Consumers.FirstOrDefaultAsync(c => c.ApiKeyHash == apiKeyHash, cancellationToken);
+        Consumers.FirstOrDefaultAsync(c => c.ApiKeyHash == apiKeyHash || c.ApiKeyHash2 == apiKeyHash, cancellationToken);
 
     public Task<Consumer?> GetByOidcIdentityAsync(
         string oidcIssuer,
         string oidcSubject,
         CancellationToken cancellationToken = default) =>
-        dbContext.Consumers.FirstOrDefaultAsync(
+        Consumers.FirstOrDefaultAsync(
             c => c.OidcIssuer == oidcIssuer && c.OidcSubject == oidcSubject,
             cancellationToken);
 
     public async Task<IReadOnlyList<Consumer>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        await dbContext.Consumers.OrderBy(c => c.Name).ToListAsync(cancellationToken);
+        await Consumers.OrderBy(c => c.Name).ToListAsync(cancellationToken);
 
     public Task<bool> ExistsByNameAsync(string name, CancellationToken cancellationToken = default) =>
         dbContext.Consumers.AnyAsync(c => c.Name == name, cancellationToken);

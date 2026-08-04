@@ -186,13 +186,17 @@ proxy. Production reverse proxies must preserve the external HTTPS scheme and ho
 
 ## Example requests
 
-Create a consumer (admin-only) and use its key for ingress calls:
+Create a consumer (admin-only) and use either independently rotatable key for ingress calls:
 
 ```powershell
-# Create a consumer — the plaintext API key is only ever shown in this response.
+# Create a consumer — apiKey1 and apiKey2 are only ever shown in this response.
 curl -X POST http://localhost:8080/api/v1/config/consumers `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"name":"my-team"}'
+
+# Rotate one slot without interrupting callers using the other slot.
+curl -X PUT "http://localhost:8080/api/v1/config/consumers/my-team/rotate?slot=2" `
+  -H "X-Admin-Api-Key: <admin-key>"
 
 # Create reusable connectivity. Save the endpoint id; its plaintext API key is never returned.
 curl -X POST http://localhost:8080/api/v1/config/endpoints `
@@ -211,6 +215,10 @@ curl -X POST http://localhost:8080/api/v1/config/models `
 curl -X POST http://localhost:8080/api/v1/config/models/gpt-4o/endpoints `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"endpointId":"<endpoint-id>","apiRouteId":"<api-route-id>","priority":1,"enabled":true}'
+
+# Restrict the consumer to named models. With no entries, model access is unrestricted.
+curl -X PUT http://localhost:8080/api/v1/config/consumers/my-team/allowed-models/gpt-4o `
+  -H "X-Admin-Api-Key: <admin-key>"
 ```
 
 `Endpoint` owns only the host, credentials, timeout, and retry settings. `ApiRoute` owns provider behavior and

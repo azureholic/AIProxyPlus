@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Badge,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -20,13 +21,21 @@ import {
   TableHeaderCell,
   TableRow,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowRotateClockwiseRegular, DeleteRegular } from '@fluentui/react-icons';
+import { AddRegular, ArrowRotateClockwiseRegular, DeleteRegular, SettingsRegular } from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog';
-import { createConsumer, listConsumers, revokeConsumer, rotateConsumerKey } from '../../api/consumers';
-import type { Consumer } from '../../api/types';
+import {
+  allowConsumerModel,
+  createConsumer,
+  listConsumers,
+  revokeConsumer,
+  revokeConsumerModel,
+  rotateConsumerKey,
+} from '../../api/consumers';
+import { listModels } from '../../api/models';
+import type { Consumer, Model } from '../../api/types';
 
 export function ConsumersPage() {
   const [consumers, setConsumers] = useState<Consumer[] | null>(null);
@@ -35,13 +44,18 @@ export function ConsumersPage() {
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [models, setModels] = useState<Model[]>([]);
+  const [modelConsumer, setModelConsumer] = useState<Consumer | null>(null);
 
   const reload = () => {
     setError(null);
     listConsumers().then(setConsumers).catch(setError);
   };
 
-  useEffect(reload, []);
+  useEffect(() => {
+    reload();
+    listModels().then(setModels).catch(setError);
+  }, []);
 
   return (
     <PageContainer>
@@ -78,7 +92,7 @@ export function ConsumersPage() {
                         const result = await createConsumer(newName.trim());
                         setNewName('');
                         setCreateOpen(false);
-                        setRevealedKey(result.apiKey);
+                        setRevealedKey(`Key 1: ${result.apiKey1} | Key 2: ${result.apiKey2}`);
                         reload();
                       } catch (err) {
                         setError(err);
@@ -111,6 +125,7 @@ export function ConsumersPage() {
               <TableHeaderCell>Name</TableHeaderCell>
               <TableHeaderCell>Authentication</TableHeaderCell>
               <TableHeaderCell>Status</TableHeaderCell>
+              <TableHeaderCell>Model access</TableHeaderCell>
               <TableHeaderCell>Created</TableHeaderCell>
               <TableHeaderCell>Actions</TableHeaderCell>
             </TableRow>
@@ -127,22 +142,34 @@ export function ConsumersPage() {
                     {consumer.revokedAt ? 'Revoked' : consumer.enabled ? 'Enabled' : 'Disabled'}
                   </Badge>
                 </TableCell>
+                <TableCell>{(consumer.allowedModelIds ?? []).length === 0 ? 'All models' : `${consumer.allowedModelIds.length} models`}</TableCell>
                 <TableCell>{new Date(consumer.createdAt).toLocaleString()}</TableCell>
                 <TableCell>
+                  {([1, 2] as const).map((slot) => (
+                    <Button
+                      key={slot}
+                      appearance="subtle"
+                      icon={<ArrowRotateClockwiseRegular />}
+                      aria-label={`Rotate key ${slot} for ${consumer.name}`}
+                      title={`Rotate key ${slot}`}
+                      disabled={consumer.revokedAt !== null || consumer.authenticationType === 'oidc'}
+                      onClick={async () => {
+                        try {
+                          const result = await rotateConsumerKey(consumer.name, slot);
+                          setRevealedKey(`Key ${slot}: ${result.apiKey}`);
+                        } catch (err) {
+                          setError(err);
+                        }
+                      }}
+                    />
+                  ))}
                   <Button
                     appearance="subtle"
-                    icon={<ArrowRotateClockwiseRegular />}
-                    aria-label={`Rotate API key for ${consumer.name}`}
-                    title="Rotate API key"
-                    disabled={consumer.revokedAt !== null || consumer.authenticationType === 'oidc'}
-                    onClick={async () => {
-                      try {
-                        const result = await rotateConsumerKey(consumer.name);
-                        setRevealedKey(result.apiKey);
-                      } catch (err) {
-                        setError(err);
-                      }
-                    }}
+                    icon={<SettingsRegular />}
+                    aria-label={`Configure model access for ${consumer.name}`}
+                    title="Configure model access"
+                    disabled={consumer.revokedAt !== null}
+                    onClick={() => setModelConsumer(consumer)}
                   />
                   <ConfirmDialog
                     trigger={
@@ -176,6 +203,39 @@ export function ConsumersPage() {
         secret={revealedKey}
         onClose={() => setRevealedKey(null)}
       />
+
+      <Dialog open={modelConsumer !== null} onOpenChange={(_, data) => !data.open && setModelConsumer(null)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Model access for {modelConsumer?.name}</DialogTitle>
+            <DialogContent>
+              <p>{(modelConsumer?.allowedModelIds ?? []).length === 0 ? 'Unrestricted: all models are available.' : 'Only selected models are available.'}</p>
+              {models.map((model) => (
+                <Checkbox
+                  key={model.id}
+                  label={model.name}
+                  checked={modelConsumer?.allowedModelIds?.includes(model.id) ?? false}
+                  onChange={async (_, data) => {
+                    if (!modelConsumer) return;
+                    try {
+                      const updated = data.checked
+                        ? await allowConsumerModel(modelConsumer.name, model.name)
+                        : await revokeConsumerModel(modelConsumer.name, model.name);
+                      setModelConsumer(updated);
+                      setConsumers((current) => current?.map((item) => item.id === updated.id ? updated : item) ?? null);
+                    } catch (err) {
+                      setError(err);
+                    }
+                  }}
+                />
+              ))}
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="primary" onClick={() => setModelConsumer(null)}>Done</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </PageContainer>
   );
 }

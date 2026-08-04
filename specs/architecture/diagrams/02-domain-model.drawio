@@ -27,8 +27,8 @@
       <mxGeometry x="60" y="320" width="340" height="320" as="geometry" />
     </mxCell>
 
-    <mxCell id="cons" value="&lt;b&gt;Consumer&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;Name: string (unique)&lt;br&gt;ApiKeyHash: string? (API-key identity)&lt;br&gt;OidcIssuer: string? (OIDC identity)&lt;br&gt;OidcSubject: string? (OIDC identity)&lt;br&gt;Enabled: bool&lt;br&gt;CreatedAt: DateTimeOffset&lt;br&gt;RevokedAt: DateTimeOffset?&lt;br&gt;&lt;i&gt;Exactly one identity type&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
-      <mxGeometry x="440" y="320" width="260" height="230" as="geometry" />
+    <mxCell id="cons" value="&lt;b&gt;Consumer&lt;/b&gt;&lt;hr size=1&gt;Id: Guid&lt;br&gt;Name: string (unique)&lt;br&gt;ApiKeyHash: string? (Key 1)&lt;br&gt;ApiKeyHash2: string? (Key 2)&lt;br&gt;AllowedModelIds: Guid[] (empty = unrestricted)&lt;br&gt;OidcIssuer: string? (OIDC identity)&lt;br&gt;OidcSubject: string? (OIDC identity)&lt;br&gt;Enabled: bool&lt;br&gt;CreatedAt: DateTimeOffset&lt;br&gt;RevokedAt: DateTimeOffset?&lt;br&gt;&lt;i&gt;Exactly one identity type&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="440" y="320" width="300" height="270" as="geometry" />
     </mxCell>
 
     <mxCell id="rt" value="&lt;b&gt;RealtimeTicket&lt;/b&gt;&lt;hr size=1&gt;TicketHash: string&lt;br&gt;ConsumerId: Guid&lt;br&gt;Route: string&lt;br&gt;ExpiresAt: DateTimeOffset&lt;br&gt;ConsumedAt: DateTimeOffset?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;arcSize=8;shadow=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;" vertex="1" parent="1">
@@ -43,6 +43,9 @@
       <mxGeometry relative="1" as="geometry" />
     </mxCell>
     <mxCell id="e1a" value="1 : many capabilities" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;startArrow=diamondThin;startFill=1;endArrow=none;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="md" target="mc">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="eConsumerModels" value="many : many allowed models" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;startArrow=none;endArrow=none;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cons" target="md">
       <mxGeometry relative="1" as="geometry" />
     </mxCell>
     <mxCell id="e1b" value="many : 1 reusable" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;startArrow=none;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="mde" target="ep">

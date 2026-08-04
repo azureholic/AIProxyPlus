@@ -16,7 +16,7 @@ describe('ConsumersPage', () => {
     const consumer = { id: '1', name: 'my-team', authenticationType: 'apiKey', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
-        return jsonResponse({ consumer, apiKey: 'sk-plaintext-secret' }, 201);
+        return jsonResponse({ consumer, apiKey1: 'sk-primary', apiKey2: 'sk-secondary' }, 201);
       }
       return jsonResponse(url.includes('rotate') ? [] : []); // initial + reload GET
     });
@@ -34,17 +34,17 @@ describe('ConsumersPage', () => {
     fireEvent.click(createButton);
 
     // The revealed key is an <Input readOnly value=...>, not text content — assert on display value.
-    expect(await screen.findByDisplayValue('sk-plaintext-secret')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Key 1: sk-primary | Key 2: sk-secondary')).toBeInTheDocument();
     expect(screen.getByText('You will not see this value again — copy it now.')).toBeInTheDocument();
   });
 
   it('revokes a consumer only after the confirm dialog is accepted', async () => {
     const consumer = { id: '1', name: 'my-team', authenticationType: 'apiKey', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'DELETE') {
         return jsonResponse({ ...consumer, revokedAt: new Date().toISOString() });
       }
-      return jsonResponse([consumer]);
+      return jsonResponse(url.includes('/models') ? [] : [consumer]);
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -74,11 +74,12 @@ describe('ConsumersPage', () => {
       createdAt: new Date().toISOString(),
       revokedAt: null,
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([consumer])));
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(url.includes('/models') ? [] : [consumer])));
 
     render(<ConsumersPage />);
 
     expect(await screen.findByText('OIDC')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Rotate API key for proxy-admin' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Rotate key 1 for proxy-admin' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Rotate key 2 for proxy-admin' })).toBeDisabled();
   });
 });

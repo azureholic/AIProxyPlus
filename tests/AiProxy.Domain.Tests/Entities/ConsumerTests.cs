@@ -1,4 +1,5 @@
 using AiProxy.Domain.Entities;
+using AiProxy.Domain.Enums;
 using AiProxy.Domain.Exceptions;
 using FluentAssertions;
 
@@ -36,13 +37,52 @@ public class ConsumerTests
     }
 
     [Fact]
-    public void RotateKey_UpdatesHash()
+    public void CreateApiKey_WithBothHashes_SetsBothSlots()
+    {
+        var consumer = Consumer.CreateApiKey(Guid.NewGuid(), "team-checkout", "hash-1", "hash-2");
+
+        consumer.ApiKeyHash.Should().Be("hash-1");
+        consumer.ApiKeyHash2.Should().Be("hash-2");
+    }
+
+    [Fact]
+    public void Create_WithSingleHash_LeavesSecondSlotUnset()
     {
         var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
 
-        consumer.RotateKey("hash-2");
+        consumer.ApiKeyHash2.Should().BeNull();
+    }
 
-        consumer.ApiKeyHash.Should().Be("hash-2");
+    [Fact]
+    public void RotateKey_Primary_UpdatesOnlyPrimaryHash()
+    {
+        var consumer = Consumer.CreateApiKey(Guid.NewGuid(), "team-checkout", "hash-1", "hash-2");
+
+        consumer.RotateKey(ApiKeySlot.Primary, "hash-1-new");
+
+        consumer.ApiKeyHash.Should().Be("hash-1-new");
+        consumer.ApiKeyHash2.Should().Be("hash-2", "rotating one slot must not disturb the other (zero-downtime rotation)");
+    }
+
+    [Fact]
+    public void RotateKey_Secondary_UpdatesOnlySecondaryHash()
+    {
+        var consumer = Consumer.CreateApiKey(Guid.NewGuid(), "team-checkout", "hash-1", "hash-2");
+
+        consumer.RotateKey(ApiKeySlot.Secondary, "hash-2-new");
+
+        consumer.ApiKeyHash2.Should().Be("hash-2-new");
+        consumer.ApiKeyHash.Should().Be("hash-1");
+    }
+
+    [Fact]
+    public void RotateKey_Secondary_WhenNeverSet_ConfiguresItForTheFirstTime()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+
+        consumer.RotateKey(ApiKeySlot.Secondary, "hash-2");
+
+        consumer.ApiKeyHash2.Should().Be("hash-2");
     }
 
     [Fact]
@@ -50,7 +90,7 @@ public class ConsumerTests
     {
         var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
 
-        var act = () => consumer.RotateKey("");
+        var act = () => consumer.RotateKey(ApiKeySlot.Primary, "");
 
         act.Should().Throw<DomainException>().WithMessage("*ApiKeyHash*");
     }
@@ -105,7 +145,7 @@ public class ConsumerTests
             "https://identity.example.com/realms/ai-proxy",
             "subject-1");
 
-        var act = () => consumer.RotateKey("hash-2");
+        var act = () => consumer.RotateKey(ApiKeySlot.Primary, "hash-2");
 
         act.Should().Throw<DomainException>().WithMessage("*do not have API keys*");
     }
@@ -119,5 +159,63 @@ public class ConsumerTests
 
         consumer.Enabled.Should().BeFalse();
         consumer.RevokedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void NewConsumer_HasUnrestrictedModelAccess_ByDefault()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+
+        consumer.HasUnrestrictedModelAccess.Should().BeTrue();
+        consumer.CanUseModel(Guid.NewGuid()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AllowModel_RestrictsAccessToAllowedModelsOnly()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+        var allowedModelId = Guid.NewGuid();
+
+        consumer.AllowModel(allowedModelId);
+
+        consumer.HasUnrestrictedModelAccess.Should().BeFalse();
+        consumer.CanUseModel(allowedModelId).Should().BeTrue();
+        consumer.CanUseModel(Guid.NewGuid()).Should().BeFalse();
+    }
+
+    [Fact]
+    public void AllowModel_CalledTwiceForSameModel_IsIdempotent()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+        var modelId = Guid.NewGuid();
+
+        consumer.AllowModel(modelId);
+        consumer.AllowModel(modelId);
+
+        consumer.AllowedModelIds.Should().ContainSingle().Which.Should().Be(modelId);
+    }
+
+    [Fact]
+    public void RevokeModelAccess_RemovesTheModelFromTheAllowList()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+        var modelId = Guid.NewGuid();
+        consumer.AllowModel(modelId);
+
+        consumer.RevokeModelAccess(modelId);
+
+        consumer.HasUnrestrictedModelAccess.Should().BeTrue();
+        consumer.CanUseModel(modelId).Should().BeTrue();
+    }
+
+    [Fact]
+    public void RevokeModelAccess_ForModelNeverAllowed_IsANoOp()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+
+        var act = () => consumer.RevokeModelAccess(Guid.NewGuid());
+
+        act.Should().NotThrow();
+        consumer.HasUnrestrictedModelAccess.Should().BeTrue();
     }
 }

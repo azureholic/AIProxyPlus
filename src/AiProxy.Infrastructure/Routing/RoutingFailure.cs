@@ -6,6 +6,7 @@ namespace AiProxy.Infrastructure.Routing;
 public enum RoutingFailureReason
 {
     ModelNotFound,
+    ModelAccessDenied,
     NoHealthyEndpoint,
     StickyEndpointUnavailable,
 }

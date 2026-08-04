@@ -1,11 +1,12 @@
 using AiProxy.Application.Abstractions;
 using AiProxy.Application.Exceptions;
 using AiProxy.Domain.Entities;
+using AiProxy.Domain.Enums;
 using FluentValidation;
 
 namespace AiProxy.Application.Consumers;
 
-public sealed record RotateConsumerKeyCommand(string Name);
+public sealed record RotateConsumerKeyCommand(string Name, ApiKeySlot Slot);
 
 public sealed record RotateConsumerKeyResult(Consumer Consumer, string PlaintextApiKey);
 
@@ -14,6 +15,7 @@ public sealed class RotateConsumerKeyValidator : AbstractValidator<RotateConsume
     public RotateConsumerKeyValidator()
     {
         RuleFor(c => c.Name).NotEmpty();
+        RuleFor(c => c.Slot).IsInEnum();
     }
 }
 
@@ -38,7 +40,7 @@ public sealed class RotateConsumerKeyHandler(
         }
 
         var plaintextApiKey = keyGenerator.Generate();
-        consumer.RotateKey(hasher.Hash(plaintextApiKey));
+        consumer.RotateKey(command.Slot, hasher.Hash(plaintextApiKey));
 
         await repository.UpdateAsync(consumer, cancellationToken);
         return new RotateConsumerKeyResult(consumer, plaintextApiKey);

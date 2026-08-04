@@ -2,6 +2,7 @@ using AiProxy.Application.Abstractions;
 using AiProxy.Application.Consumers;
 using AiProxy.Application.Exceptions;
 using AiProxy.Domain.Entities;
+using AiProxy.Domain.Enums;
 using FluentAssertions;
 using NSubstitute;
 
@@ -20,17 +21,18 @@ public class RotateConsumerKeyTests
     }
 
     [Fact]
-    public async Task HandleAsync_WithExistingConsumer_RotatesHashAndReturnsNewPlaintext()
+    public async Task HandleAsync_WithExistingConsumer_RotatesOnlyRequestedSlotAndReturnsNewPlaintext()
     {
-        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "old-hash");
+        var consumer = Consumer.CreateApiKey(Guid.NewGuid(), "team-checkout", "old-hash-1", "old-hash-2");
         _repository.GetByNameAsync("team-checkout", Arg.Any<CancellationToken>()).Returns(consumer);
         _keyGenerator.Generate().Returns("aip_new-key");
         _hasher.Hash("aip_new-key").Returns("new-hash");
 
-        var result = await _handler.HandleAsync(new RotateConsumerKeyCommand("team-checkout"));
+        var result = await _handler.HandleAsync(new RotateConsumerKeyCommand("team-checkout", ApiKeySlot.Secondary));
 
         result.PlaintextApiKey.Should().Be("aip_new-key");
-        consumer.ApiKeyHash.Should().Be("new-hash");
+        consumer.ApiKeyHash.Should().Be("old-hash-1");
+        consumer.ApiKeyHash2.Should().Be("new-hash");
         await _repository.Received(1).UpdateAsync(consumer, Arg.Any<CancellationToken>());
     }
 
@@ -39,7 +41,7 @@ public class RotateConsumerKeyTests
     {
         _repository.GetByNameAsync("missing", Arg.Any<CancellationToken>()).Returns((Consumer?)null);
 
-        var act = () => _handler.HandleAsync(new RotateConsumerKeyCommand("missing"));
+        var act = () => _handler.HandleAsync(new RotateConsumerKeyCommand("missing", ApiKeySlot.Primary));
 
         await act.Should().ThrowAsync<NotFoundException>();
     }
@@ -54,7 +56,7 @@ public class RotateConsumerKeyTests
             "subject-1");
         _repository.GetByNameAsync("proxy-admin", Arg.Any<CancellationToken>()).Returns(consumer);
 
-        var act = () => _handler.HandleAsync(new RotateConsumerKeyCommand("proxy-admin"));
+        var act = () => _handler.HandleAsync(new RotateConsumerKeyCommand("proxy-admin", ApiKeySlot.Primary));
 
         await act.Should().ThrowAsync<ConflictException>();
         _keyGenerator.DidNotReceive().Generate();

@@ -65,11 +65,8 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
   `models`, `ON DELETE CASCADE` from both sides so deleting either side cleans up the join row).
 - **Default = unrestricted**, for backward compatibility with every existing consumer and test: `Consumer.
   HasUnrestrictedModelAccess => _allowedModelIds.Count == 0`. An allow-list only starts restricting once an
-  admin adds at least one entry. There is no separate "deny all" state distinct from "restrict to zero models"
-  in this design — the domain method set makes that state reachable but the UI should discourage it (a
-  consumer with a non-empty allow-list containing zero live models is equivalent to fully blocked, which is
-  almost certainly a misconfiguration, not an intended state — flagged for a follow-up UI warning, not blocked
-  at the domain layer).
+  admin adds at least one entry. Removing the last entry returns the consumer to unrestricted access. A separate
+  deny-all state is intentionally out of scope.
 - `Consumer` domain methods: `AllowModel(Guid modelId)`, `RevokeModelAccess(Guid modelId)` (both idempotent —
   adding an already-present id or removing an absent one is a no-op, not an error, matching `ModelCapability`'s
   existing idempotent-add precedent), `CanUseModel(Guid modelId) => HasUnrestrictedModelAccess ||
@@ -96,53 +93,53 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
   informative status.
 - Application-layer commands/queries for managing the list (`AllowConsumerModelHandler`/
   `RevokeConsumerModelHandler` or similar — exact naming decided in Phase 1) plus new config API routes, e.g.
-  `PUT /api/v1/config/consumers/{name}/allowed-models/{modelId:guid}` and
-  `DELETE /api/v1/config/consumers/{name}/allowed-models/{modelId:guid}`, and the existing `ConsumerResponse`
+  `PUT /api/v1/config/consumers/{name}/allowed-models/{modelName}` and
+  `DELETE /api/v1/config/consumers/{name}/allowed-models/{modelName}`, and the existing `ConsumerResponse`
   gains the current allow-list (model ids, or ids+names via a join at the query side) so the frontend can render
   it without a second round-trip per consumer.
 
 ## Phase 1 — Architecture specification
 
-- [ ] Update architecture.md's domain model section (and the `02-domain-model.drawio` diagram) to show
+- [x] Update architecture.md's domain model section (and the `02-domain-model.drawio` diagram) to show
   `Consumer.ApiKeyHash2` and the new `consumer_allowed_models` relation.
-- [ ] Update architecture.md §8/§13 (or wherever consumer authentication is currently described) to document
+- [x] Update architecture.md §8/§13 (or wherever consumer authentication is currently described) to document
   the dual-key rotation model and its zero-downtime rationale.
-- [ ] Update architecture.md §9/§10 (routing) to document the new authorization check's exact position in
+- [x] Update architecture.md §9/§10 (routing) to document the new authorization check's exact position in
   `RouteAsync` (after model resolution, before endpoint selection) and its 403 semantics.
-- [ ] Finalize exact API route shapes, DTO field names (`ConsumerResponse` additions), and the
+- [x] Finalize exact API route shapes, DTO field names (`ConsumerResponse` additions), and the
   `RotateConsumerKeyCommand`/handler signature change (`slot` parameter) here first, before any code changes.
-- [ ] Finalize the `consumer_allowed_models` table/migration shape and the exact `Consumer` domain method names.
+- [x] Finalize the `consumer_allowed_models` table/migration shape and the exact `Consumer` domain method names.
 
 ## Phase 2 — Domain: dual API keys
 
-- [ ] Add `ApiKeySlot` enum (`Primary`, `Secondary`) under `AiProxy.Domain.Enums`.
-- [ ] Add `Consumer.ApiKeyHash2`; update `CreateApiKey` to require both hashes; replace `RotateKey(string)` with
+- [x] Add `ApiKeySlot` enum (`Primary`, `Secondary`) under `AiProxy.Domain.Enums`.
+- [x] Add `Consumer.ApiKeyHash2`; update `CreateApiKey` to require both hashes; replace `RotateKey(string)` with
   `RotateKey(ApiKeySlot slot, string newApiKeyHash)`.
-- [ ] Update `AiProxy.Domain.Tests/Entities/ConsumerTests.cs` for the new creation/rotation signatures (create
+- [x] Update `AiProxy.Domain.Tests/Entities/ConsumerTests.cs` for the new creation/rotation signatures (create
   with both hashes; rotate each slot independently; verify the untouched slot's hash is unchanged after
   rotating the other; validation errors for empty hashes in either slot; OIDC consumers still reject any key
   operation).
 
 ## Phase 3 — Persistence: dual API keys
 
-- [ ] `ConsumerConfiguration`: map `ApiKeyHash2` (nullable, `HasMaxLength(500)`, unique filtered index), extend
+- [x] `ConsumerConfiguration`: map `ApiKeyHash2` (nullable, `HasMaxLength(500)`, unique filtered index), extend
   the `CK_consumers_authentication_identity` check constraint.
-- [ ] EF Core migration: add the `ApiKeyHash2` column (nullable — no backfill, existing consumers keep a single
+- [x] EF Core migration: add the `ApiKeyHash2` column (nullable — no backfill, existing consumers keep a single
   live key until first rotated) and the updated check constraint.
-- [ ] `ConsumerRepository.GetByApiKeyHashAsync` (and any other query touching `ApiKeyHash`) matches either slot.
-- [ ] Update `ConsumerRepositoryTests` for: seeding a consumer with both hashes, looking a consumer up by either
+- [x] `ConsumerRepository.GetByApiKeyHashAsync` (and any other query touching `ApiKeyHash`) matches either slot.
+- [x] Update `ConsumerRepositoryTests` for: seeding a consumer with both hashes, looking a consumer up by either
   slot's hash, and the updated check constraint (a row with `ApiKeyHash2` set but `ApiKeyHash` null must be
   rejected by Postgres, not just by domain code).
 
 ## Phase 4 — Application & API: dual API keys
 
-- [ ] Update `CreateConsumerHandler`/`CreateConsumerCommand` to generate and return both plaintext keys.
-- [ ] Update `RotateConsumerKeyHandler`/`RotateConsumerKeyCommand` to take a required `ApiKeySlot`/`slot` value;
+- [x] Update `CreateConsumerHandler`/`CreateConsumerCommand` to generate and return both plaintext keys.
+- [x] Update `RotateConsumerKeyHandler`/`RotateConsumerKeyCommand` to take a required `ApiKeySlot`/`slot` value;
   reject OIDC consumers and invalid slot values with the existing exception types
   (`ConflictException`/validation).
-- [ ] Update the `PUT /consumers/{name}/rotate` route to require `?slot=1|2` (400 on missing/invalid), and the
+- [x] Update the `PUT /consumers/{name}/rotate` route to require `?slot=1|2` (400 on missing/invalid), and the
   `POST /consumers` response to include both plaintext keys.
-- [ ] Update `ConsumerResponse` with whatever slot-presence indicator Phase 1 settled on.
+- [x] Update `ConsumerResponse` with whatever slot-presence indicator Phase 1 settled on.
 - [ ] Update `AiProxy.Application.Tests` (`CreateConsumerTests`, `RotateConsumerKeyTests`) and
   `AiProxy.Api.Tests/Config/ConsumerConfigTests.cs` for the new command/response shapes, including a test proving
   a consumer authenticates successfully with the OLD key in the untouched slot immediately after rotating the
@@ -150,39 +147,38 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
 
 ## Phase 5 — Frontend: dual API keys
 
-- [ ] Update the Consumers page to show both keys' rotate actions independently (two buttons/rows, "Key 1" /
+- [x] Update the Consumers page to show both keys' rotate actions independently (two buttons/rows, "Key 1" /
   "Key 2"), and the create-consumer flow to display both freshly-generated plaintext keys once.
-- [ ] Update/add frontend tests for the new two-key UI.
+- [x] Update/add frontend tests for the new two-key UI.
 
 ## Phase 6 — Domain & persistence: per-consumer model allow-list
 
-- [ ] Add `Consumer._allowedModelIds`/`AllowedModelIds`, `HasUnrestrictedModelAccess`, `AllowModel`,
+- [x] Add `Consumer._allowedModelIds`/`AllowedModelIds`, `HasUnrestrictedModelAccess`, `AllowModel`,
   `RevokeModelAccess`, `CanUseModel` (idempotent add/remove, per the design above).
-- [ ] Add the `consumer_allowed_models` join table (`ConsumerConfiguration`/`ModelConfiguration` mapping,
+- [x] Add the `consumer_allowed_models` join table (`ConsumerConfiguration`/`ModelConfiguration` mapping,
   composite PK, cascading deletes from both `consumers` and `models`) and the EF Core migration.
-- [ ] Update `ConsumerTests` for the new allow-list methods (idempotency, `HasUnrestrictedModelAccess` default,
+- [x] Update `ConsumerTests` for the new allow-list methods (idempotency, `HasUnrestrictedModelAccess` default,
   `CanUseModel` with an empty vs. populated list).
 - [ ] Add persistence tests proving the join table round-trips correctly and that deleting a `Model` that a
   consumer is restricted to removes the join row without deleting the `Consumer` (and vice versa).
 
 ## Phase 7 — Application & API: per-consumer model allow-list
 
-- [ ] Add `AllowConsumerModelHandler`/`RevokeConsumerModelHandler` (or the names Phase 1 settles on) plus their
+- [x] Add `AllowConsumerModelHandler`/`RevokeConsumerModelHandler` (or the names Phase 1 settles on) plus their
   commands/validators, following the existing `RotateConsumerKeyHandler`-style pattern (`NotFoundException` for
   an unknown consumer or model name/id, idempotent success otherwise).
-- [ ] Add the `PUT`/`DELETE /consumers/{name}/allowed-models/{modelId:guid}` routes; extend `ConsumerResponse`
+- [x] Add the `PUT`/`DELETE /consumers/{name}/allowed-models/{modelName}` routes; extend `ConsumerResponse`
   with the current allow-list.
-- [ ] Add `AiProxy.Application.Tests` and `AiProxy.Api.Tests` coverage for the new handlers/routes, including the
-  "restricting to zero models functionally blocks all routing" edge case (proving it's reachable, not that it's
-  prevented — matching the deliberate non-blocking design above).
+- [x] Add `AiProxy.Application.Tests` and `AiProxy.Api.Tests` coverage for the new handlers/routes, including the
+  transition back to unrestricted access when the last allowed model is removed.
 
 ## Phase 8 — Routing enforcement
 
-- [ ] Extend `ConsumerAuthEndpointFilter` to stash the resolved allow-list (or `null` when unrestricted) into
+- [x] Extend `ConsumerAuthEndpointFilter` to stash the resolved allow-list (or `null` when unrestricted) into
   `HttpContext.Items` alongside the existing consumer id/name items.
-- [ ] Thread the allow-list through `Program.cs`'s ingress route handlers into
+- [x] Thread the allow-list through `Program.cs`'s ingress route handlers into
   `ProxyRoutingService.RouteAsync`/`RealtimeProxyService`'s equivalent entry point as a new optional parameter.
-- [ ] Add `RoutingFailureReason.ModelAccessDenied`; enforce it in `RouteAsync` immediately after model
+- [x] Add `RoutingFailureReason.ModelAccessDenied`; enforce it in `RouteAsync` immediately after model
   resolution, before any endpoint/affinity/round-robin/usage work; map it to 403 in `Program.cs`.
 - [ ] Add `AiProxy.Api.Tests` coverage: a restricted consumer is denied (403) for a disallowed model but
   succeeds for an allowed one; an unrestricted consumer (the default/today's behavior) is unaffected; a denied
@@ -191,18 +187,18 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
 
 ## Phase 9 — Frontend: per-consumer model allow-list
 
-- [ ] Update the Consumers (and/or Model Deployments) page to let an admin add/remove allowed models per
+- [x] Update the Consumers (and/or Model Deployments) page to let an admin add/remove allowed models per
   consumer, and clearly show "unrestricted" vs. a specific allow-list.
-- [ ] Update/add frontend tests for the new allow-list UI.
+- [x] Update/add frontend tests for the new allow-list UI.
 
 ## Phase 10 — Validation
 
-- [ ] Run the complete backend test suite (`dotnet test AiProxy.sln`).
-- [ ] Run the frontend test suite and build (`npm test`, `npm run build` from `src/AiProxy.Web`).
+- [x] Run the complete backend test suite (`dotnet test AiProxy.sln`).
+- [x] Run the frontend test suite and build (`npm test`, `npm run build` from `src/AiProxy.Web`).
 - [ ] Live-validate zero-downtime key rotation: create a consumer, call the proxy successfully with Key1,
   rotate Key2, confirm Key1 still authenticates; rotate Key1, confirm the (still-unrotated-since-last-step) Key2
   authenticates and the old Key1 no longer does.
 - [ ] Live-validate the model allow-list: restrict a consumer to one model, confirm calls to that model succeed
   and calls to any other model return 403, then remove the restriction and confirm access returns to
   unrestricted.
-- [ ] Confirm README/architecture.md/diagram consistency with whatever was actually shipped.
+- [x] Confirm README/architecture.md/diagram consistency with whatever was actually shipped.

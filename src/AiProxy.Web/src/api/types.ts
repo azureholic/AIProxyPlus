@@ -77,10 +77,20 @@ export interface Consumer {
   enabled: boolean;
   createdAt: string;
   revokedAt: string | null;
+  hasApiKey1: boolean;
+  hasApiKey2: boolean;
+  allowedModelIds: string[];
 }
 
-export interface ConsumerWithApiKey {
+export interface CreatedConsumer {
   consumer: Consumer;
+  apiKey1: string;
+  apiKey2: string;
+}
+
+export interface RotatedConsumerKey {
+  consumer: Consumer;
+  slot: 1 | 2;
   apiKey: string;
 }
 
