@@ -9,3 +9,7 @@ class ResizeObserverStub {
 }
 
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
+
+// jsdom doesn't implement scrollIntoView; the Chat Playground's auto-scroll-to-latest-message
+// effect calls it unconditionally and crashes the render without this stub.
+Element.prototype.scrollIntoView ??= () => {};

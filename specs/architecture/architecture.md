@@ -246,8 +246,10 @@ provider for which credential placement, mutation, and usage semantics are unkno
 while assigned. Built-in routes are migration-owned and carry stable identifiers, but remain editable and may be
 deleted when unassigned; `IsBuiltIn` records their origin and startup never overwrites administrator changes.
 
-The migration seeds these built-in routes deterministically: Foundry OpenAI (`OpenAI`, `/openai/v1`), Microsoft
-AI (`MicrosoftAI`, `/mai/v1`), Anthropic (`Anthropic`, `/anthropic/v1`), and Native OpenAI (`OpenAI`, `/v1`).
+The migrations seed these built-in routes deterministically: Foundry OpenAI (`OpenAI`, `/openai/v1`), Microsoft
+AI (`MicrosoftAI`, `/mai/v1`), Anthropic (`Anthropic`, `/anthropic/v1`), Native Anthropic (`Anthropic`, `/v1`),
+and Native OpenAI (`OpenAI`, `/v1`). Existing Native Anthropic routes are promoted in place so their identifiers
+and assignments are preserved.
 Existing assignments are backfilled to the route matching their former API family without changing priority,
 enabled state, health, or endpoint credentials.
 
@@ -365,7 +367,9 @@ with a well-known root token confined to the dev environment is acceptable.
   ingress credential, browser session, antiforgery, CORS context, Fetch Metadata, and reverse-proxy topology headers
   do not. In particular, `Origin` is not forwarded because native Anthropic interprets its presence as a direct
   browser request and rejects it unless the unsafe direct-browser opt-in is supplied. The selected endpoint
-  credential is added only after filtering and always replaces any caller-supplied value for that header.
+  credential is added only after filtering and always replaces any caller-supplied value for that header. Transport
+  compression negotiation is also proxy-owned: outbound HTTP requests use `Accept-Encoding: identity` because
+  buffered JSON and SSE processing operate on uncompressed response bytes and do not decompress provider bodies.
 - **Priority + round-robin (Iteration 2)**: assigned endpoints are grouped by `ModelEndpoint.Priority`; `EndpointSelector`
   (Domain) narrows to the healthy/enabled candidates, picks the **lowest surviving priority number**, and, if
   more than one endpoint shares that priority, **round-robins** across them using a per-request counter
@@ -764,7 +768,14 @@ that status as proof that its browser session expired. It verifies the BFF sessi
 upstream authentication failures in the Playground as request errors. Chat Playground selects the ingress contract
 from the chosen model's active highest-priority endpoint assignment: OpenAI-compatible providers use Chat Completions,
 while Anthropic uses native Messages request, response, and streaming semantics. This keeps the protocol passthrough
-boundary in §9 explicit and does not add OpenAI/Anthropic translation to the proxy.
+boundary in §9 explicit and does not add OpenAI/Anthropic translation to the proxy. OpenAI-compatible models additionally
+offer a Responses API toggle (hidden for Anthropic, which only supports Messages via `ChatCompletion`, §9): each turn
+is sent as `{ model, input, stream, previous_response_id? }` — only the new turn, not the full transcript — chaining
+`previous_response_id` from each reply into the next request to exercise the same stateful affinity described in §6.4.
+Switching API mode or model resets the conversation and clears `previous_response_id`, since that id only resolves on
+the endpoint/model that created it. The Usage Dashboard also charts request volume by `OperationType` alongside its
+existing tokens-by-model and requests-per-day charts, so Chat Completions, Responses API, and other operations are
+visually distinguishable.
 
 ### 19.4 Realtime (Voice) Playground — scope and the query-param auth exception
 

@@ -39,3 +39,65 @@ antiforgery, and reverse-proxy context that must remain inside its security boun
 - [x] Strip proxy-local browser, ingress credential, antiforgery, Fetch Metadata, and reverse-proxy headers upstream.
 - [x] Preserve provider protocol headers, content headers/body, and endpoint credential replacement.
 - [x] Add API-to-WireMock regression coverage for the outbound header boundary.
+
+## Bug 4 — Compressed provider responses fail in the Chat Playground
+
+Both native Anthropic paths returned `200` from upstream, but the browser reported `ERR_CONTENT_DECODING_FAILED`.
+The proxy forwarded the browser's `Accept-Encoding` upstream, then treated the compressed provider body as plain
+JSON or SSE text while retaining `Content-Encoding`, producing an invalid client response. The streaming browser
+abort also surfaced server-side as a `TaskCanceledException` while reading the upstream chunked stream.
+
+- [x] Capture the browser network failure and provider response headers for streaming and non-streaming requests.
+- [x] Prove native Anthropic returns a complete uncompressed response when requested with `Accept-Encoding: identity`.
+- [x] Make outbound compression negotiation proxy-owned and request identity encoding from providers.
+- [x] Add API-to-WireMock regression coverage for the outbound `Accept-Encoding` boundary.
+- [x] Run all 333 backend tests and the frontend production build.
+- [x] Validate live native Anthropic streaming and non-streaming replies with token usage in the browser.
+
+## Bug 5 — Chat Playground message list becomes unreadable after a few turns
+
+With OpenAI/Microsoft AI and native Anthropic replies now succeeding, the message list itself degraded after a
+handful of turns: `Card` clips overflow, so once the height-capped `display:flex; flexDirection:column` list's
+content exceeded that height, flexbox shrank every card toward zero instead of overflowing/scrolling — visible
+as cropped, overlapping text with no working scrollbar.
+
+- [x] Reproduce the layout failure live in the browser across a multi-turn conversation.
+- [x] Replace the `Card`-based list with `flexShrink: 0` message rows and left/right-aligned chat bubbles
+  (assistant left-aligned, user right-aligned).
+- [x] Make the message panel a bounded, genuinely scrollable region and auto-scroll smoothly to the latest
+  message on every update.
+- [x] Stub jsdom's missing `Element.prototype.scrollIntoView` in the frontend test setup.
+- [x] Run the complete frontend test suite and production build, then validate live across a 6-turn conversation.
+
+## Feature — Visualize operation types and add Responses API to the Chat Playground
+
+Manual testing surfaced two related gaps: the Usage Dashboard had no way to see request volume broken down by
+`OperationType`, and the Chat Playground had no way to exercise `/openai/v1/responses` at all — only Chat
+Completions and native Anthropic Messages were reachable, even though the backend has supported the Responses
+API's `previous_response_id` chaining/affinity since Iteration 2.
+
+- [x] Add a "Requests by operation type" chart to the Usage Dashboard alongside the existing tokens-by-model and
+  requests-per-day charts.
+- [x] Add an API selector (Chat Completions / Responses API) to the Chat Playground, hidden for Anthropic models
+  since Anthropic only supports Messages via `ChatCompletion`.
+- [x] Send Responses API requests as `{ model, input, stream, previous_response_id? }` — only the new turn, not
+  the full transcript — and chain `previous_response_id` from each reply into the next request.
+- [x] Parse both the non-streaming Responses body (`output[].content[]`) and the streaming event shape
+  (`response.output_text.delta`, `response.completed`), including its own token usage.
+- [x] Reset the conversation and clear `previous_response_id` when switching API mode or model, since a response
+  id only resolves on the endpoint/model that created it.
+- [x] Add frontend regression coverage for: the selector hidden for Anthropic, non-streaming request/response
+  shape and chaining across two turns, and streaming event parsing.
+- [x] Run the complete frontend test suite and production build, then validate live: a two-turn Responses API
+  conversation with real `previous_response_id` chaining, and the new operation-type chart.
+
+## Bug 6 — Native Anthropic API route is not built in
+
+The reusable API-route migration seeded the proxy-prefixed Anthropic route but omitted the native Anthropic
+`/v1` route. Administrators therefore had to create it manually, and the API Routes page labeled it Custom.
+
+- [x] Add a stable, migration-owned Native Anthropic (`Anthropic`, `/v1`) built-in route for new databases.
+- [x] Promote an existing custom Native Anthropic route in place to preserve its identifier and assignments.
+- [x] Add persistence coverage for fresh seeding, in-place promotion, and downgrade behavior.
+- [x] Apply the migration to the existing database and verify all five canonical routes are built in.
+

@@ -55,8 +55,54 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
             ("Foundry OpenAI", "OpenAI", "/openai/v1"),
             ("Microsoft AI", "MicrosoftAI", "/mai/v1"),
             ("Anthropic", "Anthropic", "/anthropic/v1"),
+            ("Native Anthropic", "Anthropic", "/v1"),
             ("Native OpenAI", "OpenAI", "/v1"),
         ]);
+    }
+
+    [Fact]
+    public async Task NativeAnthropicRouteMigration_PromotesExistingCustomRouteInPlace()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync();
+        try
+        {
+            await using var dbContext = PostgresContainerFixture.CreateDbContext(connectionString);
+            var migrator = dbContext.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260803142716_ReusableApiRoutes");
+
+            var routeId = Guid.NewGuid();
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                """
+                INSERT INTO api_routes ("Id", "Name", "Provider", "PathPrefix", "IsBuiltIn")
+                VALUES (@routeId, 'Native Anthropic', 'Anthropic', '/v1', FALSE)
+                """,
+                connection);
+            command.Parameters.AddWithValue("routeId", routeId);
+            await command.ExecuteNonQueryAsync();
+
+            await migrator.MigrateAsync();
+
+            command.CommandText =
+                "SELECT \"Id\", \"IsBuiltIn\" FROM api_routes WHERE \"Provider\" = 'Anthropic' AND \"PathPrefix\" = '/v1'";
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetGuid(0).Should().Be(routeId);
+                reader.GetBoolean(1).Should().BeTrue();
+            }
+
+            await migrator.MigrateAsync("20260803142716_ReusableApiRoutes");
+
+            command.CommandText =
+                "SELECT \"IsBuiltIn\" FROM api_routes WHERE \"Id\" = @routeId";
+            (await command.ExecuteScalarAsync()).Should().Be(false);
+        }
+        finally
+        {
+            await fixture.DropIsolatedDatabaseAsync(connectionString);
+        }
     }
 
     [Fact]

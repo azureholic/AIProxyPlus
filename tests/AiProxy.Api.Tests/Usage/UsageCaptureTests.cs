@@ -268,6 +268,34 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task AnthropicMessages_ForwardsIdentityAcceptEncodingInsteadOfTheBrowsersOwn()
+    {
+        var modelName = $"claude-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewAnthropicEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
+
+        _backend.Given(Request.Create().WithPath("/anthropic/v1/messages").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new
+            {
+                content = Array.Empty<object>(),
+                usage = new { input_tokens = 1, output_tokens = 0 },
+            }));
+
+        using var request = BuildRequest(
+            "/anthropic/v1/messages",
+            new { model = modelName, max_tokens = 1, messages = new[] { new { role = "user", content = "hi" } } });
+        request.Headers.Add("anthropic-version", "2023-06-01");
+        request.Headers.Add("Accept-Encoding", "gzip, br");
+
+        var response = await _factory.CreateClient().SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var receivedRequest = _backend.LogEntries.Should().ContainSingle().Which.RequestMessage;
+        receivedRequest!.Headers.Should().ContainKey("Accept-Encoding").WhoseValue.Should().ContainSingle("identity");
+    }
+
+    [Fact]
     public async Task ResponseWithNoUsageSignal_SucceedsWithoutCapturingUsageRecord()
     {
         var modelName = $"gpt-4o-{Guid.NewGuid():N}";

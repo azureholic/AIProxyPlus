@@ -57,6 +57,10 @@ internal static class DirectHttpProxy
 
         request.Headers.Remove(credential.HeaderName);
         request.Headers.TryAddWithoutValidation(credential.HeaderName, credential.HeaderValue);
+
+        // Buffered JSON and SSE processing require uncompressed upstream response bytes.
+        request.Headers.Remove("Accept-Encoding");
+        request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
         return request;
     }
 

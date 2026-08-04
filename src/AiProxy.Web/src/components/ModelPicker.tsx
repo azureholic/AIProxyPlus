@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { Combobox, Field, Option, Text } from '@fluentui/react-components';
 import { listModels } from '../api/models';
 import type { Model, ModelCapability } from '../api/types';
@@ -17,22 +17,25 @@ export function ModelPicker({
 }) {
   const [models, setModels] = useState<Model[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const clearUnavailableSelection = useEffectEvent((matchingModels: Model[]) => {
+    if (value && !matchingModels.some((model) => model.name === value)) {
+      onChange('');
+    }
+  });
 
   useEffect(() => {
     listModels()
       .then((allModels) => {
         const matchingModels = allModels.filter((model) => model.capabilities.includes(capability));
         setModels(matchingModels);
-        if (value && !matchingModels.some((model) => model.name === value)) {
-          onChange('');
-        }
+        clearUnavailableSelection(matchingModels);
         setLoaded(true);
       })
       .catch(() => {
         setModels([]);
         setLoaded(true);
       });
-  }, [capability, onChange, value]);
+  }, [capability]);
 
   return (
     <Field label={label}>

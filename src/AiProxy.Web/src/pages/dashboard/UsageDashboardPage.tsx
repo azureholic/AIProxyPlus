@@ -97,6 +97,14 @@ export function UsageDashboardPage() {
       return acc;
     }, {}),
   );
+  const requestsByOperationType = Object.values(
+    records.reduce<Record<string, { name: string; count: number }>>((acc, record) => {
+      const key = record.operationType;
+      acc[key] ??= { name: key, count: 0 };
+      acc[key].count += 1;
+      return acc;
+    }, {}),
+  );
   const requestsByDay = Object.entries(
     records.reduce<Record<string, number>>((acc, record) => {
       const day = record.timestamp.slice(0, 10);
@@ -178,6 +186,17 @@ export function UsageDashboardPage() {
                   <Tooltip />
                   <Line type="monotone" dataKey="count" stroke="#464feb" name="Requests per day" />
                 </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className={styles.chart}>
+              <ResponsiveContainer>
+                <BarChart data={requestsByOperationType}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#464feb" name="Requests by operation type" />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
