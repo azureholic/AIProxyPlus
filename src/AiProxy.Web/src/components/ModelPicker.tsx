@@ -11,7 +11,7 @@ export function ModelPicker({
   label = 'Model',
 }: {
   value: string;
-  onChange: (name: string) => void;
+  onChange: (name: string, model?: Model) => void;
   capability: ModelCapability;
   label?: string;
 }) {
@@ -40,7 +40,10 @@ export function ModelPicker({
         placeholder="Select a model…"
         value={value}
         selectedOptions={value ? [value] : []}
-        onOptionSelect={(_, data) => onChange(data.optionValue ?? '')}
+        onOptionSelect={(_, data) => {
+          const name = data.optionValue ?? '';
+          onChange(name, models.find((model) => model.name === name));
+        }}
       >
         {models.map((model) => (
           <Option key={model.id} value={model.name}>

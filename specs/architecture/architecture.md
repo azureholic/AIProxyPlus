@@ -752,6 +752,13 @@ logout action. Config, Usage, Chat, and Images use the encrypted session; extern
 migration mode retain API-key authentication. The Consumers page continues to manage API-key Consumers and displays
 the authentication type for JIT-provisioned OIDC Consumers, for which key rotation is unavailable.
 
+Inference routes can relay an upstream provider's `401`, so the frontend must not treat every consumer request with
+that status as proof that its browser session expired. It verifies the BFF session before initiating login and leaves
+upstream authentication failures in the Playground as request errors. Chat Playground selects the ingress contract
+from the chosen model's active highest-priority endpoint assignment: OpenAI-compatible providers use Chat Completions,
+while Anthropic uses native Messages request, response, and streaming semantics. This keeps the protocol passthrough
+boundary in §9 explicit and does not add OpenAI/Anthropic translation to the proxy.
+
 ### 19.4 Realtime (Voice) Playground — scope and the query-param auth exception
 
 Browsers' native `WebSocket` API cannot set custom headers, so the Voice Playground cannot authenticate the

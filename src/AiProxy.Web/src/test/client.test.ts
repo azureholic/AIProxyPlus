@@ -65,6 +65,39 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('does not signal session expiry for an upstream 401 when the browser session is valid', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Invalid upstream API key' } }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const listener = vi.fn();
+    window.addEventListener('aiproxy:session-expired', listener);
+
+    const response = await consumerFetch('/openai/v1/chat/completions');
+
+    expect(response.status).toBe(401);
+    expect(listener).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/auth/session', { credentials: 'include' });
+    window.removeEventListener('aiproxy:session-expired', listener);
+  });
+
+  it('signals session expiry for a consumer 401 when the browser session has expired', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const listener = vi.fn();
+    window.addEventListener('aiproxy:session-expired', listener, { once: true });
+
+    await consumerFetch('/openai/v1/chat/completions');
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('surfaces the backend error body as a thrown ApiError', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: 'Model was not found.' }), {

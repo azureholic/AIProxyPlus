@@ -96,7 +96,14 @@ export async function adminFetch(path: string, init?: RequestInit): Promise<Resp
 
 /** Playground requests resolve the signed-in user to a Consumer on the server. */
 export async function consumerFetch(path: string, init?: RequestInit): Promise<Response> {
-  return sessionFetch(path, init);
+  const response = await fetch(path, await buildInit(init));
+  if (response.status === 401) {
+    const sessionResponse = await fetch('/api/v1/auth/session', { credentials: 'include' });
+    if (sessionResponse.status === 401) {
+      window.dispatchEvent(new Event(sessionExpiredEvent));
+    }
+  }
+  return response;
 }
 
 async function asJson<T>(response: Response): Promise<T> {
