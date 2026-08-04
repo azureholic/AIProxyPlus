@@ -1,3 +1,4 @@
+using AiProxy.Application.Abstractions;
 using AiProxy.Domain.Enums;
 using AiProxy.Infrastructure.Usage;
 using FluentAssertions;
@@ -46,8 +47,78 @@ public class ImageUsageExtractorTests
         new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration).ExtractFromResponseBody("not json").Should().BeNull();
 
     [Fact]
-    public void TryExtractFromStreamingEvent_AlwaysNull_SinceImagesApiIsNeverStreamed() =>
+    public void ExtractFromResponseBody_WithUsageObject_ReturnsTokensAlongsideMetrics()
+    {
+        var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration);
+
+        var result = extractor.ExtractFromResponseBody(
+            """
+            {"data":[{"b64_json":"..."}],"size":"1024x1024","quality":"high",
+             "usage":{"input_tokens":50,"output_tokens":50,"total_tokens":100}}
+            """);
+
+        result.Should().NotBeNull();
+        result!.PromptTokens.Should().Be(50);
+        result.CompletionTokens.Should().Be(50);
+        result.TotalTokens.Should().Be(100);
+        result.UsageMetrics!["size"].Should().Be("1024x1024");
+        result.UsageMetrics!["quality"].Should().Be("high");
+    }
+
+    [Fact]
+    public void ExtractFromResponseBody_WithoutUsageObject_LeavesTokensNull()
+    {
+        var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration);
+
+        var result = extractor.ExtractFromResponseBody("""{"data":[{"url":"https://example/1.png"}]}""");
+
+        result.Should().NotBeNull();
+        result!.PromptTokens.Should().BeNull();
+        result.CompletionTokens.Should().BeNull();
+        result.TotalTokens.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("image_generation.completed")]
+    [InlineData("image_edit.completed")]
+    public void TryExtractFromStreamingEvent_WithCompletedEvent_ExtractsTokenUsage(string eventType)
+    {
+        var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration);
+        const string template =
+            """{"type":"__TYPE__","b64_json":"...","size":"1024x1024","usage":{"input_tokens":50,"output_tokens":50,"total_tokens":100}}""";
+
+        var result = extractor.TryExtractFromStreamingEvent(template.Replace("__TYPE__", eventType));
+
+        result.Should().NotBeNull();
+        result!.PromptTokens.Should().Be(50);
+        result.CompletionTokens.Should().Be(50);
+        result.TotalTokens.Should().Be(100);
+        result.UsageMetrics!["size"].Should().Be("1024x1024");
+    }
+
+    [Fact]
+    public void TryExtractFromStreamingEvent_WithPartialImageEvent_ReturnsNull()
+    {
+        var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration);
+
+        extractor.TryExtractFromStreamingEvent(
+                """{"type":"image_generation.partial_image","b64_json":"...","partial_image_index":0}""")
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void TryExtractFromStreamingEvent_WithUnrelatedEvent_ReturnsNull() =>
         new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration).TryExtractFromStreamingEvent("{}").Should().BeNull();
+
+    [Fact]
+    public void IsUsageOnlyStreamingEvent_ReturnsFalse_SoTheFinalImageFrameIsNeverSuppressed()
+    {
+        IUsageExtractor extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration);
+
+        extractor.IsUsageOnlyStreamingEvent(
+                """{"type":"image_generation.completed","b64_json":"...","usage":{"total_tokens":100}}""")
+            .Should().BeFalse();
+    }
 
     [Theory]
     [InlineData(OperationType.ImageGeneration)]

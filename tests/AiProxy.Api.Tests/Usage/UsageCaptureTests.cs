@@ -97,7 +97,7 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task NonStreamingImageGeneration_CapturesUsageMetricsWithoutTokens()
     {
-        var modelName = $"dall-e-{Guid.NewGuid():N}";
+        var modelName = $"legacy-image-{Guid.NewGuid():N}";
         var model = Model.Create(Guid.NewGuid(), modelName);
         model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
         _factory.Models.Seed(model);
@@ -117,6 +117,69 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
         record.UsageMetrics.Should().NotBeNull();
         record.UsageMetrics!["image_count"].Should().Be("1");
         record.UsageMetrics!["size"].Should().Be("1024x1024");
+        record.OperationType.Should().Be(OperationType.ImageGeneration);
+    }
+
+    [Fact]
+    public async Task NonStreamingImageGeneration_WithUsageObject_CapturesTokenUsageAlongsideMetrics()
+    {
+        var modelName = $"gpt-image-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
+
+        _backend.Given(Request.Create().WithPath("/openai/v1/images/generations").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(
+                new
+                {
+                    data = new[] { new { b64_json = "..." } },
+                    size = "1024x1024",
+                    usage = new { input_tokens = 50, output_tokens = 50, total_tokens = 100 },
+                }));
+
+        var response = await _factory.CreateClient().SendAsync(
+            BuildRequest("/openai/v1/images/generations", new { model = modelName, prompt = "a cat" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var record = await WaitForUsageRecordAsync();
+        record.PromptTokens.Should().Be(50);
+        record.CompletionTokens.Should().Be(50);
+        record.TotalTokens.Should().Be(100);
+        record.UsageMetrics!["size"].Should().Be("1024x1024");
+    }
+
+    [Fact]
+    public async Task StreamingImageGeneration_CapturesTokenUsageFromCompletedEventWithoutSuppressingIt()
+    {
+        var modelName = $"gpt-image-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
+
+        const string sse =
+            "event: image_generation.partial_image\n" +
+            "data: {\"type\":\"image_generation.partial_image\",\"b64_json\":\"partial\",\"partial_image_index\":0}\n\n" +
+            "event: image_generation.completed\n" +
+            "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"final\"," +
+            "\"usage\":{\"input_tokens\":50,\"output_tokens\":50,\"total_tokens\":100}}\n\n";
+
+        _backend.Given(Request.Create().WithPath("/openai/v1/images/generations").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "text/event-stream").WithBody(sse));
+
+        var response = await _factory.CreateClient().SendAsync(BuildRequest(
+            "/openai/v1/images/generations",
+            new { model = modelName, prompt = "a cat", stream = true }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain(
+            "\"b64_json\":\"final\"", "the completed event carries the final image and must never be suppressed");
+
+        var record = await WaitForUsageRecordAsync();
+        record.PromptTokens.Should().Be(50);
+        record.CompletionTokens.Should().Be(50);
+        record.TotalTokens.Should().Be(100);
+        record.Streaming.Should().BeTrue();
         record.OperationType.Should().Be(OperationType.ImageGeneration);
     }
 

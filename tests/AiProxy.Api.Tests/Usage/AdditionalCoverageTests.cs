@@ -43,7 +43,7 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task ImageEdit_NonStreaming_CapturesUsageMetrics()
     {
-        var modelName = $"dall-e-{Guid.NewGuid():N}";
+        var modelName = $"legacy-image-{Guid.NewGuid():N}";
         var model = Model.Create(Guid.NewGuid(), modelName);
         model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
         _factory.Models.Seed(model);
@@ -61,7 +61,7 @@ public class AdditionalCoverageTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task ImageVariation_NonStreaming_Succeeds()
     {
-        var modelName = $"dall-e-{Guid.NewGuid():N}";
+        var modelName = $"legacy-image-{Guid.NewGuid():N}";
         var model = Model.Create(Guid.NewGuid(), modelName);
         model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend.Url!));
         _factory.Models.Seed(model);

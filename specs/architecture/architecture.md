@@ -165,15 +165,20 @@ visibility; speech capabilities always require explicit administrator selection.
 > looks the same minus the affinity lookup/persist steps (Iteration 2 removed the generic session-id sticky
 > mechanism entirely — every non-Responses/Realtime request just uses priority + round-robin, §9).
 
-### 6.3 Non-token operations (e.g. image generation)
+### 6.3 Image generation usage (tokens for GPT Image-style models, metrics otherwise)
 
 Embeddings and Images requests flow through the exact same ingress → routing → forwarder pipeline as chat
 completions — deployment resolution still peeks the `model` field (Images API requests carry one too), and
 failover/sticky-session behavior is identical. The only thing that changes per operation type is **which**
 `IUsageExtractor` is invoked: chat completions and embeddings extract `prompt_tokens`/`completion_tokens`/
-`total_tokens`; image generation/edit/variation extract whatever billing signal the response actually contains
-(e.g. image count, size, quality) into `UsageRecord.UsageMetrics`, since most Images API responses don't report
-token usage. Image requests are treated as non-streaming request/response for Iteration 1 (see §10).
+`total_tokens`; image generation/edit extract an optional top-level `usage` object
+(`input_tokens`/`output_tokens`/`total_tokens`) into the same token fields when the model reports one, alongside
+whatever billing signal the response actually contains (e.g. image count, size, quality) into
+`UsageRecord.UsageMetrics` — legacy/deprecated image models and `/images/variations` never report `usage`, so
+those requests remain metrics-only exactly as before (Iteration 11). Image requests are not restricted to
+non-streaming: a client may set `stream: true` (GPT Image-style models only), which the proxy forwards through
+the same generic SSE relay as any other streaming operation (see §10) — the image edit/generation extractor
+reads the same `usage` mapping from the terminal `image_generation.completed`/`image_edit.completed` event.
 
 ### 6.4 Responses API (stateful chaining via `previous_response_id`)
 
@@ -476,18 +481,24 @@ with a well-known root token confined to the dev environment is acceptable.
   JSON body otherwise) — no request mutation is needed to force it there.
 - For Anthropic-family requests, usage is included in the `message_start` and terminal `message_delta` events by
   default; the proxy simply parses these — no request mutation needed there.
+- GPT Image-style models report a `usage` object (`input_tokens`/`output_tokens`/`total_tokens`) unconditionally
+  on the terminal `image_generation.completed`/`image_edit.completed` SSE event when the client streams an
+  image generation/edit request, exactly like the Responses API's `response.completed` — no request mutation
+  is needed to force it there either, and (also like the Responses API) this event carries the final image
+  content itself, so it is never a suppressible usage-only frame (Iteration 11).
 - A streaming response interceptor (`SseStreamRelay`) reads the SSE byte stream as it flows through,
   splitting on blank-line-delimited event blocks, parsing `data: {...}` JSON payloads to detect the usage-bearing
-  event (the specific event name/shape depends on the operation type — chat completions' final chunk, or the
-  Responses API's `response.completed` event with an `input_tokens`/`output_tokens`/`total_tokens` usage
-  object), recording it, and otherwise passing bytes through untouched (no buffering of the whole stream — must
-  preserve time-to-first-byte).
+  event (the specific event name/shape depends on the operation type — chat completions' final chunk, the
+  Responses API's `response.completed` event, or an image `*.completed` event — each with an
+  `input_tokens`/`output_tokens`/`total_tokens` usage object), recording it, and otherwise passing bytes through
+  untouched (no buffering of the whole stream — must preserve time-to-first-byte).
 - If the **client's original request did not** ask for usage (`include_usage` absent for OpenAI, or an Anthropic
   client that doesn't expect a usage-only trailing event), the proxy removes the *injected* usage-only chunk from
   what is sent downstream, so the client-visible stream is unchanged relative to calling the backend directly.
   When the client **did** ask for it, the chunk is passed through unmodified.
-- Non-streaming responses (embeddings, images, and any chat/completions call without `stream: true`) are simpler:
-  the JSON body already contains the relevant usage signal — a token-style `usage` object, or an operation-specific
+- Non-streaming responses (embeddings, images without `stream: true`, and any chat/completions call without
+  `stream: true`) are simpler: the JSON body already contains the relevant usage signal — a token-style `usage`
+  object, or an operation-specific
   field set for images; the matching `IUsageExtractor` parses it and the original body is forwarded unmodified.
 - Usage is written to `usage_records` asynchronously (fire-and-forget with a bounded channel + background
   writer) so it never adds latency to the response path; failures to persist usage are logged, not surfaced to
@@ -516,7 +527,7 @@ with a well-known root token confined to the dev environment is acceptable.
 | Group | Routes | Notes |
 |---|---|---|
 | OpenAI ingress (text) | `POST /openai/v1/chat/completions`, `POST /openai/v1/completions`, `POST /openai/v1/embeddings` | Passthrough proxy, streaming supported on chat/completions |
-| OpenAI ingress (images) | `POST /openai/v1/images/generations`, `POST /openai/v1/images/edits`, `POST /openai/v1/images/variations` | Passthrough proxy, non-streaming, usage captured via the image `IUsageExtractor` |
+| OpenAI ingress (images) | `POST /openai/v1/images/generations`, `POST /openai/v1/images/edits`, `POST /openai/v1/images/variations` | Passthrough proxy; generation/edit support `stream: true` for GPT Image-style models (§10), variations is always non-streaming; usage (tokens when reported, metrics otherwise) captured via the image `IUsageExtractor` |
 | OpenAI ingress (responses) | `POST /openai/v1/responses` | Passthrough proxy, streaming and non-streaming; stateful via `previous_response_id` — see §9 |
 | Anthropic ingress | `POST /anthropic/v1/messages` | Passthrough proxy, streaming supported |
 | Realtime (voice) ingress (Iteration 2) | `GET /openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover — see §6.5/§9. Usage capture deferred |
