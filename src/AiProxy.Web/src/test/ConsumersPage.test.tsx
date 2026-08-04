@@ -35,8 +35,8 @@ describe('ConsumersPage', () => {
 
     expect(await screen.findByLabelText('Key 1')).toHaveValue('sk-primary');
     expect(screen.getByLabelText('Key 2')).toHaveValue('sk-secondary');
-    expect(screen.getByRole('button', { name: 'Copy Key 1' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy Key 2' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Copy Key 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Copy Key 2')).toBeInTheDocument();
     expect(screen.getByText('You will not see this value again — copy it now.')).toBeInTheDocument();
   });
 
@@ -65,6 +65,39 @@ describe('ConsumersPage', () => {
         expect.objectContaining({ method: 'DELETE' }),
       ),
     );
+  });
+
+  it('permanently deletes a revoked consumer only after confirmation', async () => {
+    const consumer = {
+      id: '1',
+      name: 'my-team',
+      authenticationType: 'apiKey',
+      enabled: false,
+      createdAt: new Date().toISOString(),
+      revokedAt: new Date().toISOString(),
+    };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE' && url.endsWith('/permanent')) {
+        return new Response(null, { status: 204 });
+      }
+      return jsonResponse(url.includes('/models') ? [] : [consumer]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<ConsumersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Delete permanently my-team' }));
+    await user.click(await screen.findByRole('button', { name: 'Delete permanently' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/config/consumers/my-team/permanent'),
+        expect.objectContaining({ method: 'DELETE' }),
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Rotate key 1 for my-team' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Configure model access for my-team' })).toBeDisabled();
   });
 
   it('shows OIDC consumers without an API key rotation action', async () => {

@@ -62,4 +62,10 @@ public sealed class ConsumerRepository(AiProxyDbContext dbContext) : IConsumerRe
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task DeleteAsync(Consumer consumer, CancellationToken cancellationToken = default)
+    {
+        dbContext.Consumers.Remove(consumer);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
 }

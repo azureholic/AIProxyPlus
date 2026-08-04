@@ -316,6 +316,7 @@ enabled state, health, or endpoint credentials.
 | PUT | `/api/v1/config/consumers/{name}/allowed-models/{modelName}` | Add a model to the consumer's allow-list (idempotent) |
 | DELETE | `/api/v1/config/consumers/{name}/allowed-models/{modelName}` | Remove a model from the consumer's allow-list (idempotent); an empty list is unrestricted |
 | DELETE | `/api/v1/config/consumers/{name}` | Revoke a consumer (soft delete via `revoked_at`; historical `usage_records` are preserved) |
+| DELETE | `/api/v1/config/consumers/{name}/permanent` | Permanently delete an already-revoked consumer; active consumers return conflict and denormalized historical usage remains preserved |
 | GET | `/api/v1/usage` | Query usage records (filter by deployment, consumer, date range) |
 
 All write routes require an admin API key (`X-Admin-Api-Key` header, validated against a hash stored in Vault) for

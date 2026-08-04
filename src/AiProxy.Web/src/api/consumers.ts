@@ -30,3 +30,7 @@ export function revokeConsumerModel(name: string, modelName: string): Promise<Co
 export function revokeConsumer(name: string): Promise<Consumer> {
   return adminJson(`/api/v1/config/consumers/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
+
+export function deleteConsumerPermanently(name: string): Promise<void> {
+  return adminJson(`/api/v1/config/consumers/${encodeURIComponent(name)}/permanent`, { method: 'DELETE' });
+}

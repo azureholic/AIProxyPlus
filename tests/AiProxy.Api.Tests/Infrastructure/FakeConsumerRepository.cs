@@ -44,4 +44,10 @@ public sealed class FakeConsumerRepository : IConsumerRepository
         _byName[consumer.Name] = consumer;
         return Task.CompletedTask;
     }
+
+    public Task DeleteAsync(Consumer consumer, CancellationToken cancellationToken = default)
+    {
+        _byName.TryRemove(consumer.Name, out _);
+        return Task.CompletedTask;
+    }
 }

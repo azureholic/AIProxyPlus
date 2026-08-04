@@ -161,6 +161,33 @@ public class ConsumerConfigTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task DeletePermanently_RevokedConsumer_RemovesConsumerFromList()
+    {
+        var client = _factory.CreateClient();
+        var consumerName = $"team-{Guid.NewGuid():N}";
+        await client.PostAsJsonAsync("/api/v1/config/consumers", new { name = consumerName });
+        await client.DeleteAsync($"/api/v1/config/consumers/{consumerName}");
+
+        var deleteResponse = await client.DeleteAsync($"/api/v1/config/consumers/{consumerName}/permanent");
+
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var consumers = await client.GetFromJsonAsync<JsonElement>("/api/v1/config/consumers");
+        consumers.EnumerateArray().Should().NotContain(element => element.GetProperty("name").GetString() == consumerName);
+    }
+
+    [Fact]
+    public async Task DeletePermanently_ActiveConsumer_ReturnsConflict()
+    {
+        var client = _factory.CreateClient();
+        var consumerName = $"team-{Guid.NewGuid():N}";
+        await client.PostAsJsonAsync("/api/v1/config/consumers", new { name = consumerName });
+
+        var response = await client.DeleteAsync($"/api/v1/config/consumers/{consumerName}/permanent");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
     private static Task<HttpResponseMessage> SendModelRequestAsync(HttpClient client, string apiKey, string modelName)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/openai/v1/chat/completions")

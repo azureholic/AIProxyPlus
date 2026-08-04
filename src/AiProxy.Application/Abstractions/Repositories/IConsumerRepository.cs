@@ -22,4 +22,6 @@ public interface IConsumerRepository
     Task<bool> TryAddAsync(Consumer consumer, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(Consumer consumer, CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(Consumer consumer, CancellationToken cancellationToken = default);
 }

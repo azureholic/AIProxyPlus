@@ -29,6 +29,7 @@ import { SecretRevealDialog } from '../../components/SecretRevealDialog';
 import {
   allowConsumerModel,
   createConsumer,
+  deleteConsumerPermanently,
   listConsumers,
   revokeConsumer,
   revokeConsumerModel,
@@ -179,17 +180,22 @@ export function ConsumersPage() {
                       <Button
                         appearance="subtle"
                         icon={<DeleteRegular />}
-                        aria-label={`Revoke ${consumer.name}`}
-                        disabled={consumer.revokedAt !== null}
+                        aria-label={consumer.revokedAt ? `Delete permanently ${consumer.name}` : `Revoke ${consumer.name}`}
                       />
                     }
-                    title={`Revoke '${consumer.name}'?`}
-                    message={consumer.authenticationType === 'oidc'
-                      ? "This disables local access without changing the user's identity-provider account. Historical usage records are preserved."
-                      : "This immediately invalidates the consumer's API key. Historical usage records are preserved."}
-                    confirmLabel={consumer.authenticationType === 'oidc' ? 'Disable' : 'Revoke'}
+                    title={consumer.revokedAt ? `Delete '${consumer.name}' permanently?` : `Revoke '${consumer.name}'?`}
+                    message={consumer.revokedAt
+                      ? 'This removes the consumer permanently. Historical usage records are preserved.'
+                      : consumer.authenticationType === 'oidc'
+                        ? "This disables local access without changing the user's identity-provider account. Historical usage records are preserved."
+                        : "This immediately invalidates the consumer's API key. Historical usage records are preserved."}
+                    confirmLabel={consumer.revokedAt ? 'Delete permanently' : consumer.authenticationType === 'oidc' ? 'Disable' : 'Revoke'}
                     onConfirm={async () => {
-                      await revokeConsumer(consumer.name);
+                      if (consumer.revokedAt) {
+                        await deleteConsumerPermanently(consumer.name);
+                      } else {
+                        await revokeConsumer(consumer.name);
+                      }
                       reload();
                     }}
                   />

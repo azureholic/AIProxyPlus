@@ -245,6 +245,7 @@ builder.Services.AddSingleton<IValidator<DeleteApiRouteCommand>, DeleteApiRouteV
 builder.Services.AddSingleton<IValidator<CreateConsumerCommand>, CreateConsumerValidator>();
 builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsumerKeyValidator>();
 builder.Services.AddSingleton<IValidator<RevokeConsumerCommand>, RevokeConsumerValidator>();
+builder.Services.AddSingleton<IValidator<DeleteConsumerPermanentlyCommand>, DeleteConsumerPermanentlyValidator>();
 builder.Services.AddSingleton<IValidator<AllowConsumerModelCommand>, AllowConsumerModelValidator>();
 builder.Services.AddSingleton<IValidator<RevokeConsumerModelCommand>, RevokeConsumerModelValidator>();
 builder.Services.AddSingleton<IValidator<UsageRecordQuery>, UsageRecordQueryValidator>();
@@ -267,6 +268,7 @@ builder.Services.AddScoped<GetApiRouteHandler>();
 builder.Services.AddScoped<CreateConsumerHandler>();
 builder.Services.AddScoped<RotateConsumerKeyHandler>();
 builder.Services.AddScoped<RevokeConsumerHandler>();
+builder.Services.AddScoped<DeleteConsumerPermanentlyHandler>();
 builder.Services.AddScoped<AllowConsumerModelHandler>();
 builder.Services.AddScoped<RevokeConsumerModelHandler>();
 builder.Services.AddScoped<QueryUsageRecordsHandler>();
@@ -564,6 +566,18 @@ config.MapDelete("/consumers/{name}", async (string name, RevokeConsumerHandler 
     var consumer = await handler.HandleAsync(new RevokeConsumerCommand(name), ct);
     return Results.Ok(ConsumerResponse.From(consumer));
 });
+
+config.MapDelete("/consumers/{name}/permanent", async (
+        string name, DeleteConsumerPermanentlyHandler handler, CancellationToken ct) =>
+    {
+        await handler.HandleAsync(new DeleteConsumerPermanentlyCommand(name), ct);
+        return Results.NoContent();
+    })
+    .WithName("DeleteConsumerPermanently")
+    .WithSummary("Permanently deletes an already-revoked consumer")
+    .Produces(StatusCodes.Status204NoContent)
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
 
 app.MapGroup("/api/v1")
     .RequireAuthorization("AdminAccess")

@@ -202,3 +202,9 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
   and calls to any other model return 403, then remove the restriction and confirm access returns to
   unrestricted.
 - [x] Confirm README/architecture.md/diagram consistency with whatever was actually shipped.
+
+## Follow-up — Revoked consumer cleanup
+
+- [x] Add guarded permanent deletion for already-revoked consumers while preserving denormalized usage history.
+- [x] Enable the Consumers page delete action for revoked rows with an explicit permanent-deletion confirmation.
+- [x] Add application, API, and frontend coverage for the revoked-only deletion lifecycle.
