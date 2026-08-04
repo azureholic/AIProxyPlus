@@ -131,3 +131,15 @@ OpenAI-style chat completions, making it impossible to tell the two protocols ap
 - [x] Update the domain model diagram, architecture docs, and backend/frontend tests for the new operation type.
 - [x] Run the complete backend and frontend test suites and the frontend production build.
 
+## Feature — Show which endpoint served each usage record
+
+The Usage Dashboard had no way to tell which of a model's assigned endpoints actually served a given request,
+only the model and consumer, making it impossible to attribute usage or diagnose a bad endpoint from the table.
+
+- [x] Add a denormalized `EndpointName` field to `UsageRecord`, captured at write time like `ConsumerName`.
+- [x] Populate it from the serving `ModelEndpoint` assignment's name when a request completes.
+- [x] Add a migration backfilling historical `usage_records` rows from the `endpoints` table by `EndpointId`,
+  falling back to `'unknown'` for rows whose endpoint no longer exists; column drops on `Down`.
+- [x] Add an "Endpoint" column to the Usage Dashboard table and update the architecture schema docs.
+- [x] Run the complete backend and frontend test suites and the frontend production build.
+

@@ -91,6 +91,7 @@ export interface UsageRecord {
   consumerId: string;
   consumerName: string;
   endpointId: string;
+  endpointName: string;
   provider: Provider;
   operationType: OperationType;
   requestId: string;

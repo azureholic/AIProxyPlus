@@ -211,6 +211,7 @@ export function UsageDashboardPage() {
                 <TableHeaderCell>Timestamp</TableHeaderCell>
                 <TableHeaderCell>Model</TableHeaderCell>
                 <TableHeaderCell>Consumer</TableHeaderCell>
+                <TableHeaderCell>Endpoint</TableHeaderCell>
                 <TableHeaderCell>Operation</TableHeaderCell>
                 <TableHeaderCell>Tokens</TableHeaderCell>
                 <TableHeaderCell>Streaming</TableHeaderCell>
@@ -224,6 +225,7 @@ export function UsageDashboardPage() {
                   <TableCell>{new Date(record.timestamp).toLocaleString()}</TableCell>
                   <TableCell>{record.modelName}</TableCell>
                   <TableCell>{record.consumerName}</TableCell>
+                  <TableCell>{record.endpointName}</TableCell>
                   <TableCell>{record.operationType}</TableCell>
                   <TableCell>{record.totalTokens ?? '—'}</TableCell>
                   <TableCell>{record.streaming ? 'Yes' : 'No'}</TableCell>

@@ -104,6 +104,70 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
     }
 
     [Fact]
+    public async Task AddEndpointNameToUsageRecordsMigration_BackfillsFromEndpointsTable()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync();
+        try
+        {
+            await using var dbContext = PostgresContainerFixture.CreateDbContext(connectionString);
+            var migrator = dbContext.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260804102121_ReclassifyAnthropicMessagesApiUsage");
+
+            var endpointId = Guid.NewGuid();
+            var recordId = Guid.NewGuid();
+            var orphanedRecordId = Guid.NewGuid();
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                """
+                INSERT INTO endpoints (
+                    "Id", "Name", "BaseUrl", "AuthMode", "TimeoutSeconds", "MaxRetries")
+                VALUES (@endpointId, 'prod-anthropic', 'https://api.anthropic.com/', 'ApiKey', 30, 2);
+
+                INSERT INTO usage_records (
+                    "Id", "Timestamp", "ModelName", "ConsumerId", "ConsumerName", "EndpointId", "Provider",
+                    "OperationType", "RequestId", "Streaming", "HttpStatusCode", "DurationMs")
+                VALUES (
+                    @recordId, NOW(), 'claude-haiku-4-5', @consumerId, 'legacy-consumer', @endpointId, 'Anthropic',
+                    'MessagesApi', 'legacy-request', FALSE, 200, 10);
+
+                INSERT INTO usage_records (
+                    "Id", "Timestamp", "ModelName", "ConsumerId", "ConsumerName", "EndpointId", "Provider",
+                    "OperationType", "RequestId", "Streaming", "HttpStatusCode", "DurationMs")
+                VALUES (
+                    @orphanedRecordId, NOW(), 'gpt-4o-prod', @consumerId, 'legacy-consumer', @orphanedEndpointId,
+                    'OpenAI', 'ChatCompletion', 'orphaned-request', FALSE, 200, 10);
+                """,
+                connection);
+            command.Parameters.AddWithValue("endpointId", endpointId);
+            command.Parameters.AddWithValue("recordId", recordId);
+            command.Parameters.AddWithValue("orphanedRecordId", orphanedRecordId);
+            command.Parameters.AddWithValue("consumerId", Guid.NewGuid());
+            command.Parameters.AddWithValue("orphanedEndpointId", Guid.NewGuid());
+            await command.ExecuteNonQueryAsync();
+
+            await migrator.MigrateAsync();
+
+            command.CommandText = "SELECT \"EndpointName\" FROM usage_records WHERE \"Id\" = @recordId";
+            (await command.ExecuteScalarAsync()).Should().Be("prod-anthropic");
+
+            command.CommandText = "SELECT \"EndpointName\" FROM usage_records WHERE \"Id\" = @orphanedRecordId";
+            (await command.ExecuteScalarAsync()).Should().Be("unknown");
+
+            await migrator.MigrateAsync("20260804102121_ReclassifyAnthropicMessagesApiUsage");
+
+            command.CommandText =
+                "SELECT COUNT(*) FROM information_schema.columns " +
+                "WHERE table_name = 'usage_records' AND column_name = 'EndpointName'";
+            (await command.ExecuteScalarAsync()).Should().Be(0L);
+        }
+        finally
+        {
+            await fixture.DropIsolatedDatabaseAsync(connectionString);
+        }
+    }
+
+    [Fact]
     public async Task NativeAnthropicRouteMigration_PromotesExistingCustomRouteInPlace()
     {
         var connectionString = await fixture.CreateIsolatedDatabaseAsync();

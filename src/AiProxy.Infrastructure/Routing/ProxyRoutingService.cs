@@ -223,6 +223,7 @@ public sealed class ProxyRoutingService(
             consumerId,
             consumerName ?? "unknown",
             assignment.EndpointId,
+            assignment.Name,
             assignment.Provider,
             operationType,
             requestId: Guid.NewGuid().ToString("n"),

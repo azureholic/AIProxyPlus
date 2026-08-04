@@ -16,6 +16,7 @@ public sealed class UsageRecord
     public Guid ConsumerId { get; private set; }
     public string ConsumerName { get; private set; }
     public Guid EndpointId { get; private set; }
+    public string EndpointName { get; private set; }
     public Provider Provider { get; private set; }
     public OperationType OperationType { get; private set; }
     public string RequestId { get; private set; }
@@ -33,6 +34,7 @@ public sealed class UsageRecord
     {
         ModelName = null!;
         ConsumerName = null!;
+        EndpointName = null!;
         RequestId = null!;
     }
 
@@ -43,6 +45,7 @@ public sealed class UsageRecord
         Guid consumerId,
         string consumerName,
         Guid endpointId,
+        string endpointName,
         Provider provider,
         OperationType operationType,
         string requestId,
@@ -61,6 +64,7 @@ public sealed class UsageRecord
         ConsumerId = consumerId;
         ConsumerName = consumerName;
         EndpointId = endpointId;
+        EndpointName = endpointName;
         Provider = provider;
         OperationType = operationType;
         RequestId = requestId;
@@ -80,6 +84,7 @@ public sealed class UsageRecord
         Guid consumerId,
         string consumerName,
         Guid endpointId,
+        string endpointName,
         Provider provider,
         OperationType operationType,
         string requestId,
@@ -113,6 +118,11 @@ public sealed class UsageRecord
             throw new DomainException("UsageRecord.EndpointId must be a valid Endpoint id.");
         }
 
+        if (string.IsNullOrWhiteSpace(endpointName))
+        {
+            throw new DomainException("UsageRecord.EndpointName must not be empty.");
+        }
+
         if (string.IsNullOrWhiteSpace(requestId))
         {
             throw new DomainException("UsageRecord.RequestId must not be empty.");
@@ -134,6 +144,7 @@ public sealed class UsageRecord
             consumerId,
             consumerName,
             endpointId,
+            endpointName,
             provider,
             operationType,
             requestId,

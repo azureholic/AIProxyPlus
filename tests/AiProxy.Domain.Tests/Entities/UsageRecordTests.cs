@@ -11,7 +11,7 @@ public class UsageRecordTests
     public void Create_WithTokensOnly_Succeeds()
     {
         var record = UsageRecord.Create(
-            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
+            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(), "prod-endpoint",
             Provider.OpenAI, OperationType.ChatCompletion, "req-1", streaming: false, httpStatusCode: 200,
             durationMs: 120, promptTokens: 10, completionTokens: 20, totalTokens: 30);
 
@@ -25,7 +25,7 @@ public class UsageRecordTests
         var metrics = new Dictionary<string, string> { ["image_count"] = "2", ["image_size"] = "1024x1024" };
 
         var record = UsageRecord.Create(
-            Guid.NewGuid(), "dall-e-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
+            Guid.NewGuid(), "dall-e-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(), "prod-endpoint",
             Provider.OpenAI, OperationType.ImageGeneration, "req-2", streaming: false, httpStatusCode: 200,
             durationMs: 900, usageMetrics: metrics);
 
@@ -37,7 +37,7 @@ public class UsageRecordTests
     public void Create_WithNeitherTokensNorMetrics_Throws()
     {
         var act = () => UsageRecord.Create(
-            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
+            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(), "prod-endpoint",
             Provider.OpenAI, OperationType.ChatCompletion, "req-3", streaming: false, httpStatusCode: 200,
             durationMs: 120);
 
@@ -48,7 +48,7 @@ public class UsageRecordTests
     public void Create_WithEmptyConsumerId_Throws()
     {
         var act = () => UsageRecord.Create(
-            Guid.NewGuid(), "gpt-4o-prod", Guid.Empty, "team-checkout", Guid.NewGuid(),
+            Guid.NewGuid(), "gpt-4o-prod", Guid.Empty, "team-checkout", Guid.NewGuid(), "prod-endpoint",
             Provider.OpenAI, OperationType.ChatCompletion, "req-4", streaming: false, httpStatusCode: 200,
             durationMs: 120, totalTokens: 10);
 
@@ -61,7 +61,7 @@ public class UsageRecordTests
     public void Create_WithEmptyModelName_Throws(string name)
     {
         var act = () => UsageRecord.Create(
-            Guid.NewGuid(), name, Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
+            Guid.NewGuid(), name, Guid.NewGuid(), "team-checkout", Guid.NewGuid(), "prod-endpoint",
             Provider.OpenAI, OperationType.ChatCompletion, "req-5", streaming: false, httpStatusCode: 200,
             durationMs: 120, totalTokens: 10);
 
@@ -72,10 +72,23 @@ public class UsageRecordTests
     public void Create_WithEmptyEndpointId_Throws()
     {
         var act = () => UsageRecord.Create(
-            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.Empty,
+            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.Empty, "prod-endpoint",
             Provider.OpenAI, OperationType.ChatCompletion, "req-6", streaming: false, httpStatusCode: 200,
             durationMs: 120, totalTokens: 10);
 
         act.Should().Throw<DomainException>().WithMessage("*EndpointId*");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_WithEmptyEndpointName_Throws(string name)
+    {
+        var act = () => UsageRecord.Create(
+            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(), name,
+            Provider.OpenAI, OperationType.ChatCompletion, "req-7", streaming: false, httpStatusCode: 200,
+            durationMs: 120, totalTokens: 10);
+
+        act.Should().Throw<DomainException>().WithMessage("*EndpointName*");
     }
 }

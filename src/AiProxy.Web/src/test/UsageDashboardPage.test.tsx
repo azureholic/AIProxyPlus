@@ -19,6 +19,7 @@ describe('UsageDashboardPage', () => {
       consumerId: 'c1',
       consumerName: 'my-team',
       endpointId: 'e1',
+      endpointName: 'endpoint-a',
       apiFamily: 'OpenAI',
       operationType: 'ChatCompletion',
       requestId: 'r1',
@@ -40,6 +41,7 @@ describe('UsageDashboardPage', () => {
 
     expect(await screen.findByText('gpt-4o')).toBeInTheDocument();
     expect(screen.getByText('my-team')).toBeInTheDocument();
+    expect(screen.getByText('endpoint-a')).toBeInTheDocument();
     expect(screen.getByText('15')).toBeInTheDocument();
   });
 

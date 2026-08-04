@@ -16,6 +16,7 @@ public sealed class UsageRecordConfiguration : IEntityTypeConfiguration<UsageRec
 
         builder.Property(u => u.ModelName).IsRequired().HasMaxLength(200);
         builder.Property(u => u.ConsumerName).IsRequired().HasMaxLength(200);
+        builder.Property(u => u.EndpointName).IsRequired().HasMaxLength(200);
         builder.Property(u => u.Provider).HasConversion<string>().HasMaxLength(50);
         builder.Property(u => u.OperationType).HasConversion<string>().HasMaxLength(50);
         builder.Property(u => u.RequestId).IsRequired().HasMaxLength(200);

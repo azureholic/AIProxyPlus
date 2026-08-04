@@ -22,7 +22,7 @@ public class QueryUsageRecordsTests
     public async Task HandleAsync_WithValidQuery_DelegatesToRepository()
     {
         var usageRecord = UsageRecord.Create(
-            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(),
+            Guid.NewGuid(), "gpt-4o-prod", Guid.NewGuid(), "team-checkout", Guid.NewGuid(), "prod-endpoint",
             Provider.OpenAI, OperationType.ChatCompletion, "req-1", streaming: false, httpStatusCode: 200,
             durationMs: 100, totalTokens: 30);
         var expected = new PagedResult<UsageRecord>([usageRecord], 1, 1, 50);

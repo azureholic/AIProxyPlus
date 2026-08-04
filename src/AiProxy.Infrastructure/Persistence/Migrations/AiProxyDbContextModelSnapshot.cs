@@ -282,6 +282,11 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("EndpointId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("EndpointName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<int>("HttpStatusCode")
                         .HasColumnType("integer");
 
