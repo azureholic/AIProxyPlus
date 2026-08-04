@@ -21,46 +21,54 @@ import { CopyRegular } from '@fluentui/react-icons';
  */
 export function SecretRevealDialog({
   open,
-  secretLabel,
-  secret,
+  title,
+  secrets,
   onClose,
 }: {
   open: boolean;
-  secretLabel: string;
-  secret: string | null;
+  title: string;
+  secrets: ReadonlyArray<{ label: string; value: string }> | null;
   onClose: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
+
+  const closeDialog = () => {
+    setCopiedLabel(null);
+    onClose();
+  };
 
   return (
-    <Dialog open={open && secret !== null} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open && secrets !== null} onOpenChange={(_, data) => !data.open && closeDialog()}>
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>{secretLabel}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogContent>
             <MessageBar intent="warning">
               <MessageBarBody>You will not see this value again — copy it now.</MessageBarBody>
             </MessageBar>
-            <Field label={secretLabel} style={{ marginTop: 12 }}>
-              <Input
-                readOnly
-                value={secret ?? ''}
-                contentAfter={
-                  <Button
-                    appearance="subtle"
-                    icon={<CopyRegular />}
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(secret ?? '');
-                      setCopied(true);
-                    }}
-                  />
-                }
-              />
-            </Field>
-            {copied && <Body1>Copied to clipboard.</Body1>}
+            {secrets?.map((secret) => (
+              <Field key={secret.label} label={secret.label} style={{ marginTop: 12 }}>
+                <Input
+                  readOnly
+                  value={secret.value}
+                  contentAfter={
+                    <Button
+                      appearance="subtle"
+                      aria-label={`Copy ${secret.label}`}
+                      icon={<CopyRegular />}
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(secret.value);
+                        setCopiedLabel(secret.label);
+                      }}
+                    />
+                  }
+                />
+              </Field>
+            ))}
+            {copiedLabel && <Body1>{copiedLabel} copied to clipboard.</Body1>}
           </DialogContent>
           <DialogActions>
-            <Button appearance="primary" onClick={onClose}>
+            <Button appearance="primary" onClick={closeDialog}>
               Done — I've saved it
             </Button>
           </DialogActions>

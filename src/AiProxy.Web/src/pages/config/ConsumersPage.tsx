@@ -43,7 +43,7 @@ export function ConsumersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<ReadonlyArray<{ label: string; value: string }> | null>(null);
   const [models, setModels] = useState<Model[]>([]);
   const [modelConsumer, setModelConsumer] = useState<Consumer | null>(null);
 
@@ -92,7 +92,10 @@ export function ConsumersPage() {
                         const result = await createConsumer(newName.trim());
                         setNewName('');
                         setCreateOpen(false);
-                        setRevealedKey(`Key 1: ${result.apiKey1} | Key 2: ${result.apiKey2}`);
+                        setRevealedKeys([
+                          { label: 'Key 1', value: result.apiKey1 },
+                          { label: 'Key 2', value: result.apiKey2 },
+                        ]);
                         reload();
                       } catch (err) {
                         setError(err);
@@ -156,7 +159,7 @@ export function ConsumersPage() {
                       onClick={async () => {
                         try {
                           const result = await rotateConsumerKey(consumer.name, slot);
-                          setRevealedKey(`Key ${slot}: ${result.apiKey}`);
+                          setRevealedKeys([{ label: `Key ${slot}`, value: result.apiKey }]);
                         } catch (err) {
                           setError(err);
                         }
@@ -198,10 +201,10 @@ export function ConsumersPage() {
       )}
 
       <SecretRevealDialog
-        open={revealedKey !== null}
-        secretLabel="Consumer API key"
-        secret={revealedKey}
-        onClose={() => setRevealedKey(null)}
+        open={revealedKeys !== null}
+        title={revealedKeys?.length === 2 ? 'Consumer API keys' : 'Consumer API key'}
+        secrets={revealedKeys}
+        onClose={() => setRevealedKeys(null)}
       />
 
       <Dialog open={modelConsumer !== null} onOpenChange={(_, data) => !data.open && setModelConsumer(null)}>

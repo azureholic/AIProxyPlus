@@ -33,8 +33,10 @@ describe('ConsumersPage', () => {
     const createButton = await screen.findByRole('button', { name: 'Create' });
     fireEvent.click(createButton);
 
-    // The revealed key is an <Input readOnly value=...>, not text content — assert on display value.
-    expect(await screen.findByDisplayValue('Key 1: sk-primary | Key 2: sk-secondary')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Key 1')).toHaveValue('sk-primary');
+    expect(screen.getByLabelText('Key 2')).toHaveValue('sk-secondary');
+    expect(screen.getByRole('button', { name: 'Copy Key 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy Key 2' })).toBeInTheDocument();
     expect(screen.getByText('You will not see this value again — copy it now.')).toBeInTheDocument();
   });
 
