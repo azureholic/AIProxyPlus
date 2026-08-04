@@ -103,11 +103,33 @@ token-less. DALL-E is deprecated and is out of scope for live validation — see
   non-streaming and one streaming request: `usage_records` captured `PromptTokens`/`CompletionTokens`/
   `TotalTokens` (e.g. 13/229/242 non-streaming, 14/186/200 streaming from the `image_generation.completed`
   event), and the Usage Dashboard's "Tokens" column showed the value instead of `—` for those rows.
-- [x] Attempted the same live check against `MAI-Image-2.5-Flash` (`Provider.MicrosoftAI`): the request
-  succeeded (`200`) and metrics-only capture worked correctly (image count/size), but this deployment's
-  response did not include a `usage` object, so no tokens were reported — this is an upstream/environment
-  characteristic (this Foundry-hosted Microsoft AI image deployment doesn't yet emit token usage), not an
-  extractor defect; the fallback-to-metrics-only path is exactly the designed behavior and is what was
-  observed.
 - [x] DALL-E is deprecated — no live validation against it is planned; the Phase 2 unit tests cover the
   no-`usage` fallback path instead.
+
+## Phase 4 — Correction: Microsoft AI's differently-shaped `usage` object
+
+Initial live validation against `MAI-Image-2.5-Flash` (`Provider.MicrosoftAI`) found no tokens and was
+recorded as an assumed upstream limitation. A follow-up investigation (raw response capture via a temporary
+API-key consumer, bypassing the Playground's `data`-only projection) proved that assumption wrong:
+`MAI-Image-2.5-Flash` **does** report token usage, in a Microsoft-specific shape —
+`usage.num_input_text_tokens`/`num_input_image_tokens`/`num_output_tokens` — that
+`ImageUsageExtractor` didn't recognize because it only looked for OpenAI's
+`input_tokens`/`output_tokens`/`total_tokens` keys. This is not a `Provider`-keyed difference (both models are
+served from the same Azure AI Foundry resource, just different routes/deployments) — it's a per-model response
+shape difference, so the extractor tries the OpenAI shape first and falls back to the Microsoft AI shape rather
+than branching on `Provider`.
+
+- [x] Extend `ImageUsageExtractor.FromResponseRoot` to fall back to the `num_input_text_tokens`/
+  `num_input_image_tokens`/`num_output_tokens` shape when the OpenAI-style keys are all absent, mapping
+  `PromptTokens = num_input_text_tokens + num_input_image_tokens`, `CompletionTokens = num_output_tokens`,
+  `TotalTokens` = their sum.
+- [x] Add a unit test (`ExtractFromResponseBody_WithMicrosoftAiUsageShape_MapsToStandardTokenFields`) using the
+  exact captured live payload shape.
+- [x] Add an API-level regression test (`NonStreamingImageGeneration_WithMicrosoftAiUsageShape_...`) with a
+  `Provider.MicrosoftAI`/`/mai/v1` endpoint proving end-to-end capture.
+- [x] Update architecture §6.3/§10 to document both recognized `usage` shapes and that the extractor tries
+  OpenAI's shape first, falling back to Microsoft AI's, independent of `Provider`.
+- [x] Run the complete backend test suite (`dotnet test AiProxy.sln`) — 350 tests passed.
+- [x] Re-validate live against `MAI-Image-2.5-Flash` with the fix in place and confirm `usage_records` now
+  captures `PromptTokens`/`CompletionTokens`/`TotalTokens` (12/1024/1036) and the Usage Dashboard's "Tokens"
+  column shows the value instead of `—`.

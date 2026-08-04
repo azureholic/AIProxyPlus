@@ -165,19 +165,23 @@ visibility; speech capabilities always require explicit administrator selection.
 > looks the same minus the affinity lookup/persist steps (Iteration 2 removed the generic session-id sticky
 > mechanism entirely — every non-Responses/Realtime request just uses priority + round-robin, §9).
 
-### 6.3 Image generation usage (tokens for GPT Image-style models, metrics otherwise)
+### 6.3 Image generation usage (tokens for GPT Image-style and MAI-Image-style models, metrics otherwise)
 
 Embeddings and Images requests flow through the exact same ingress → routing → forwarder pipeline as chat
 completions — deployment resolution still peeks the `model` field (Images API requests carry one too), and
 failover/sticky-session behavior is identical. The only thing that changes per operation type is **which**
 `IUsageExtractor` is invoked: chat completions and embeddings extract `prompt_tokens`/`completion_tokens`/
-`total_tokens`; image generation/edit extract an optional top-level `usage` object
-(`input_tokens`/`output_tokens`/`total_tokens`) into the same token fields when the model reports one, alongside
-whatever billing signal the response actually contains (e.g. image count, size, quality) into
-`UsageRecord.UsageMetrics` — legacy/deprecated image models and `/images/variations` never report `usage`, so
-those requests remain metrics-only exactly as before (Iteration 11). Image requests are not restricted to
-non-streaming: a client may set `stream: true` (GPT Image-style models only), which the proxy forwards through
-the same generic SSE relay as any other streaming operation (see §10) — the image edit/generation extractor
+`total_tokens`; image generation/edit extract an optional top-level `usage` object into the same token fields
+when the model reports one, alongside whatever billing signal the response actually contains (e.g. image count,
+size, quality) into `UsageRecord.UsageMetrics`. Two `usage` shapes are recognized: OpenAI's GPT Image-style
+`input_tokens`/`output_tokens`/`total_tokens`, and Microsoft's own MAI-Image-style
+`num_input_text_tokens`/`num_input_image_tokens`/`num_output_tokens` (summed into the same prompt/completion/
+total fields) — both providers can be Foundry-hosted on the same endpoint, so the extractor tries the OpenAI
+shape first and falls back to the Microsoft AI shape rather than keying off `Provider` (Iteration 11). Legacy/
+deprecated image models and `/images/variations` never report `usage`, so those requests remain metrics-only.
+Image requests are not restricted to non-streaming: a client may set `stream: true` (GPT/MAI Image-style models
+only), which the proxy forwards through the same generic SSE relay as any other streaming operation (see §10) —
+the image edit/generation extractor
 reads the same `usage` mapping from the terminal `image_generation.completed`/`image_edit.completed` event.
 
 ### 6.4 Responses API (stateful chaining via `previous_response_id`)
@@ -481,11 +485,11 @@ with a well-known root token confined to the dev environment is acceptable.
   JSON body otherwise) — no request mutation is needed to force it there.
 - For Anthropic-family requests, usage is included in the `message_start` and terminal `message_delta` events by
   default; the proxy simply parses these — no request mutation needed there.
-- GPT Image-style models report a `usage` object (`input_tokens`/`output_tokens`/`total_tokens`) unconditionally
-  on the terminal `image_generation.completed`/`image_edit.completed` SSE event when the client streams an
-  image generation/edit request, exactly like the Responses API's `response.completed` — no request mutation
-  is needed to force it there either, and (also like the Responses API) this event carries the final image
-  content itself, so it is never a suppressible usage-only frame (Iteration 11).
+- GPT/MAI Image-style models report a `usage` object (in either OpenAI's or Microsoft's shape, §6.3)
+  unconditionally on the terminal `image_generation.completed`/`image_edit.completed` SSE event when the client
+  streams an image generation/edit request, exactly like the Responses API's `response.completed` — no request
+  mutation is needed to force it there either, and (also like the Responses API) this event carries the final
+  image content itself, so it is never a suppressible usage-only frame (Iteration 11).
 - A streaming response interceptor (`SseStreamRelay`) reads the SSE byte stream as it flows through,
   splitting on blank-line-delimited event blocks, parsing `data: {...}` JSON payloads to detect the usage-bearing
   event (the specific event name/shape depends on the operation type — chat completions' final chunk, the

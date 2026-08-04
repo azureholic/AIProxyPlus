@@ -49,6 +49,16 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
         return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority: 1, enabled: true);
     }
 
+    private static ModelEndpoint NewMicrosoftAiEndpoint(Guid modelId, string baseUrl)
+    {
+        var endpointId = Guid.NewGuid();
+        var endpoint = Endpoint.Create(
+            endpointId, $"usage-capture-microsoftai-test-endpoint-{endpointId:N}", baseUrl, AuthMode.ApiKey,
+            secretRef: "endpoints/x", maxRetries: 0);
+        var route = ApiRoute.Create(Guid.NewGuid(), "Foundry Microsoft AI", Provider.MicrosoftAI, "/mai/v1");
+        return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority: 1, enabled: true);
+    }
+
     private static HttpRequestMessage BuildRequest(string path, object body) =>
         new(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
 
@@ -146,6 +156,32 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
         record.CompletionTokens.Should().Be(50);
         record.TotalTokens.Should().Be(100);
         record.UsageMetrics!["size"].Should().Be("1024x1024");
+    }
+
+    [Fact]
+    public async Task NonStreamingImageGeneration_WithMicrosoftAiUsageShape_MapsToStandardTokenFields()
+    {
+        var modelName = $"mai-image-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewMicrosoftAiEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
+
+        _backend.Given(Request.Create().WithPath("/mai/v1/images/generations").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(
+                new
+                {
+                    data = new[] { new { b64_json = "..." } },
+                    usage = new { num_output_tokens = 1024, num_input_text_tokens = 10, num_input_image_tokens = 0 },
+                }));
+
+        var response = await _factory.CreateClient().SendAsync(
+            BuildRequest("/openai/v1/images/generations", new { model = modelName, prompt = "a cat" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var record = await WaitForUsageRecordAsync();
+        record.PromptTokens.Should().Be(10);
+        record.CompletionTokens.Should().Be(1024);
+        record.TotalTokens.Should().Be(1034);
     }
 
     [Fact]

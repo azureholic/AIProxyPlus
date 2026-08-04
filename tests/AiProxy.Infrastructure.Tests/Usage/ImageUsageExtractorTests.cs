@@ -66,6 +66,23 @@ public class ImageUsageExtractorTests
     }
 
     [Fact]
+    public void ExtractFromResponseBody_WithMicrosoftAiUsageShape_MapsToStandardTokenFields()
+    {
+        var extractor = new ImageUsageExtractor(Provider.MicrosoftAI, OperationType.ImageGeneration);
+
+        var result = extractor.ExtractFromResponseBody(
+            """
+            {"created":1,"data":[{"b64_json":"..."}],"model":"MAI-Image-2.5-Flash",
+             "usage":{"num_output_tokens":1024,"num_input_text_tokens":10,"num_input_image_tokens":0}}
+            """);
+
+        result.Should().NotBeNull();
+        result!.PromptTokens.Should().Be(10);
+        result.CompletionTokens.Should().Be(1024);
+        result.TotalTokens.Should().Be(1034);
+    }
+
+    [Fact]
     public void ExtractFromResponseBody_WithoutUsageObject_LeavesTokensNull()
     {
         var extractor = new ImageUsageExtractor(Provider.OpenAI, OperationType.ImageGeneration);

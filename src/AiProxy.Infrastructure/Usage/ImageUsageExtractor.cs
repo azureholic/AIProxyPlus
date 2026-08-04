@@ -8,8 +8,11 @@ namespace AiProxy.Infrastructure.Usage;
 /// Images API responses carry image count/size/quality as the billing signal, captured into
 /// <see cref="UsageExtractionResult.UsageMetrics"/>. GPT Image-style models additionally report token usage
 /// (<c>usage.input_tokens/output_tokens/total_tokens</c>) alongside those metrics, on both the non-streaming
-/// body and the terminal <c>image_generation.completed</c>/<c>image_edit.completed</c> SSE event; legacy/
-/// deprecated image models and <c>/images/variations</c> never report token usage.
+/// body and the terminal <c>image_generation.completed</c>/<c>image_edit.completed</c> SSE event. Microsoft's
+/// own MAI-Image-style models report usage in a differently-shaped object instead
+/// (<c>usage.num_input_text_tokens</c>/<c>num_input_image_tokens</c>/<c>num_output_tokens</c>), which is mapped
+/// onto the same <see cref="UsageExtractionResult.PromptTokens"/>/<see cref="UsageExtractionResult.CompletionTokens"/>
+/// fields. Legacy/deprecated image models and <c>/images/variations</c> never report token usage.
 /// </summary>
 public sealed class ImageUsageExtractor(Provider provider, OperationType operationType) : IUsageExtractor
 {
@@ -87,6 +90,11 @@ public sealed class ImageUsageExtractor(Provider provider, OperationType operati
             promptTokens = TryGetInt(usage, "input_tokens");
             completionTokens = TryGetInt(usage, "output_tokens");
             totalTokens = TryGetInt(usage, "total_tokens");
+
+            if (promptTokens is null && completionTokens is null && totalTokens is null)
+            {
+                (promptTokens, completionTokens, totalTokens) = FromMicrosoftAiUsageShape(usage);
+            }
         }
 
         var hasTokens = promptTokens is not null || completionTokens is not null || totalTokens is not null;
@@ -96,6 +104,24 @@ public sealed class ImageUsageExtractor(Provider provider, OperationType operati
         }
 
         return new UsageExtractionResult(promptTokens, completionTokens, totalTokens, metrics.Count == 0 ? null : metrics);
+    }
+
+    // MAI-Image-style models report usage.num_input_text_tokens/num_input_image_tokens/num_output_tokens
+    // instead of OpenAI's input_tokens/output_tokens/total_tokens shape.
+    private static (int? PromptTokens, int? CompletionTokens, int? TotalTokens) FromMicrosoftAiUsageShape(JsonElement usage)
+    {
+        var inputText = TryGetInt(usage, "num_input_text_tokens");
+        var inputImage = TryGetInt(usage, "num_input_image_tokens");
+        var output = TryGetInt(usage, "num_output_tokens");
+
+        if (inputText is null && inputImage is null && output is null)
+        {
+            return (null, null, null);
+        }
+
+        var promptTokens = inputText is null && inputImage is null ? (int?)null : (inputText ?? 0) + (inputImage ?? 0);
+        var totalTokens = (promptTokens ?? 0) + (output ?? 0);
+        return (promptTokens, output, totalTokens);
     }
 
     private static int? TryGetInt(JsonElement parent, string propertyName) =>
