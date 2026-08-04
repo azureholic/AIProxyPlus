@@ -246,10 +246,11 @@ provider for which credential placement, mutation, and usage semantics are unkno
 while assigned. Built-in routes are migration-owned and carry stable identifiers, but remain editable and may be
 deleted when unassigned; `IsBuiltIn` records their origin and startup never overwrites administrator changes.
 
-The migrations seed these built-in routes deterministically: Foundry OpenAI (`OpenAI`, `/openai/v1`), Microsoft
-AI (`MicrosoftAI`, `/mai/v1`), Anthropic (`Anthropic`, `/anthropic/v1`), Native Anthropic (`Anthropic`, `/v1`),
-and Native OpenAI (`OpenAI`, `/v1`). Existing Native Anthropic routes are promoted in place so their identifiers
-and assignments are preserved.
+The migrations seed these built-in routes deterministically: Foundry OpenAI (`OpenAI`, `/openai/v1`), Foundry
+Microsoft AI (`MicrosoftAI`, `/mai/v1`), Foundry Anthropic (`Anthropic`, `/anthropic/v1`), Native Anthropic
+(`Anthropic`, `/v1`), and Native OpenAI (`OpenAI`, `/v1`). The `Foundry` prefix distinguishes routes reached
+through a shared Foundry endpoint from routes that call a provider's native API directly. Existing Native
+Anthropic routes are promoted in place so their identifiers and assignments are preserved.
 Existing assignments are backfilled to the route matching their former API family without changing priority,
 enabled state, health, or endpoint credentials.
 

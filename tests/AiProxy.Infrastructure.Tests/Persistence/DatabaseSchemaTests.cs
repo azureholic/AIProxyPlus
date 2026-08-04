@@ -53,8 +53,8 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
 
         routes.Should().BeEquivalentTo([
             ("Foundry OpenAI", "OpenAI", "/openai/v1"),
-            ("Microsoft AI", "MicrosoftAI", "/mai/v1"),
-            ("Anthropic", "Anthropic", "/anthropic/v1"),
+            ("Foundry Microsoft AI", "MicrosoftAI", "/mai/v1"),
+            ("Foundry Anthropic", "Anthropic", "/anthropic/v1"),
             ("Native Anthropic", "Anthropic", "/v1"),
             ("Native OpenAI", "OpenAI", "/v1"),
         ]);

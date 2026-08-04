@@ -101,3 +101,12 @@ The reusable API-route migration seeded the proxy-prefixed Anthropic route but o
 - [x] Add persistence coverage for fresh seeding, in-place promotion, and downgrade behavior.
 - [x] Apply the migration to the existing database and verify all five canonical routes are built in.
 
+## Bug 7 — Foundry-hosted route names don't distinguish them from native provider routes
+
+The Anthropic and Microsoft AI built-in route names didn't indicate they proxy through a shared Foundry endpoint,
+which was easy to confuse with the Native Anthropic and Native OpenAI routes that call providers directly.
+
+- [x] Rename the built-in `Anthropic` route to `Foundry Anthropic` and `Microsoft AI` to `Foundry Microsoft AI`.
+- [x] Only rename rows still holding the original default name, preserving any administrator's own rename.
+- [x] Update persistence coverage and documentation for the new built-in names.
+
