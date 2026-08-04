@@ -13,7 +13,7 @@ describe('ApiRoutesPage', () => {
   it('shows built-in routes and creates a reusable provider route', async () => {
     const route = {
       id: 'built-in-id',
-      name: 'Foundry OpenAI',
+      name: 'Third Party OpenAI',
       provider: 'OpenAI',
       pathPrefix: '/openai/v1',
       isBuiltIn: true,
@@ -28,7 +28,7 @@ describe('ApiRoutesPage', () => {
     const user = userEvent.setup();
     render(<ApiRoutesPage />);
 
-    expect(await screen.findByText('Foundry OpenAI')).toBeInTheDocument();
+    expect(await screen.findByText('Third Party OpenAI')).toBeInTheDocument();
     expect(screen.getByText('Built in')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'New API route' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Custom MAI' } });

@@ -52,9 +52,9 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
         }
 
         routes.Should().BeEquivalentTo([
-            ("Foundry OpenAI", "OpenAI", "/openai/v1"),
+            ("Third Party OpenAI", "OpenAI", "/openai/v1"),
             ("Foundry Microsoft AI", "MicrosoftAI", "/mai/v1"),
-            ("Foundry Anthropic", "Anthropic", "/anthropic/v1"),
+            ("Third Party Anthropic", "Anthropic", "/anthropic/v1"),
             ("Native Anthropic", "Anthropic", "/v1"),
             ("Native OpenAI", "OpenAI", "/v1"),
         ]);
@@ -168,6 +168,48 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
     }
 
     [Fact]
+    public async Task RenameThirdPartyProviderRoutesMigration_RenamesOnlyUnmodifiedDefaultNames()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync();
+        try
+        {
+            await using var dbContext = PostgresContainerFixture.CreateDbContext(connectionString);
+            var migrator = dbContext.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260804104659_AddEndpointNameToUsageRecords");
+
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                """
+                UPDATE api_routes SET "Name" = 'My Anthropic'
+                WHERE "Id" = '7d746f5a-9a9b-4cf4-91e8-5fa231ae9c03'
+                """,
+                connection);
+            await command.ExecuteNonQueryAsync();
+
+            await migrator.MigrateAsync();
+
+            command.CommandText =
+                "SELECT \"Name\" FROM api_routes WHERE \"Id\" = '7d746f5a-9a9b-4cf4-91e8-5fa231ae9c01'";
+            (await command.ExecuteScalarAsync()).Should().Be("Third Party OpenAI");
+
+            command.CommandText =
+                "SELECT \"Name\" FROM api_routes WHERE \"Id\" = '7d746f5a-9a9b-4cf4-91e8-5fa231ae9c03'";
+            (await command.ExecuteScalarAsync()).Should().Be("My Anthropic", "an administrator's own rename must not be overwritten");
+
+            await migrator.MigrateAsync("20260804104659_AddEndpointNameToUsageRecords");
+
+            command.CommandText =
+                "SELECT \"Name\" FROM api_routes WHERE \"Id\" = '7d746f5a-9a9b-4cf4-91e8-5fa231ae9c01'";
+            (await command.ExecuteScalarAsync()).Should().Be("Foundry OpenAI");
+        }
+        finally
+        {
+            await fixture.DropIsolatedDatabaseAsync(connectionString);
+        }
+    }
+
+    [Fact]
     public async Task NativeAnthropicRouteMigration_PromotesExistingCustomRouteInPlace()
     {
         var connectionString = await fixture.CreateIsolatedDatabaseAsync();
@@ -248,7 +290,7 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
             await using var reader = await command.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetGuid(0).Should().Be(Guid.Parse("7d746f5a-9a9b-4cf4-91e8-5fa231ae9c01"));
-            reader.GetString(1).Should().Be("Foundry OpenAI");
+            reader.GetString(1).Should().Be("Third Party OpenAI");
             reader.GetGuid(2).Should().Be(reader.GetGuid(3));
             reader.GetString(4).Should().Be("OpenAI");
             await reader.CloseAsync();

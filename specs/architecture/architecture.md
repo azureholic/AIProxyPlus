@@ -247,11 +247,16 @@ provider for which credential placement, mutation, and usage semantics are unkno
 while assigned. Built-in routes are migration-owned and carry stable identifiers, but remain editable and may be
 deleted when unassigned; `IsBuiltIn` records their origin and startup never overwrites administrator changes.
 
-The migrations seed these built-in routes deterministically: Foundry OpenAI (`OpenAI`, `/openai/v1`), Foundry
-Microsoft AI (`MicrosoftAI`, `/mai/v1`), Foundry Anthropic (`Anthropic`, `/anthropic/v1`), Native Anthropic
-(`Anthropic`, `/v1`), and Native OpenAI (`OpenAI`, `/v1`). The `Foundry` prefix distinguishes routes reached
-through a shared Foundry endpoint from routes that call a provider's native API directly. Existing Native
-Anthropic routes are promoted in place so their identifiers and assignments are preserved.
+The migrations seed these built-in routes deterministically: Third Party OpenAI (`OpenAI`, `/openai/v1`), Foundry
+Microsoft AI (`MicrosoftAI`, `/mai/v1`), Third Party Anthropic (`Anthropic`, `/anthropic/v1`), Native Anthropic
+(`Anthropic`, `/v1`), and Native OpenAI (`OpenAI`, `/v1`). The `Third Party` prefix marks routes that speak a
+provider's public API shape but may be served by any compatible backend behind that shared endpoint — Azure AI
+Foundry, Amazon Bedrock, or another OpenAI-/Anthropic-compatible host — rather than the provider's own
+infrastructure; `Foundry` remains reserved for the Microsoft AI route, which is only ever reached through a
+Foundry endpoint; `Native` routes call a provider's own API directly. Existing Native Anthropic routes are
+promoted in place so their identifiers and assignments are preserved, and existing Foundry OpenAI/Anthropic
+routes are renamed to their Third Party equivalents in place, preserving their identifiers and any
+administrator's own rename.
 Existing assignments are backfilled to the route matching their former API family without changing priority,
 enabled state, health, or endpoint credentials.
 

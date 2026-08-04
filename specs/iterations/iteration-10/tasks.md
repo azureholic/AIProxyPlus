@@ -143,3 +143,16 @@ only the model and consumer, making it impossible to attribute usage or diagnose
 - [x] Add an "Endpoint" column to the Usage Dashboard table and update the architecture schema docs.
 - [x] Run the complete backend and frontend test suites and the frontend production build.
 
+## Feature — Rename Third Party OpenAI/Anthropic routes to reflect non-Foundry backends
+
+The built-in `Foundry OpenAI` and `Foundry Anthropic` routes implied their shared endpoint is always Azure AI
+Foundry, but the same OpenAI-/Anthropic-compatible API shape is also served by other third-party backends such
+as Amazon Bedrock. `Foundry Microsoft AI` is unaffected — Microsoft AI is only ever reached through Foundry.
+
+- [x] Rename the built-in `Foundry OpenAI` route to `Third Party OpenAI` and `Foundry Anthropic` to
+  `Third Party Anthropic`, migration-owned and applied only to rows still holding the original default name.
+- [x] Add persistence coverage proving the rename applies on upgrade, preserves an administrator's own rename,
+  and reverts on downgrade.
+- [x] Update architecture docs, README, and backend/frontend tests referencing the renamed built-ins.
+- [x] Run the complete backend and frontend test suites and the frontend production build.
+

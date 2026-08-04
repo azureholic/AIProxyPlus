@@ -181,11 +181,11 @@ curl -X POST http://localhost:8080/api/v1/config/models/gpt-4o/endpoints `
 
 `Endpoint` owns only the host, credentials, timeout, and retry settings. `ApiRoute` owns provider behavior and
 the normalized upstream prefix. A model assignment combines both, so one Foundry endpoint can be reused with the
-built-in Foundry OpenAI (`/openai/v1`) and Foundry Microsoft AI (`/mai/v1`) routes. OpenAI uses bearer
+built-in Third Party OpenAI (`/openai/v1`) and Foundry Microsoft AI (`/mai/v1`) routes. OpenAI uses bearer
 authorization, Microsoft AI uses `api-key`, and Anthropic uses `x-api-key`.
 
 The Iteration 7 migration creates four built-in routes and backfills existing assignments and Responses affinity.
-Legacy Azure OpenAI and OpenAI-compatible assignments map to the Foundry OpenAI route; Native OpenAI and Anthropic
+Legacy Azure OpenAI and OpenAI-compatible assignments map to the Third Party OpenAI route; Native OpenAI and Anthropic
 map to their matching built-ins. Downgrade is blocked if a model uses the same endpoint through multiple routes,
 because the legacy schema cannot represent that state.
 
