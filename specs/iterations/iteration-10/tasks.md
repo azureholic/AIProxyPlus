@@ -13,3 +13,16 @@ Observed with a Chat-capable `claude-haiku-4-5` model assigned to a native Anthr
 - [x] Render native Anthropic JSON and streaming text responses and normalize provider token usage for display.
 - [x] Add regression coverage for valid/expired sessions and native Anthropic Chat Playground requests.
 - [x] Run the complete frontend test suite and production build.
+
+## Bug 2 — Replaced endpoint API key remains stale
+
+After the native Anthropic request path was corrected, the proxy continued returning Anthropic `401` responses even
+though the current Vault key succeeded against `https://api.anthropic.com/v1/messages`. The endpoint credential
+provider retained the previous Vault value in its five-minute memory cache after the endpoint secret was replaced.
+
+- [x] Verify the persisted endpoint uses base URL `https://api.anthropic.com`, native Anthropic route prefix `/v1`,
+  and the expected Vault secret reference.
+- [x] Validate the exact current Vault key directly against Anthropic without exposing it; the request returned `200`.
+- [x] Add an Application cache-invalidation port and invoke it only after a successful endpoint secret write.
+- [x] Implement invalidation in the Infrastructure credential provider while preserving normal short-TTL caching.
+- [x] Add focused Application and Infrastructure regression tests for immediate key rotation.

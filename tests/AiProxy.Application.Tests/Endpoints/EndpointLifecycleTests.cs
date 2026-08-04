@@ -13,6 +13,7 @@ public class EndpointLifecycleTests
 {
     private readonly IEndpointRepository _repository = Substitute.For<IEndpointRepository>();
     private readonly ISecretResolver _secretResolver = Substitute.For<ISecretResolver>();
+    private readonly IEndpointCredentialCache _credentialCache = Substitute.For<IEndpointCredentialCache>();
 
     [Fact]
     public async Task CreateAsync_WithApiKey_StoresSecretAndPersistsEndpoint()
@@ -130,11 +131,26 @@ public class EndpointLifecycleTests
             Guid.NewGuid(), "Foundry primary", "https://foundry.example.com", AuthMode.ManagedIdentity,
             managedIdentityScope: "https://ai.azure.com/.default");
         _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
-        var handler = new SetEndpointSecretHandler(_repository, _secretResolver, new SetEndpointSecretValidator());
+        var handler = new SetEndpointSecretHandler(
+            _repository, _secretResolver, _credentialCache, new SetEndpointSecretValidator());
 
         var act = () => handler.HandleAsync(new SetEndpointSecretCommand(endpoint.Id, "sk-new"));
 
         await act.Should().ThrowAsync<ConflictException>();
+    }
+
+    [Fact]
+    public async Task SetSecretAsync_WithApiKeyEndpoint_InvalidatesCachedCredential()
+    {
+        var endpoint = CreateApiKeyEndpoint();
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        var handler = new SetEndpointSecretHandler(
+            _repository, _secretResolver, _credentialCache, new SetEndpointSecretValidator());
+
+        await handler.HandleAsync(new SetEndpointSecretCommand(endpoint.Id, "sk-new"));
+
+        await _secretResolver.Received(1).StoreAsync(endpoint.SecretRef!, "sk-new", Arg.Any<CancellationToken>());
+        _credentialCache.Received(1).Invalidate(endpoint.SecretRef!);
     }
 
     private static Endpoint CreateApiKeyEndpoint() => Endpoint.Create(

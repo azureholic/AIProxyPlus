@@ -316,7 +316,9 @@ with a well-known root token confined to the dev environment is acceptable.
   specify `ManagedIdentityTenantId` to request the token from the target resource's Entra tenant; when omitted,
   the credential chain's default tenant behavior is preserved. The tenant ID is configuration, not secret
   material. This is the **only** place the solution touches an Azure SDK, and it's opt-in per endpoint.
-- Resolved secrets are cached in-memory with a short TTL (e.g. 5 minutes) to avoid a Vault round trip per request,
+- Resolved secrets are cached in-memory with a short TTL (e.g. 5 minutes) to avoid a Vault round trip per request;
+  successfully replacing an endpoint secret invalidates its cache entry immediately so subsequent traffic cannot use
+  superseded credentials,
   and are never logged (Serilog destructuring policies + explicit redaction for auth headers).
 - **Scope note**: Vault holds secrets the proxy must *present outbound* (endpoint credentials, the admin key hash).
   Inbound **Consumer** API keys (see the domain model in §5 and authentication in §13) are a different concern —

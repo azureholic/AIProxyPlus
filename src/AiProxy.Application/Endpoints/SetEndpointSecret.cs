@@ -19,6 +19,7 @@ public sealed class SetEndpointSecretValidator : AbstractValidator<SetEndpointSe
 public sealed class SetEndpointSecretHandler(
     IEndpointRepository repository,
     ISecretResolver secretResolver,
+    IEndpointCredentialCache credentialCache,
     IValidator<SetEndpointSecretCommand> validator)
 {
     public async Task HandleAsync(SetEndpointSecretCommand command, CancellationToken cancellationToken = default)
@@ -34,5 +35,6 @@ public sealed class SetEndpointSecretHandler(
         }
 
         await secretResolver.StoreAsync(endpoint.SecretRef, command.ApiKeyPlaintext, cancellationToken);
+        credentialCache.Invalidate(endpoint.SecretRef);
     }
 }

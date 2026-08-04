@@ -85,6 +85,7 @@ builder.Services.AddSingleton<ISecretResolver, VaultSecretResolver>();
 
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<ApiKeyCredentialProvider>();
+builder.Services.AddScoped<IEndpointCredentialCache>(services => services.GetRequiredService<ApiKeyCredentialProvider>());
 builder.Services.AddSingleton<TokenCredential>(new DefaultAzureCredential());
 builder.Services.AddScoped<ManagedIdentityCredentialProvider>();
 builder.Services.AddScoped<ICredentialProvider, CredentialProvider>();

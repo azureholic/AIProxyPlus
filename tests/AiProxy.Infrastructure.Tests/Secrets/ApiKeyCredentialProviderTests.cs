@@ -64,6 +64,25 @@ public class ApiKeyCredentialProviderTests
     }
 
     [Fact]
+    public async Task Invalidate_RemovesCachedSecret()
+    {
+        var secretResolver = Substitute.For<ISecretResolver>();
+        secretResolver.TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>())
+            .Returns("sk-old", "sk-new");
+        var provider = new ApiKeyCredentialProvider(
+            secretResolver, new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromMinutes(5));
+        var endpoint = NewAssignment(Provider.Anthropic);
+
+        var oldCredential = await provider.GetCredentialAsync(endpoint);
+        provider.Invalidate("endpoints/abc");
+        var newCredential = await provider.GetCredentialAsync(endpoint);
+
+        oldCredential.HeaderValue.Should().Be("sk-old");
+        newCredential.HeaderValue.Should().Be("sk-new");
+        await secretResolver.Received(2).TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task GetCredentialAsync_WhenSecretMissingInVault_Throws()
     {
         var secretResolver = Substitute.For<ISecretResolver>();

@@ -10,6 +10,7 @@ namespace AiProxy.Infrastructure.Secrets;
 /// in-memory for a short TTL to avoid a Vault round trip per request (architecture.md §8).
 /// </summary>
 public sealed class ApiKeyCredentialProvider(ISecretResolver secretResolver, IMemoryCache cache, TimeSpan? cacheTtl = null)
+    : IEndpointCredentialCache
 {
     private readonly TimeSpan _cacheTtl = cacheTtl ?? TimeSpan.FromMinutes(5);
 
@@ -21,7 +22,7 @@ public sealed class ApiKeyCredentialProvider(ISecretResolver secretResolver, IMe
             throw new InvalidOperationException($"Endpoint '{endpoint.Id}' has AuthMode.ApiKey but no SecretRef.");
         }
 
-        var cacheKey = $"endpoint-secret:{endpoint.SecretRef}";
+        var cacheKey = CacheKey(endpoint.SecretRef);
         if (!cache.TryGetValue(cacheKey, out string? apiKey))
         {
             apiKey = await secretResolver.TryResolveAsync(endpoint.SecretRef, cancellationToken)
@@ -31,6 +32,13 @@ public sealed class ApiKeyCredentialProvider(ISecretResolver secretResolver, IMe
 
         return BuildCredential(assignment.Provider, apiKey!);
     }
+
+    public void Invalidate(string secretRef)
+    {
+        cache.Remove(CacheKey(secretRef));
+    }
+
+    private static string CacheKey(string secretRef) => $"endpoint-secret:{secretRef}";
 
     private static EndpointCredential BuildCredential(Provider provider, string apiKey) => provider switch
     {
