@@ -29,6 +29,7 @@ public class ModelRepositoryTests(PostgresContainerFixture fixture)
         var repository = new ModelRepository(writeContext);
 
         var model = NewModel();
+        model.ReplaceCapabilities([ModelCapability.SpeechToText, ModelCapability.TextToSpeech]);
         model.AddEndpoint(NewEndpoint(model.Id, priority: 1));
         model.AddEndpoint(NewEndpoint(model.Id, priority: 2));
         await repository.AddAsync(model);
@@ -41,6 +42,8 @@ public class ModelRepositoryTests(PostgresContainerFixture fixture)
         loaded.Should().NotBeNull();
         loaded!.Endpoints.Should().HaveCount(2);
         loaded.Endpoints.Select(e => e.Priority).Should().BeEquivalentTo([1, 2]);
+        loaded.Capabilities.Should().BeEquivalentTo(
+            [ModelCapability.SpeechToText, ModelCapability.TextToSpeech]);
     }
 
     [Fact]
@@ -99,6 +102,7 @@ public class ModelRepositoryTests(PostgresContainerFixture fixture)
             var updateRepository = new ModelRepository(updateContext);
             var reloaded = await updateRepository.GetByNameAsync(modelName);
             reloaded!.SetStrategy(RoutingStrategy.Priority);
+            reloaded.ReplaceCapabilities([ModelCapability.Chat, ModelCapability.TextToSpeech]);
             reloaded.AddEndpoint(NewEndpoint(reloaded.Id, priority: 2));
             await updateRepository.UpdateAsync(reloaded);
         }
@@ -108,6 +112,8 @@ public class ModelRepositoryTests(PostgresContainerFixture fixture)
 
         loaded!.Strategy.Should().Be(RoutingStrategy.Priority);
         loaded.Endpoints.Should().HaveCount(2);
+        loaded.Capabilities.Should().BeEquivalentTo(
+            [ModelCapability.Chat, ModelCapability.TextToSpeech]);
     }
 
     [Fact]

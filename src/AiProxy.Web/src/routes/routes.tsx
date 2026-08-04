@@ -17,6 +17,7 @@ import { ConsumersPage } from '../pages/config/ConsumersPage';
 import { ChatPlaygroundPage } from '../pages/playground/ChatPlaygroundPage';
 import { ImagePlaygroundPage } from '../pages/playground/ImagePlaygroundPage';
 import { VoicePlaygroundPage } from '../pages/playground/VoicePlaygroundPage';
+import { SpeechPlaygroundPage } from '../pages/playground/SpeechPlaygroundPage';
 import { UsageDashboardPage } from '../pages/dashboard/UsageDashboardPage';
 import { SettingsPage } from '../pages/SettingsPage';
 
@@ -48,7 +49,8 @@ export const navSections: NavSection[] = [
     routes: [
       { path: '/playground/chat', label: 'Chat', icon: <Chat24Regular />, element: <ChatPlaygroundPage /> },
       { path: '/playground/images', label: 'Images', icon: <Image24Regular />, element: <ImagePlaygroundPage /> },
-      { path: '/playground/voice', label: 'Voice', icon: <MicRecord24Regular />, element: <VoicePlaygroundPage /> },
+      { path: '/playground/voice', label: 'Realtime Voice', icon: <MicRecord24Regular />, element: <VoicePlaygroundPage /> },
+      { path: '/playground/speech', label: 'Speech', icon: <MicRecord24Regular />, element: <SpeechPlaygroundPage /> },
     ],
   },
   {

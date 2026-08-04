@@ -158,7 +158,7 @@ export function VoicePlaygroundPage() {
       <PageHeader title="Voice Playground" />
 
       <div className={styles.controls}>
-        <ModelPicker value={model} onChange={setModel} />
+        <ModelPicker value={model} onChange={setModel} capability="Realtime" />
         <Badge color={state === 'connected' ? 'success' : state === 'connecting' ? 'warning' : 'informative'}>
           {state}
         </Badge>

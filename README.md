@@ -86,8 +86,9 @@ A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboar
 container as the API — no separate frontend host/deployment.
 
 - **Pages**: Config → Models, Endpoints, API Routes, Consumers; Playground → Chat
-  (streaming/non-streaming), Images, Voice (push-to-talk microphone input, streaming speaker output, and raw
-  Realtime event diagnostics, see architecture.md §19.4); Dashboard → Usage (filters, table, token/request charts).
+  (streaming/non-streaming), Images, Realtime Voice (push-to-talk microphone input, streaming speaker output, and
+  raw Realtime event diagnostics), and Speech (file/microphone transcription plus text-to-speech playback and
+  download); Dashboard → Usage (filters, table, token/request charts).
 - **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it
   for you) writes the compiled static files straight into `src/AiProxy.Api/wwwroot`, which `AiProxy.Api` then
   serves at `/` (with a client-side-routing fallback to `index.html`) alongside its existing `/api/*`,
@@ -111,6 +112,14 @@ container as the API — no separate frontend host/deployment.
   Realtime model, hold **Hold to talk** while speaking, and release to commit the turn. The browser requests
   microphone permission on first use and plays response audio automatically. Microphone access requires HTTPS or
   a loopback development origin such as `localhost`.
+- Every model has one or more administrator-managed capabilities: `Chat`, `ImageGeneration`, `Realtime`,
+  `SpeechToText`, and `TextToSpeech`. Playground selectors show only models with the matching capability. These
+  values are discovery metadata; provider and operation compatibility are still enforced by routing.
+- Speech is separate from Realtime Voice. Speech-to-text sends a selected audio file or an ephemeral microphone
+  recording to `/openai/v1/audio/transcriptions`; text-to-speech sends text and a voice to
+  `/openai/v1/audio/speech`, then offers browser playback and download. Audio is not persisted by AI Proxy.
+  Microphone recording requires `MediaRecorder`, media-device support, and a secure or loopback origin. Uploads
+  remain subject to the API server's configured request-body limit.
 - Frontend tests: `cd src/AiProxy.Web && npm test` (Vitest + React Testing Library).
 
 ## OIDC provider setup
@@ -164,7 +173,7 @@ curl -X POST http://localhost:8080/api/v1/config/api-routes `
 # Register a model and assign an endpoint + API route combination.
 curl -X POST http://localhost:8080/api/v1/config/models `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
-  -d '{"name":"gpt-4o"}'
+  -d '{"name":"gpt-4o","strategy":"Priority","capabilities":["Chat","Realtime"]}'
 curl -X POST http://localhost:8080/api/v1/config/models/gpt-4o/endpoints `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"endpointId":"<endpoint-id>","apiRouteId":"<api-route-id>","priority":1,"enabled":true}'

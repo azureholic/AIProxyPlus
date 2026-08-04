@@ -35,7 +35,8 @@ describe('App shell + navigation', () => {
       ['Consumers', 'New consumer'],
       ['Chat', 'Send'],
       ['Images', 'Generate'],
-      ['Voice', 'Connect'],
+      ['Realtime Voice', 'Connect'],
+      ['Speech', 'Speech to text'],
       ['Usage', 'Apply filters'],
       ['Settings', 'proxy-admin'],
     ] as const) {

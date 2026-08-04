@@ -13,6 +13,8 @@ public enum OperationType
     ImageEdit,
     ImageVariation,
     ResponsesApi,
+    SpeechToText,
+    TextToSpeech,
 
     /// <summary>WebSocket-based realtime/voice API (§9) — connection-scoped affinity, no usage capture yet.</summary>
     RealtimeVoice

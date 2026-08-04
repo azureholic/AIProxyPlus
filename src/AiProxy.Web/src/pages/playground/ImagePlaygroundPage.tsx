@@ -64,7 +64,7 @@ export function ImagePlaygroundPage() {
       <PageHeader title="Image Playground" />
 
       <div className={styles.controls}>
-        <ModelPicker value={model} onChange={setModel} />
+        <ModelPicker value={model} onChange={setModel} capability="ImageGeneration" />
       </div>
 
       <Textarea

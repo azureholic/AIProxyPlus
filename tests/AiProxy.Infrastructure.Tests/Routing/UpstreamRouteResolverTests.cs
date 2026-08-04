@@ -34,6 +34,18 @@ public class UpstreamRouteResolverTests
         result.Should().Be(new Uri("https://foundry.example.com/anthropic/v1/messages"));
     }
 
+    [Theory]
+    [InlineData(OperationType.SpeechToText, "/audio/transcriptions")]
+    [InlineData(OperationType.TextToSpeech, "/audio/speech")]
+    public void ResolveHttp_ForSpeechOperation_UsesAudioPath(OperationType operationType, string expectedSuffix)
+    {
+        var assignment = CreateAssignment(Provider.OpenAI, "/v1");
+
+        var result = _resolver.ResolveHttp(assignment, operationType, string.Empty);
+
+        result.Should().Be(new Uri($"https://foundry.example.com/v1{expectedSuffix}"));
+    }
+
     [Fact]
     public void ResolveRealtime_ForOpenAi_UsesWebSocketSchemeAndPreservesQuery()
     {

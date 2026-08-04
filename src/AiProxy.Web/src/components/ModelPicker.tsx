@@ -1,25 +1,38 @@
 import { useEffect, useState } from 'react';
-import { Combobox, Field, Option } from '@fluentui/react-components';
+import { Combobox, Field, Option, Text } from '@fluentui/react-components';
 import { listModels } from '../api/models';
-import type { Model } from '../api/types';
+import type { Model, ModelCapability } from '../api/types';
 
 /** Shared across every Playground tab — picks which model to send test traffic to. */
 export function ModelPicker({
   value,
   onChange,
+  capability,
   label = 'Model',
 }: {
   value: string;
   onChange: (name: string) => void;
+  capability: ModelCapability;
   label?: string;
 }) {
   const [models, setModels] = useState<Model[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     listModels()
-      .then(setModels)
-      .catch(() => setModels([]));
-  }, []);
+      .then((allModels) => {
+        const matchingModels = allModels.filter((model) => model.capabilities.includes(capability));
+        setModels(matchingModels);
+        if (value && !matchingModels.some((model) => model.name === value)) {
+          onChange('');
+        }
+        setLoaded(true);
+      })
+      .catch(() => {
+        setModels([]);
+        setLoaded(true);
+      });
+  }, [capability, onChange, value]);
 
   return (
     <Field label={label}>
@@ -35,6 +48,7 @@ export function ModelPicker({
           </Option>
         ))}
       </Combobox>
+      {loaded && models.length === 0 && <Text size={200}>No configured models support this capability.</Text>}
     </Field>
   );
 }

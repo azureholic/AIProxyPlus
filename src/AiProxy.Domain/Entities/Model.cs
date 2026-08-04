@@ -7,6 +7,14 @@ namespace AiProxy.Domain.Entities;
 public sealed class Model
 {
     private readonly List<ModelEndpoint> _endpoints = [];
+    private readonly List<ModelCapabilityAssignment> _capabilities = [];
+
+    private static readonly ModelCapability[] DefaultCapabilities =
+    [
+        ModelCapability.Chat,
+        ModelCapability.ImageGeneration,
+        ModelCapability.Realtime
+    ];
 
     public Guid Id { get; private set; }
     public string Name { get; private set; }
@@ -14,6 +22,7 @@ public sealed class Model
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public IReadOnlyList<ModelEndpoint> Endpoints => _endpoints;
+    public IReadOnlyList<ModelCapability> Capabilities => _capabilities.Select(item => item.Capability).ToArray();
 
     /// <summary>For EF Core materialization only — domain code must use <see cref="Create"/>.</summary>
     private Model()
@@ -25,27 +34,36 @@ public sealed class Model
         Guid id,
         string name,
         RoutingStrategy strategy,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        IEnumerable<ModelCapability> capabilities)
     {
         Id = id;
         Name = name;
         Strategy = strategy;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
+        ReplaceCapabilitiesCore(capabilities);
     }
 
     public static Model Create(
         Guid id,
         string name,
         RoutingStrategy strategy = RoutingStrategy.Priority,
-        DateTimeOffset? createdAt = null)
+        DateTimeOffset? createdAt = null,
+        IEnumerable<ModelCapability>? capabilities = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new DomainException("Model.Name must not be empty.");
         }
 
-        return new Model(id, name, strategy, createdAt ?? DateTimeOffset.UtcNow);
+        return new Model(id, name, strategy, createdAt ?? DateTimeOffset.UtcNow, capabilities ?? DefaultCapabilities);
+    }
+
+    public void ReplaceCapabilities(IEnumerable<ModelCapability> capabilities)
+    {
+        ReplaceCapabilitiesCore(capabilities);
+        Touch();
     }
 
     /// <summary>True once at least one enabled endpoint is registered; false models can't be routed to.</summary>
@@ -94,4 +112,23 @@ public sealed class Model
     }
 
     private void Touch() => UpdatedAt = DateTimeOffset.UtcNow;
+
+    private void ReplaceCapabilitiesCore(IEnumerable<ModelCapability> capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+
+        var values = capabilities.ToArray();
+        if (values.Length == 0)
+        {
+            throw new DomainException("Model must have at least one capability.");
+        }
+
+        if (values.Distinct().Count() != values.Length)
+        {
+            throw new DomainException("Model capabilities must not contain duplicates.");
+        }
+
+        _capabilities.Clear();
+        _capabilities.AddRange(values.Select(capability => new ModelCapabilityAssignment(Id, capability)));
+    }
 }

@@ -91,8 +91,9 @@ ai-proxy/
 
 - **Domain** — `Model`, `Endpoint`, `ApiRoute`, `ModelEndpoint`, `UsageRecord`, `SessionAffinityEntry`,
   `Consumer`, value objects
-  (`Provider`, `AuthMode`, `RoutingStrategy`, `OperationType` — ChatCompletion, Completion, Embedding,
-  ImageGeneration, ImageEdit, ImageVariation, ResponsesApi, `RealtimeVoice` (Iteration 2), extensible to more),
+  (`Provider`, `AuthMode`, `RoutingStrategy`, `ModelCapability` — Chat, ImageGeneration, Realtime,
+  SpeechToText, TextToSpeech; `OperationType` — ChatCompletion, Completion, Embedding, ImageGeneration,
+  ImageEdit, ImageVariation, ResponsesApi, `RealtimeVoice` (Iteration 2), SpeechToText, TextToSpeech),
   `EndpointSelector` (the priority + round-robin selection algorithm — Iteration 2 rework, see §9), domain
   invariants (a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at least
   one usage signal — tokens or `UsageMetrics` — must be present). `Endpoint` is a reusable aggregate containing
@@ -119,7 +120,8 @@ ai-proxy/
   (`OpenAiStyleTokenUsageExtractor`, `AnthropicChatUsageExtractor`, `ImageUsageExtractor`,
   `ResponsesUsageExtractor`), `AiProxyMetrics`/`AiProxyActivitySource` (OpenTelemetry).
 - **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`, `/openai/v1/realtime` WebSocket —
-  Iteration 2), configuration routes (`/api/v1/config/*`), health endpoints (`/health/live`, `/health/ready`),
+  Iteration 2, and `/openai/v1/audio/*` — Iteration 9), configuration routes (`/api/v1/config/*`), health
+  endpoints (`/health/live`, `/health/ready`),
   OpenAPI, DI composition. Also serves the Iteration 3 frontend's static files from `wwwroot` and its SPA
   fallback route (§19) — this is composition-root wiring, not a new architectural layer.
 - **ServiceDefaults / AppHost** — Aspire wiring for local development: starts Postgres, Vault, the Api, and the
@@ -133,6 +135,15 @@ ai-proxy/
 ![Domain model](diagrams/02-domain-model.png)
 
 *Source: [diagrams/02-domain-model.drawio](diagrams/02-domain-model.drawio)*
+
+Iteration 9 gives each `Model` a non-empty set of administrator-managed `ModelCapability` values. Capabilities
+describe which Playground experiences should offer the model; they are not a complete provider-operation support
+matrix and do not block direct ingress for existing operations such as embeddings or Responses API. The closed
+values are `Chat`, `ImageGeneration`, `Realtime`, `SpeechToText`, and `TextToSpeech`. Speech is split because a
+transcription model and a synthesis model are not interchangeable. Persistence uses a model-owned
+`model_capabilities` relation keyed by `(model_id, capability)`. Deleting a model cascades to its capabilities.
+Existing models are backfilled with Chat, ImageGeneration, and Realtime to preserve pre-upgrade Playground
+visibility; speech capabilities always require explicit administrator selection.
 
 ## 6. Request Flow
 
@@ -187,6 +198,21 @@ for the failover and close-propagation details. Iteration 2 targets the **OpenAI
 WebSocket backends are deferred, as is usage/token capture for this operation type (`OperationType.RealtimeVoice`
 exists for future use, but no `IUsageExtractor` reads a Realtime session yet).
 
+### 6.6 Request/response speech (Iteration 9)
+
+`POST /openai/v1/audio/transcriptions` accepts OpenAI-compatible multipart form data. The router buffers the raw
+request bytes once, reads the `model` form field for deployment resolution, and forwards those original bytes with
+the original multipart content type and boundary on every bounded retry. It never reconstructs, persists, or logs
+the uploaded audio. Malformed multipart payloads, a missing model field, and requests over the configured server
+request-body limit fail locally before endpoint or credential resolution.
+
+`POST /openai/v1/audio/speech` uses the existing JSON `model` peek and forwards the request unchanged. Successful
+synthesis responses are arbitrary binary audio, so the winning response is streamed directly with its upstream
+status and end-to-end content headers rather than decoded as UTF-8 or inspected as JSON. Failed retriable responses
+are still buffered for retry/failover and first-error replay. OpenAI and Microsoft AI routes use
+`/audio/transcriptions` and `/audio/speech`; unsupported provider/operation pairs fail locally. Usage is captured
+only when the provider returns a real token or non-token usage signal; the proxy does not invent billing values.
+
 ## 7. Configuration & Persistence
 
 ### 7.1 PostgreSQL schema (initial)
@@ -194,6 +220,7 @@ exists for future use, but no `IUsageExtractor` reads a Realtime session yet).
 | Table | Purpose | Key columns |
 |---|---|---|
 | `models` | Routing key + policy | `id`, `name` (unique), `strategy` |
+| `model_capabilities` | Model-owned Playground discovery metadata | `model_id`, `capability`; composite primary key, cascades with model |
 | `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries` |
 | `api_routes` | Reusable provider API surfaces | `id`, `name` (unique), `provider`, `path_prefix`, `is_built_in`; `(provider, path_prefix)` unique |
 | `model_endpoints` | Model-to-endpoint/API-route assignments | `id`, `model_id`, `endpoint_id`, `api_route_id`, `priority`, `enabled`, `health`; `(model_id, endpoint_id, api_route_id)` unique |
@@ -475,6 +502,7 @@ with a well-known root token confined to the dev environment is acceptable.
 | OpenAI ingress (responses) | `POST /openai/v1/responses` | Passthrough proxy, streaming and non-streaming; stateful via `previous_response_id` — see §9 |
 | Anthropic ingress | `POST /anthropic/v1/messages` | Passthrough proxy, streaming supported |
 | Realtime (voice) ingress (Iteration 2) | `GET /openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover — see §6.5/§9. Usage capture deferred |
+| Speech ingress (Iteration 9) | `POST /openai/v1/audio/transcriptions`, `POST /openai/v1/audio/speech` | Multipart transcription and binary synthesis passthrough — see §6.6. OpenAI-compatible providers only |
 | Configuration | `/api/v1/config/*` | See §7.2, incl. `consumers` CRUD |
 | Usage query | `GET /api/v1/usage` | Chargeback / reporting, filterable by deployment and consumer |
 | Authentication (Iteration 4) | `/api/v1/auth/*`, `/signin-oidc`, `/signout-callback-oidc` | Same-origin OIDC BFF login/session/logout, antiforgery token, and Realtime ticket issuance |
@@ -670,10 +698,8 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Multi-region / multi-instance cache invalidation via Postgres `LISTEN/NOTIFY` (Iteration 1 uses TTL-based cache
   expiry, which is acceptable for a single-instance or short-TTL multi-instance deployment).
 - Automatic Vault secret rotation workflows.
-- Audio (speech-to-text, text-to-speech) via traditional request/response endpoints, and moderation endpoints —
-  supported in principle by the same pluggable ingress + usage-extractor design, but not implemented. The
-  Realtime voice WebSocket and browser microphone/speaker client are implemented (§6.5/§19.4), but Realtime
-  usage/token capture is still deferred to a later iteration.
+- Moderation endpoints. Request/response speech-to-text and text-to-speech are implemented in Iteration 9
+  (§6.6/§19.6). Realtime usage/token capture remains deferred to a later iteration.
 - Azure OpenAI Realtime and generic/self-hosted WebSocket backends for the Realtime API (Iteration 2 targets
   the OpenAI Realtime API only).
 - Additional providers beyond OpenAI-compatible and Anthropic (e.g. Google Gemini, Cohere).
@@ -681,7 +707,7 @@ Clean Architecture is enforced and verified, not just aspirational:
 ## 19. Frontend (Iteration 3)
 
 A small **admin/ops frontend** — Config (Models, Endpoints, Consumers), a Playground (Chat, Images,
-Voice) for exercising the ingress routes manually, and a Usage dashboard — served from the **same container**
+Realtime Voice, Speech) for exercising the ingress routes manually, and a Usage dashboard — served from the **same container**
 as the API. No new backend endpoints; the frontend is just another consumer of the surface described in
 §7.2/§12, with two narrow, necessary exceptions (the SPA fallback route itself, and the Realtime route's
 query-param auth fallback — both called out below).
@@ -754,3 +780,18 @@ The tokens-by-deployment and requests-per-day charts are computed **client-side 
 page only** — there is no new backend aggregation endpoint in this iteration, so a heavily-paginated/filtered
 result set will show charts that don't reflect the full filtered set, only what's on-screen. Flagged in the
 UI itself, not just here.
+
+### 19.6 Model capabilities and Speech Playground (Iteration 9)
+
+Model create/edit flows require at least one capability and expose the five values from §5. The shared Playground
+model picker requires one capability and only offers matching models: Chat uses `Chat`, Images uses
+`ImageGeneration`, Realtime Voice uses `Realtime`, and the two Speech modes use `SpeechToText` or `TextToSpeech`.
+Changing mode or refreshing model data clears a selection that no longer matches.
+
+The Speech Playground is an HTTP request/response experience separate from Realtime Voice. Speech-to-text accepts
+either a local audio file or a browser microphone recording, previews it, sends it as ephemeral multipart form data,
+and displays the returned transcription. Text-to-speech accepts text and a voice, receives an audio blob, and offers
+native playback and download. Microphone permission is requested only when recording starts. Media tracks,
+in-flight requests, and object URLs are released on replacement, mode change, navigation, failure, and unmount.
+Audio remains browser-local except while it is sent through the authenticated speech ingress and is never stored by
+AI Proxy.

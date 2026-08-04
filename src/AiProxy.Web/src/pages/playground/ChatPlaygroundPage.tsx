@@ -122,7 +122,7 @@ export function ChatPlaygroundPage() {
       <PageHeader title="Chat Playground" />
 
       <div className={styles.controls}>
-        <ModelPicker value={model} onChange={setModel} />
+        <ModelPicker value={model} onChange={setModel} capability="Chat" />
         <Switch checked={streaming} onChange={(_, data) => setStreaming(data.checked)} label="Streaming" />
       </div>
 

@@ -27,16 +27,18 @@ import {
 import { AddRegular, ArrowLeftRegular, DeleteRegular, EditRegular } from '@fluentui/react-icons';
 import { listEndpoints } from '../../api/endpoints';
 import { listApiRoutes } from '../../api/apiRoutes';
-import { addEndpoint, getModel, removeEndpoint, updateEndpoint } from '../../api/models';
-import type { ApiRoute, Endpoint, EndpointConfig, Model } from '../../api/types';
+import { addEndpoint, getModel, removeEndpoint, updateEndpoint, updateModel } from '../../api/models';
+import type { ApiRoute, Endpoint, EndpointConfig, Model, ModelCapability } from '../../api/types';
 import { ErrorBanner } from '../../components/Banners';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
+import { ModelCapabilityPicker } from '../../components/ModelCapabilityPicker';
 
 export function ModelDetailPage() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const [model, setModel] = useState<Model | null>(null);
+  const [capabilities, setCapabilities] = useState<ModelCapability[]>([]);
   const [availableEndpoints, setAvailableEndpoints] = useState<EndpointConfig[]>([]);
   const [availableApiRoutes, setAvailableApiRoutes] = useState<ApiRoute[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -54,6 +56,7 @@ export function ModelDetailPage() {
     Promise.all([getModel(name), listEndpoints(), listApiRoutes()])
       .then(([nextModel, endpoints, apiRoutes]) => {
         setModel(nextModel);
+        setCapabilities(nextModel.capabilities);
         setAvailableEndpoints(endpoints);
         setAvailableApiRoutes(apiRoutes);
       })
@@ -82,6 +85,26 @@ export function ModelDetailPage() {
           <Body1>
             Strategy: <strong>{model.strategy}</strong>. Priority and enabled state apply only to this model.
           </Body1>
+          <ModelCapabilityPicker value={capabilities} onChange={setCapabilities} />
+          <Button
+            appearance="primary"
+            disabled={busy || capabilities.length === 0}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                const updated = await updateModel(name, model.strategy, capabilities);
+                setModel(updated);
+                setCapabilities(updated.capabilities);
+              } catch (caught) {
+                setError(caught);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Save capabilities
+          </Button>
           <PageHeader
             title="Endpoint assignments"
             actions={

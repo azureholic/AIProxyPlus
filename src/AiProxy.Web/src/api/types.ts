@@ -5,6 +5,7 @@
 export type Provider = 'OpenAI' | 'MicrosoftAI' | 'Anthropic';
 export type AuthMode = 'ApiKey' | 'ManagedIdentity';
 export type RoutingStrategy = 'Priority';
+export type ModelCapability = 'Chat' | 'ImageGeneration' | 'Realtime' | 'SpeechToText' | 'TextToSpeech';
 export type EndpointHealthState = 'Unknown' | 'Healthy' | 'Unhealthy';
 export type OperationType =
   | 'ChatCompletion'
@@ -14,7 +15,9 @@ export type OperationType =
   | 'ImageEdit'
   | 'ImageVariation'
   | 'ResponsesApi'
-  | 'RealtimeVoice';
+  | 'RealtimeVoice'
+  | 'SpeechToText'
+  | 'TextToSpeech';
 
 export interface Endpoint {
   id: string;
@@ -60,6 +63,7 @@ export interface Model {
   id: string;
   name: string;
   strategy: RoutingStrategy;
+  capabilities: ModelCapability[];
   createdAt: string;
   updatedAt: string;
   endpoints: Endpoint[];

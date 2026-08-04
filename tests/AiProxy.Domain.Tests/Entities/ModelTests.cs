@@ -34,6 +34,44 @@ public class ModelTests
     }
 
     [Fact]
+    public void Create_WithoutExplicitCapabilities_UsesCompatibilityDefaults()
+    {
+        var model = Model.Create(Guid.NewGuid(), "gpt-4o-prod");
+
+        model.Capabilities.Should().BeEquivalentTo(
+            [ModelCapability.Chat, ModelCapability.ImageGeneration, ModelCapability.Realtime]);
+    }
+
+    [Fact]
+    public void Create_WithEmptyCapabilities_Throws()
+    {
+        var act = () => Model.Create(Guid.NewGuid(), "gpt-4o-prod", capabilities: []);
+
+        act.Should().Throw<DomainException>().WithMessage("*at least one capability*");
+    }
+
+    [Fact]
+    public void ReplaceCapabilities_WithMultipleValues_ReplacesCapabilitySet()
+    {
+        var model = Model.Create(Guid.NewGuid(), "gpt-4o-prod");
+
+        model.ReplaceCapabilities([ModelCapability.SpeechToText, ModelCapability.TextToSpeech]);
+
+        model.Capabilities.Should().BeEquivalentTo(
+            [ModelCapability.SpeechToText, ModelCapability.TextToSpeech]);
+    }
+
+    [Fact]
+    public void ReplaceCapabilities_WithDuplicateValue_Throws()
+    {
+        var model = Model.Create(Guid.NewGuid(), "gpt-4o-prod");
+
+        var act = () => model.ReplaceCapabilities([ModelCapability.Chat, ModelCapability.Chat]);
+
+        act.Should().Throw<DomainException>().WithMessage("*duplicates*");
+    }
+
+    [Fact]
     public void HasUsableEndpoint_WithNoEndpoints_IsFalse()
     {
         var model = Model.Create(Guid.NewGuid(), "gpt-4o-prod");

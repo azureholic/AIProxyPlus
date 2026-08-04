@@ -18,6 +18,7 @@ describe('ModelsPage', () => {
       id: '1',
       name: 'gpt-4o',
       strategy: 'Priority',
+      capabilities: ['Chat'],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       endpoints: [],

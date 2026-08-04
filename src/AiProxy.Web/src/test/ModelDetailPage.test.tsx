@@ -18,6 +18,7 @@ describe('ModelDetailPage', () => {
       id: 'model-id',
       name: 'gpt-5.4-mini',
       strategy: 'Priority',
+      capabilities: ['Chat'],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       endpoints: [],
@@ -76,6 +77,19 @@ describe('ModelDetailPage', () => {
         </Routes>
       </MemoryRouter>,
     );
+
+    await user.click(await screen.findByLabelText('Speech to text'));
+    await user.click(screen.getByRole('button', { name: 'Save capabilities' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/config/models/gpt-5.4-mini',
+      expect.objectContaining({ method: 'PUT' }),
+    ));
+    const modelUpdateCall = fetchMock.mock.calls.find(([url, init]) =>
+      url === '/api/v1/config/models/gpt-5.4-mini' && init?.method === 'PUT');
+    expect(JSON.parse(String(modelUpdateCall?.[1]?.body))).toEqual({
+      strategy: 'Priority',
+      capabilities: ['Chat', 'SpeechToText'],
+    });
 
     await user.click(await screen.findByRole('button', { name: 'Assign endpoint' }));
     const endpointPicker = await screen.findByLabelText('Endpoint');

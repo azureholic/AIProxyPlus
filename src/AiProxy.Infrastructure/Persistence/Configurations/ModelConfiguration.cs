@@ -25,5 +25,12 @@ public sealed class ModelConfiguration : IEntityTypeConfiguration<Model>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Navigation(d => d.Endpoints).UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.Ignore(d => d.Capabilities);
+        builder.HasMany<ModelCapabilityAssignment>("_capabilities")
+            .WithOne()
+            .HasForeignKey(c => c.ModelId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation("_capabilities").UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

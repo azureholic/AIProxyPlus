@@ -313,6 +313,10 @@ ingress.MapPost("/openai/v1/images/variations", (HttpContext ctx, ProxyRoutingSe
     RouteOrFailAsync(ctx, router, OperationType.ImageVariation, ct));
 ingress.MapPost("/openai/v1/responses", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ResponsesApi, ct));
+ingress.MapPost("/openai/v1/audio/transcriptions", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+    RouteOrFailAsync(ctx, router, OperationType.SpeechToText, ct));
+ingress.MapPost("/openai/v1/audio/speech", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
+    RouteOrFailAsync(ctx, router, OperationType.TextToSpeech, ct));
 ingress.MapPost("/anthropic/v1/messages", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.ChatCompletion, ct));
 ingress.MapGet("/openai/v1/realtime", async (HttpContext ctx, RealtimeProxyService router, CancellationToken ct) =>
@@ -346,7 +350,7 @@ config.MapPost("/models", async (CreateModelCommand command, CreateModelHandler 
 config.MapPut("/models/{name}", async (
     string name, UpdateModelBody body, UpdateModelHandler handler, CancellationToken ct) =>
 {
-    var model = await handler.HandleAsync(new UpdateModelCommand(name, body.Strategy), ct);
+    var model = await handler.HandleAsync(new UpdateModelCommand(name, body.Strategy, body.Capabilities), ct);
     return Results.Ok(model);
 });
 
@@ -692,7 +696,9 @@ static class HealthChecks
     }
 }
 
-public sealed record UpdateModelBody(RoutingStrategy Strategy);
+public sealed record UpdateModelBody(
+    RoutingStrategy Strategy,
+    IReadOnlyCollection<ModelCapability>? Capabilities = null);
 
 public sealed record AddEndpointBody(
     Guid EndpointId,

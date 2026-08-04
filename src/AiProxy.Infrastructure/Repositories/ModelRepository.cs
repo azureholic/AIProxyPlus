@@ -9,6 +9,7 @@ public sealed class ModelRepository(AiProxyDbContext dbContext) : IModelReposito
 {
     public Task<Model?> GetByNameAsync(string name, CancellationToken cancellationToken = default) =>
         dbContext.Models
+            .Include("_capabilities")
             .Include(d => d.Endpoints)
             .ThenInclude(e => e.Endpoint)
             .Include(d => d.Endpoints)
@@ -17,6 +18,7 @@ public sealed class ModelRepository(AiProxyDbContext dbContext) : IModelReposito
 
     public async Task<IReadOnlyList<Model>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await dbContext.Models
+            .Include("_capabilities")
             .Include(d => d.Endpoints)
             .ThenInclude(e => e.Endpoint)
             .Include(d => d.Endpoints)

@@ -181,6 +181,20 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.ToTable("models", (string)null);
                 });
 
+            modelBuilder.Entity("AiProxy.Domain.Entities.ModelCapabilityAssignment", b =>
+                {
+                    b.Property<Guid>("ModelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Capability")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("ModelId", "Capability");
+
+                    b.ToTable("model_capabilities", (string)null);
+                });
+
             modelBuilder.Entity("AiProxy.Domain.Entities.ModelEndpoint", b =>
                 {
                     b.Property<Guid>("Id")
@@ -348,6 +362,15 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.ToTable("realtime_tickets", (string)null);
                 });
 
+            modelBuilder.Entity("AiProxy.Domain.Entities.ModelCapabilityAssignment", b =>
+                {
+                    b.HasOne("AiProxy.Domain.Entities.Model", null)
+                        .WithMany("_capabilities")
+                        .HasForeignKey("ModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("AiProxy.Domain.Entities.ModelEndpoint", b =>
                 {
                     b.HasOne("AiProxy.Domain.Entities.ApiRoute", "ApiRoute")
@@ -387,6 +410,8 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("AiProxy.Domain.Entities.Model", b =>
                 {
                     b.Navigation("Endpoints");
+
+                    b.Navigation("_capabilities");
                 });
 #pragma warning restore 612, 618
         }

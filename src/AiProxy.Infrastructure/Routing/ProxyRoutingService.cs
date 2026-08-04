@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using AiProxy.Application.Abstractions;
 using AiProxy.Application.Exceptions;
@@ -47,9 +46,13 @@ public sealed class ProxyRoutingService(
         rootActivity?.SetTag("operation_type", operationType.ToString());
 
         var stopwatch = Stopwatch.StartNew();
-        var body = await RequestBodyPeek.BufferBodyAsync(httpContext.Request, cancellationToken);
-        var bodyBytes = Encoding.UTF8.GetBytes(body);
-        var fields = RequestBodyPeek.ExtractFields(body);
+        var bodyBytes = await RequestBodyPeek.BufferBodyAsync(httpContext.Request, cancellationToken);
+        var fields = operationType == OperationType.SpeechToText
+            ? new RequestBodyFields(
+                await RequestBodyPeek.ExtractMultipartModelAsync(
+                    bodyBytes, httpContext.Request.ContentType, cancellationToken),
+                null, false, false, false)
+            : RequestBodyPeek.ExtractFields(bodyBytes);
 
         if (string.IsNullOrWhiteSpace(fields.Model))
         {
@@ -133,13 +136,16 @@ public sealed class ProxyRoutingService(
             }
 
             var usageExtractor = TryResolveUsageExtractor(assignment.Provider, operationType);
-            var outboundBody = OutboundBodyMutator.EnsureStreamUsageRequested(bodyBytes, assignment.Provider, operationType, fields.Streaming);
+            var outboundBody = operationType == OperationType.SpeechToText
+                ? bodyBytes
+                : OutboundBodyMutator.EnsureStreamUsageRequested(bodyBytes, assignment.Provider, operationType, fields.Streaming);
 
             var outcome = await TryForwardWithRetriesAsync(
                 httpContext, endpoint, targetUri, credential, outboundBody, usageExtractor,
                 captureResponseId: operationType == OperationType.ResponsesApi,
                 clientRequestedUsage: fields.ClientRequestedUsage,
                 streaming: fields.Streaming,
+                binaryResponse: operationType == OperationType.TextToSpeech,
                 cancellationToken);
 
             if (outcome.Succeeded)
@@ -242,6 +248,7 @@ public sealed class ProxyRoutingService(
         bool captureResponseId,
         bool clientRequestedUsage,
         bool streaming,
+        bool binaryResponse,
         CancellationToken cancellationToken)
     {
         UpstreamFailureSnapshot? lastFailureSnapshot = null;
@@ -292,6 +299,12 @@ public sealed class ProxyRoutingService(
                         captureResponseId ? TryExtractResponseIdFromCompletedEvent : null,
                         cancellationToken);
                     return new ForwardOutcome(true, statusCode, relayResult.Usage, relayResult.CapturedResponseId);
+                }
+
+                if (binaryResponse)
+                {
+                    await DirectHttpProxy.CopyResponseAsync(response, httpContext, cancellationToken);
+                    return new ForwardOutcome(true, statusCode, null, null);
                 }
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);

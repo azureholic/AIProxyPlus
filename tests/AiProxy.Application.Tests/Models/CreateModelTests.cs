@@ -2,6 +2,7 @@ using AiProxy.Application.Abstractions;
 using AiProxy.Application.Exceptions;
 using AiProxy.Application.Models;
 using AiProxy.Domain.Entities;
+using AiProxy.Domain.Enums;
 using FluentAssertions;
 using FluentValidation;
 using NSubstitute;
@@ -27,6 +28,26 @@ public class CreateModelTests
 
         result.Name.Should().Be("gpt-4o-prod");
         await _repository.Received(1).AddAsync(Arg.Is<Model>(d => d.Name == "gpt-4o-prod"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithCapabilities_PersistsCapabilitySet()
+    {
+        _repository.ExistsByNameAsync("whisper", Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await _handler.HandleAsync(
+            new CreateModelCommand("whisper", Capabilities: [ModelCapability.SpeechToText]));
+
+        result.Capabilities.Should().Equal(ModelCapability.SpeechToText);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithEmptyCapabilities_ThrowsValidationException()
+    {
+        var act = () => _handler.HandleAsync(new CreateModelCommand("whisper", Capabilities: []));
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _repository.DidNotReceive().AddAsync(Arg.Any<Model>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

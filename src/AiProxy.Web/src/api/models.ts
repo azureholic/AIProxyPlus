@@ -1,5 +1,5 @@
 import { adminJson } from './client';
-import type { Model, RoutingStrategy } from './types';
+import type { Model, ModelCapability, RoutingStrategy } from './types';
 
 export function listModels(): Promise<Model[]> {
   return adminJson('/api/v1/config/models');
@@ -9,17 +9,17 @@ export function getModel(name: string): Promise<Model> {
   return adminJson(`/api/v1/config/models/${encodeURIComponent(name)}`);
 }
 
-export function createModel(name: string, strategy: RoutingStrategy): Promise<Model> {
+export function createModel(name: string, strategy: RoutingStrategy, capabilities: ModelCapability[]): Promise<Model> {
   return adminJson('/api/v1/config/models', {
     method: 'POST',
-    body: JSON.stringify({ name, strategy }),
+    body: JSON.stringify({ name, strategy, capabilities }),
   });
 }
 
-export function updateModel(name: string, strategy: RoutingStrategy): Promise<Model> {
+export function updateModel(name: string, strategy: RoutingStrategy, capabilities: ModelCapability[]): Promise<Model> {
   return adminJson(`/api/v1/config/models/${encodeURIComponent(name)}`, {
     method: 'PUT',
-    body: JSON.stringify({ strategy }),
+    body: JSON.stringify({ strategy, capabilities }),
   });
 }
 

@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Net.Http.Headers;
 
 namespace AiProxy.Infrastructure.Routing;
 
@@ -14,29 +16,29 @@ public sealed record RequestBodyFields(
 public static class RequestBodyPeek
 {
     /// <summary>Buffers the request body so it can be read here and still forwarded downstream unmodified.</summary>
-    public static async Task<string> BufferBodyAsync(HttpRequest request, CancellationToken cancellationToken)
+    public static async Task<byte[]> BufferBodyAsync(HttpRequest request, CancellationToken cancellationToken)
     {
         request.EnableBuffering();
-        using var reader = new StreamReader(request.Body, leaveOpen: true);
-        var body = await reader.ReadToEndAsync(cancellationToken);
+        await using var buffer = new MemoryStream();
+        await request.Body.CopyToAsync(buffer, cancellationToken);
         request.Body.Position = 0;
-        return body;
+        return buffer.ToArray();
     }
 
     /// <summary>
     /// Extracts routing-relevant fields from a JSON body. Works for OpenAI, Anthropic, Images, and Responses
     /// API payloads since they all carry a top-level "model" field (architecture.md §9).
     /// </summary>
-    public static RequestBodyFields ExtractFields(string jsonBody)
+    public static RequestBodyFields ExtractFields(byte[] jsonBody)
     {
-        if (string.IsNullOrWhiteSpace(jsonBody))
+        if (jsonBody.Length == 0)
         {
             return new RequestBodyFields(null, null, false, false, false);
         }
 
         try
         {
-            using var document = JsonDocument.Parse(jsonBody);
+            using var document = JsonDocument.Parse(jsonBody.AsMemory());
             var root = document.RootElement;
 
             var model = TryGetString(root, "model");
@@ -55,6 +57,41 @@ public static class RequestBodyPeek
         {
             return new RequestBodyFields(null, null, false, false, false);
         }
+    }
+
+    public static async Task<string?> ExtractMultipartModelAsync(
+        byte[] body,
+        string? contentType,
+        CancellationToken cancellationToken)
+    {
+        if (!MediaTypeHeaderValue.TryParse(contentType, out var mediaType) ||
+            !string.Equals(mediaType.MediaType.Value, "multipart/form-data", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).Value;
+        if (string.IsNullOrWhiteSpace(boundary))
+        {
+            return null;
+        }
+
+        var reader = new MultipartReader(boundary, new MemoryStream(body, writable: false));
+        MultipartSection? section;
+        while ((section = await reader.ReadNextSectionAsync(cancellationToken)) is not null)
+        {
+            if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var disposition) ||
+                !string.Equals(disposition.DispositionType.Value, "form-data", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(HeaderUtilities.RemoveQuotes(disposition.Name).Value, "model", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            using var modelReader = new StreamReader(section.Body);
+            return (await modelReader.ReadToEndAsync(cancellationToken)).Trim();
+        }
+
+        return null;
     }
 
     private static string? TryGetString(JsonElement root, string propertyName) =>
