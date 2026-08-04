@@ -244,6 +244,8 @@ builder.Services.AddSingleton<IValidator<UpdateApiRouteCommand>, UpdateApiRouteV
 builder.Services.AddSingleton<IValidator<DeleteApiRouteCommand>, DeleteApiRouteValidator>();
 builder.Services.AddSingleton<IValidator<CreateConsumerCommand>, CreateConsumerValidator>();
 builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsumerKeyValidator>();
+builder.Services.AddSingleton<IValidator<DisableConsumerCommand>, DisableConsumerValidator>();
+builder.Services.AddSingleton<IValidator<EnableConsumerCommand>, EnableConsumerValidator>();
 builder.Services.AddSingleton<IValidator<RevokeConsumerCommand>, RevokeConsumerValidator>();
 builder.Services.AddSingleton<IValidator<DeleteConsumerPermanentlyCommand>, DeleteConsumerPermanentlyValidator>();
 builder.Services.AddSingleton<IValidator<AllowConsumerModelCommand>, AllowConsumerModelValidator>();
@@ -267,6 +269,8 @@ builder.Services.AddScoped<GetApiRoutesHandler>();
 builder.Services.AddScoped<GetApiRouteHandler>();
 builder.Services.AddScoped<CreateConsumerHandler>();
 builder.Services.AddScoped<RotateConsumerKeyHandler>();
+builder.Services.AddScoped<DisableConsumerHandler>();
+builder.Services.AddScoped<EnableConsumerHandler>();
 builder.Services.AddScoped<RevokeConsumerHandler>();
 builder.Services.AddScoped<DeleteConsumerPermanentlyHandler>();
 builder.Services.AddScoped<AllowConsumerModelHandler>();
@@ -546,6 +550,30 @@ config.MapPut("/consumers/{name}/rotate", async (
     var result = await handler.HandleAsync(new RotateConsumerKeyCommand(name, keySlot), ct);
     return Results.Ok(new { consumer = ConsumerResponse.From(result.Consumer), slot, apiKey = result.PlaintextApiKey });
 });
+
+config.MapPut("/consumers/{name}/disable", async (
+        string name, DisableConsumerHandler handler, CancellationToken ct) =>
+    {
+        var consumer = await handler.HandleAsync(new DisableConsumerCommand(name), ct);
+        return Results.Ok(ConsumerResponse.From(consumer));
+    })
+    .WithName("DisableConsumer")
+    .WithSummary("Reversibly disables consumer inference access")
+    .Produces<ConsumerResponse>()
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
+
+config.MapPut("/consumers/{name}/enable", async (
+        string name, EnableConsumerHandler handler, CancellationToken ct) =>
+    {
+        var consumer = await handler.HandleAsync(new EnableConsumerCommand(name), ct);
+        return Results.Ok(ConsumerResponse.From(consumer));
+    })
+    .WithName("EnableConsumer")
+    .WithSummary("Re-enables a disabled, non-revoked consumer")
+    .Produces<ConsumerResponse>()
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
 
 config.MapPut("/consumers/{name}/allowed-models/{modelName}", async (
     string name, string modelName, AllowConsumerModelHandler handler, CancellationToken ct) =>

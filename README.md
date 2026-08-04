@@ -170,8 +170,11 @@ API. The frontend receives no provider settings. `Authority` must be HTTPS excep
 
 OIDC users become Consumers on their first inference request. Their immutable identity is exact issuer + subject;
 the username claim is mutable display and chargeback metadata. A username collision is rejected rather than merged.
-Disabling an OIDC Consumer blocks local inference but does not disable the upstream identity. OIDC Consumers have no
-Consumer API key and cannot rotate one. External clients continue to authenticate with Consumer API keys.
+Disabling a Consumer reversibly blocks local inference without changing its keys, OIDC identity, or model access.
+Re-enabling restores access with the same configuration. Revocation is an irreversible security action; deletion is
+available only after revocation and removes the Consumer record while preserving denormalized historical usage.
+Disabling or revoking an OIDC Consumer does not disable the upstream identity. OIDC Consumers have no Consumer API
+key and cannot rotate one. External clients continue to authenticate with Consumer API keys.
 
 The static Admin API Key is a disabled-by-default migration/break-glass path. Set
 `Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration. Browser sessions require the
@@ -196,6 +199,12 @@ curl -X POST http://localhost:8080/api/v1/config/consumers `
 
 # Rotate one slot without interrupting callers using the other slot.
 curl -X PUT "http://localhost:8080/api/v1/config/consumers/my-team/rotate?slot=2" `
+  -H "X-Admin-Api-Key: <admin-key>"
+
+# Pause and restore access without changing either key or model permissions.
+curl -X PUT http://localhost:8080/api/v1/config/consumers/my-team/disable `
+  -H "X-Admin-Api-Key: <admin-key>"
+curl -X PUT http://localhost:8080/api/v1/config/consumers/my-team/enable `
   -H "X-Admin-Api-Key: <admin-key>"
 
 # Create reusable connectivity. Save the endpoint id; its plaintext API key is never returned.

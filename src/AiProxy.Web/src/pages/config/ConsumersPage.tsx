@@ -21,7 +21,15 @@ import {
   TableHeaderCell,
   TableRow,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowRotateClockwiseRegular, DeleteRegular, SettingsRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowRotateClockwiseRegular,
+  DeleteRegular,
+  DismissCircleRegular,
+  PauseRegular,
+  PlayRegular,
+  SettingsRegular,
+} from '@fluentui/react-icons';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 import { ErrorBanner } from '../../components/Banners';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -30,6 +38,8 @@ import {
   allowConsumerModel,
   createConsumer,
   deleteConsumerPermanently,
+  disableConsumer,
+  enableConsumer,
   listConsumers,
   revokeConsumer,
   revokeConsumerModel,
@@ -175,30 +185,64 @@ export function ConsumersPage() {
                     disabled={consumer.revokedAt !== null}
                     onClick={() => setModelConsumer(consumer)}
                   />
-                  <ConfirmDialog
-                    trigger={
-                      <Button
-                        appearance="subtle"
-                        icon={<DeleteRegular />}
-                        aria-label={consumer.revokedAt ? `Delete permanently ${consumer.name}` : `Revoke ${consumer.name}`}
-                      />
-                    }
-                    title={consumer.revokedAt ? `Delete '${consumer.name}' permanently?` : `Revoke '${consumer.name}'?`}
-                    message={consumer.revokedAt
-                      ? 'This removes the consumer permanently. Historical usage records are preserved.'
-                      : consumer.authenticationType === 'oidc'
-                        ? "This disables local access without changing the user's identity-provider account. Historical usage records are preserved."
-                        : "This immediately invalidates the consumer's API key. Historical usage records are preserved."}
-                    confirmLabel={consumer.revokedAt ? 'Delete permanently' : consumer.authenticationType === 'oidc' ? 'Disable' : 'Revoke'}
-                    onConfirm={async () => {
-                      if (consumer.revokedAt) {
-                        await deleteConsumerPermanently(consumer.name);
-                      } else {
-                        await revokeConsumer(consumer.name);
+                  {!consumer.revokedAt && (
+                    <Button
+                      appearance="subtle"
+                      icon={consumer.enabled ? <PauseRegular /> : <PlayRegular />}
+                      aria-label={`${consumer.enabled ? 'Disable' : 'Enable'} ${consumer.name}`}
+                      title={consumer.enabled ? 'Disable' : 'Enable'}
+                      onClick={async () => {
+                        try {
+                          const updated = consumer.enabled
+                            ? await disableConsumer(consumer.name)
+                            : await enableConsumer(consumer.name);
+                          setConsumers((current) => current?.map((item) => item.id === updated.id ? updated : item) ?? null);
+                        } catch (err) {
+                          setError(err);
+                        }
+                      }}
+                    />
+                  )}
+                  {!consumer.revokedAt && (
+                    <ConfirmDialog
+                      trigger={
+                        <Button
+                          appearance="subtle"
+                          icon={<DismissCircleRegular />}
+                          aria-label={`Revoke ${consumer.name}`}
+                          title="Revoke permanently"
+                        />
                       }
-                      reload();
-                    }}
-                  />
+                      title={`Revoke '${consumer.name}'?`}
+                      message={consumer.authenticationType === 'oidc'
+                        ? "This permanently revokes local access and cannot be undone. The user's identity-provider account is unchanged. Historical usage records are preserved."
+                        : "This permanently invalidates both API keys and cannot be undone. Historical usage records are preserved."}
+                      confirmLabel="Revoke"
+                      onConfirm={async () => {
+                        await revokeConsumer(consumer.name);
+                        reload();
+                      }}
+                    />
+                  )}
+                  {consumer.revokedAt && (
+                    <ConfirmDialog
+                      trigger={
+                        <Button
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                          aria-label={`Delete permanently ${consumer.name}`}
+                          title="Delete permanently"
+                        />
+                      }
+                      title={`Delete '${consumer.name}' permanently?`}
+                      message="This removes the consumer permanently. Historical usage records are preserved."
+                      confirmLabel="Delete permanently"
+                      onConfirm={async () => {
+                        await deleteConsumerPermanently(consumer.name);
+                        reload();
+                      }}
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ))}

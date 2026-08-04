@@ -162,6 +162,52 @@ public class ConsumerTests
     }
 
     [Fact]
+    public void Disable_ActiveConsumer_DisablesWithoutRevoking()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+
+        consumer.Disable();
+
+        consumer.Enabled.Should().BeFalse();
+        consumer.RevokedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void Enable_DisabledConsumer_EnablesConsumer()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+        consumer.Disable();
+
+        consumer.Enable();
+
+        consumer.Enabled.Should().BeTrue();
+        consumer.RevokedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void Enable_RevokedConsumer_Throws()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+        consumer.Revoke();
+
+        var act = consumer.Enable;
+
+        act.Should().Throw<DomainException>().WithMessage("*revoked consumer*");
+    }
+
+    [Fact]
+    public void Revoke_AlreadyRevokedConsumer_PreservesOriginalTimestamp()
+    {
+        var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");
+        var originalTimestamp = DateTimeOffset.UtcNow.AddMinutes(-1);
+        consumer.Revoke(originalTimestamp);
+
+        consumer.Revoke();
+
+        consumer.RevokedAt.Should().Be(originalTimestamp);
+    }
+
+    [Fact]
     public void NewConsumer_HasUnrestrictedModelAccess_ByDefault()
     {
         var consumer = Consumer.Create(Guid.NewGuid(), "team-checkout", "hash-1");

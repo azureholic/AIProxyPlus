@@ -208,3 +208,10 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
 - [x] Add guarded permanent deletion for already-revoked consumers while preserving denormalized usage history.
 - [x] Enable the Consumers page delete action for revoked rows with an explicit permanent-deletion confirmation.
 - [x] Add application, API, and frontend coverage for the revoked-only deletion lifecycle.
+
+## Follow-up — Explicit consumer lifecycle
+
+- [x] Model reversible disable/enable separately from irreversible revocation in the Consumer aggregate.
+- [x] Add explicit disable/enable API commands and preserve authentication denial while disabled.
+- [x] Use Pause/Play for disable/enable, a distinct revoke action, and Trash only for permanent deletion.
+- [x] Add domain, application, API, and frontend coverage for all lifecycle transitions.

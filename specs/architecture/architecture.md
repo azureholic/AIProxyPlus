@@ -313,11 +313,20 @@ enabled state, health, or endpoint credentials.
 | GET | `/api/v1/config/consumers` | List consumers (name, enabled, created/revoked — never the key or its hash) |
 | POST | `/api/v1/config/consumers` | Create a consumer; response includes plaintext `apiKey1` and `apiKey2` exactly once — only hashes are persisted |
 | PUT | `/api/v1/config/consumers/{name}/rotate?slot=1\|2` | Rotate one required key slot; returns only its new plaintext key and leaves the other slot valid |
+| PUT | `/api/v1/config/consumers/{name}/disable` | Reversibly disable inference access without changing credentials, identity, or model access |
+| PUT | `/api/v1/config/consumers/{name}/enable` | Re-enable a disabled consumer; revoked consumers return conflict |
 | PUT | `/api/v1/config/consumers/{name}/allowed-models/{modelName}` | Add a model to the consumer's allow-list (idempotent) |
 | DELETE | `/api/v1/config/consumers/{name}/allowed-models/{modelName}` | Remove a model from the consumer's allow-list (idempotent); an empty list is unrestricted |
 | DELETE | `/api/v1/config/consumers/{name}` | Revoke a consumer (soft delete via `revoked_at`; historical `usage_records` are preserved) |
 | DELETE | `/api/v1/config/consumers/{name}/permanent` | Permanently delete an already-revoked consumer; active consumers return conflict and denormalized historical usage remains preserved |
 | GET | `/api/v1/usage` | Query usage records (filter by deployment, consumer, date range) |
+
+Consumer lifecycle terms are intentionally distinct. **Disabled** is a reversible operational pause: authentication
+is rejected while both key slots or the OIDC identity and model allow-list remain configured. **Revoked** is an
+irreversible security action: the consumer can never be re-enabled, but its record and historical usage remain for
+audit and chargeback. **Deleted** permanently removes only an already-revoked consumer record; usage records retain
+their denormalized consumer identity. The UI uses Pause/Play for disable/enable, a security-revoke action for
+revocation, and Trash only for permanent deletion.
 
 All write routes require an admin API key (`X-Admin-Api-Key` header, validated against a hash stored in Vault) for
 Iteration 1. Requests/responses are validated with FluentValidation; secrets are **write-only** — no GET ever returns

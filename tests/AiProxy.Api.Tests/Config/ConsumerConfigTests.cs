@@ -162,6 +162,62 @@ public class ConsumerConfigTests : IDisposable
     }
 
     [Fact]
+    public async Task DisableThenEnable_PreservesKeyAndRestoresIngressAccess()
+    {
+        var client = _factory.CreateClient();
+        var consumerName = $"team-{Guid.NewGuid():N}";
+        var createResponse = await client.PostAsJsonAsync("/api/v1/config/consumers", new { name = consumerName });
+        using var created = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var plaintextKey = created.RootElement.GetProperty("apiKey1").GetString()!;
+
+        var disableResponse = await client.PutAsync(
+            $"/api/v1/config/consumers/{consumerName}/disable", new StringContent(string.Empty));
+
+        disableResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var disabled = JsonDocument.Parse(await disableResponse.Content.ReadAsStringAsync());
+        disabled.RootElement.GetProperty("enabled").GetBoolean().Should().BeFalse();
+        disabled.RootElement.GetProperty("revokedAt").ValueKind.Should().Be(JsonValueKind.Null);
+
+        var deniedResponse = await SendModelRequestAsync(client, plaintextKey, "never-registered");
+        deniedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var enableResponse = await client.PutAsync(
+            $"/api/v1/config/consumers/{consumerName}/enable", new StringContent(string.Empty));
+
+        enableResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var restoredResponse = await SendModelRequestAsync(client, plaintextKey, "never-registered");
+        restoredResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "the original key should authenticate again after the consumer is enabled");
+    }
+
+    [Fact]
+    public async Task Enable_RevokedConsumer_ReturnsConflict()
+    {
+        var client = _factory.CreateClient();
+        var consumerName = $"team-{Guid.NewGuid():N}";
+        await client.PostAsJsonAsync("/api/v1/config/consumers", new { name = consumerName });
+        await client.DeleteAsync($"/api/v1/config/consumers/{consumerName}");
+
+        var response = await client.PutAsync(
+            $"/api/v1/config/consumers/{consumerName}/enable", new StringContent(string.Empty));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task DeletePermanently_DisabledConsumer_ReturnsConflict()
+    {
+        var client = _factory.CreateClient();
+        var consumerName = $"team-{Guid.NewGuid():N}";
+        await client.PostAsJsonAsync("/api/v1/config/consumers", new { name = consumerName });
+        await client.PutAsync($"/api/v1/config/consumers/{consumerName}/disable", new StringContent(string.Empty));
+
+        var response = await client.DeleteAsync($"/api/v1/config/consumers/{consumerName}/permanent");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
     public async Task DeletePermanently_RevokedConsumer_RemovesConsumerFromList()
     {
         var client = _factory.CreateClient();

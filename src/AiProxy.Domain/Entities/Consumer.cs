@@ -135,8 +135,25 @@ public sealed class Consumer
         Name = name;
     }
 
+    public void Disable()
+    {
+        EnsureNotRevoked("disabled");
+        Enabled = false;
+    }
+
+    public void Enable()
+    {
+        EnsureNotRevoked("enabled");
+        Enabled = true;
+    }
+
     public void Revoke(DateTimeOffset? revokedAt = null)
     {
+        if (RevokedAt is not null)
+        {
+            return;
+        }
+
         Enabled = false;
         RevokedAt = revokedAt ?? DateTimeOffset.UtcNow;
     }
@@ -168,6 +185,14 @@ public sealed class Consumer
         if (string.IsNullOrWhiteSpace(apiKeyHash))
         {
             throw new DomainException("Consumer.ApiKeyHash must not be empty.");
+        }
+    }
+
+    private void EnsureNotRevoked(string action)
+    {
+        if (RevokedAt is not null)
+        {
+            throw new DomainException($"A revoked consumer cannot be {action}.");
         }
     }
 }

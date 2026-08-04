@@ -55,6 +55,7 @@ describe('ConsumersPage', () => {
 
     await screen.findByText('my-team');
     expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }));
+    expect(screen.queryByRole('button', { name: 'Delete permanently my-team' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Revoke my-team' }));
     await user.click(await screen.findByRole('button', { name: 'Revoke' }));
@@ -64,6 +65,55 @@ describe('ConsumersPage', () => {
         expect.stringContaining('/api/v1/config/consumers/my-team'),
         expect.objectContaining({ method: 'DELETE' }),
       ),
+    );
+  });
+
+  it('disables an enabled consumer without revoking it', async () => {
+    const consumer = { id: '1', name: 'my-team', authenticationType: 'apiKey', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
+    const disabledConsumer = { ...consumer, enabled: false };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT' && url.endsWith('/disable')) {
+        return jsonResponse(disabledConsumer);
+      }
+      return jsonResponse(url.includes('/models') ? [] : [consumer]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<ConsumersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Disable my-team' }));
+
+    await waitFor(() => expect(screen.getByText('Disabled')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Enable my-team' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revoke my-team' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/config/consumers/my-team/disable'),
+      expect.objectContaining({ method: 'PUT' }),
+    );
+  });
+
+  it('enables a disabled consumer', async () => {
+    const consumer = { id: '1', name: 'my-team', authenticationType: 'apiKey', enabled: false, createdAt: new Date().toISOString(), revokedAt: null };
+    const enabledConsumer = { ...consumer, enabled: true };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT' && url.endsWith('/enable')) {
+        return jsonResponse(enabledConsumer);
+      }
+      return jsonResponse(url.includes('/models') ? [] : [consumer]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<ConsumersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Enable my-team' }));
+
+    await waitFor(() => expect(screen.getByText('Enabled')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Disable my-team' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/config/consumers/my-team/enable'),
+      expect.objectContaining({ method: 'PUT' }),
     );
   });
 
@@ -98,6 +148,8 @@ describe('ConsumersPage', () => {
     );
     expect(screen.getByRole('button', { name: 'Rotate key 1 for my-team' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Configure model access for my-team' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Enable my-team' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Revoke my-team' })).not.toBeInTheDocument();
   });
 
   it('shows OIDC consumers without an API key rotation action', async () => {

@@ -13,6 +13,14 @@ export function rotateConsumerKey(name: string, slot: 1 | 2): Promise<RotatedCon
   return adminJson(`/api/v1/config/consumers/${encodeURIComponent(name)}/rotate?slot=${slot}`, { method: 'PUT' });
 }
 
+export function disableConsumer(name: string): Promise<Consumer> {
+  return adminJson(`/api/v1/config/consumers/${encodeURIComponent(name)}/disable`, { method: 'PUT' });
+}
+
+export function enableConsumer(name: string): Promise<Consumer> {
+  return adminJson(`/api/v1/config/consumers/${encodeURIComponent(name)}/enable`, { method: 'PUT' });
+}
+
 export function allowConsumerModel(name: string, modelName: string): Promise<Consumer> {
   return adminJson(
     `/api/v1/config/consumers/${encodeURIComponent(name)}/allowed-models/${encodeURIComponent(modelName)}`,
