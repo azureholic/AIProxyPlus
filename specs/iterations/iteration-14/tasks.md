@@ -80,4 +80,4 @@ defects found during manual testing and keeps each repair independently reproduc
 
 - [x] Prove the public provider metadata endpoint returns the configured display name without authentication.
 - [x] Prove an unauthenticated frontend session renders the centered provider-aware login action.
-- [ ] Confirm the login screen layout and Keycloak label in the live desktop and mobile browser views.
+- [x] Confirm the login screen layout and Keycloak label in the live desktop and mobile browser views.
