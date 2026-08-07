@@ -11,6 +11,12 @@ import {
   DialogTrigger,
   Field,
   Input,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   Spinner,
   Table,
   TableBody,
@@ -19,8 +25,17 @@ import {
   TableHeader,
   TableHeaderCell,
   TableRow,
+  Text,
+  tokens,
+  Tooltip,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowRotateClockwiseRegular, DeleteRegular, EditRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowRotateClockwiseRegular,
+  DeleteRegular,
+  EditRegular,
+  KeyRegular,
+} from '@fluentui/react-icons';
 import {
   activateEndpointCredential,
   createEndpoint,
@@ -49,7 +64,52 @@ const emptyEndpoint: CreateEndpointInput = {
   maxRetries: 2,
 };
 
+const useStyles = makeStyles({
+  tableViewport: {
+    overflowX: 'auto',
+  },
+  table: {
+    minWidth: '900px',
+    tableLayout: 'fixed',
+  },
+  authCell: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalXS,
+    paddingTop: tokens.spacingVerticalXS,
+    paddingBottom: tokens.spacingVerticalXS,
+  },
+  authType: {
+    color: tokens.colorNeutralForeground3,
+  },
+  slotRow: {
+    display: 'grid',
+    // max-content (not auto) keeps this column from soaking up the row's leftover width and stretching the badge.
+    gridTemplateColumns: '72px 76px max-content',
+    alignItems: 'center',
+    minHeight: '22px',
+    columnGap: tokens.spacingHorizontalXS,
+  },
+  slotName: {
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  slotEmpty: {
+    color: tokens.colorNeutralForeground3,
+  },
+  fallback: {
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+  actions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: tokens.spacingHorizontalXXS,
+    whiteSpace: 'nowrap',
+  },
+});
+
 export function EndpointsPage() {
+  const styles = useStyles();
   const [endpoints, setEndpoints] = useState<EndpointConfig[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -130,93 +190,96 @@ export function EndpointsPage() {
       {endpoints === null && <Spinner label="Loading endpoints..." />}
       {endpoints !== null && endpoints.length === 0 && <p>No endpoints yet. Create one before assigning it to a model.</p>}
       {endpoints !== null && endpoints.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Name</TableHeaderCell>
-              <TableHeaderCell>Base URL</TableHeaderCell>
-              <TableHeaderCell>Authentication</TableHeaderCell>
-              <TableHeaderCell>Timeout</TableHeaderCell>
-              <TableHeaderCell>Retries</TableHeaderCell>
-              <TableHeaderCell>Actions</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {endpoints.map(endpoint => (
-              <TableRow key={endpoint.id}>
-                <TableCell><TableCellLayout>{endpoint.name}</TableCellLayout></TableCell>
-                <TableCell><TableCellLayout truncate>{endpoint.baseUrl}</TableCellLayout></TableCell>
-                <TableCell>
-                  {endpoint.authMode === 'ApiKey' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <span>
-                        Primary {endpoint.hasPrimarySecret ? 'configured' : 'missing'}
-                        {endpoint.activeCredentialSlot === 'Primary' && <Badge appearance="filled" color="success">Active</Badge>}
-                      </span>
-                      <span>
-                        Secondary {endpoint.hasSecondarySecret ? 'configured' : 'empty'}
-                        {endpoint.activeCredentialSlot === 'Secondary' && <Badge appearance="filled" color="success">Active</Badge>}
-                      </span>
-                      {endpoint.fallbackCredentialSlot && endpoint.fallbackExpiresAt && (
-                        <span>
-                          Fallback {endpoint.fallbackCredentialSlot}{' '}
-                          {new Date(endpoint.fallbackExpiresAt) <= new Date() ? 'expired' : 'until'}{' '}
-                          {new Date(endpoint.fallbackExpiresAt).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  ) : 'Managed identity'}
-                </TableCell>
-                <TableCell>{endpoint.timeoutSeconds}s</TableCell>
-                <TableCell>{endpoint.maxRetries}</TableCell>
-                <TableCell>
-                  <Button appearance="subtle" icon={<EditRegular />} aria-label={`Edit ${endpoint.name}`} onClick={() => setEditing(endpoint)} />
-                  {endpoint.authMode === 'ApiKey' && (
-                    <>
-                      <Button appearance="subtle" icon={<ArrowRotateClockwiseRegular />} onClick={() => {
-                        setSecret('');
-                        setSettingCredential({ endpoint, slot: 'Primary' });
-                      }}>Set Primary</Button>
-                      <Button appearance="subtle" onClick={() => {
-                        setSecret('');
-                        setSettingCredential({ endpoint, slot: 'Secondary' });
-                      }}>Set Secondary</Button>
-                      {endpoint.hasSecondarySecret && (
-                        <Button appearance="subtle" onClick={() => {
-                          setActivationSlot(endpoint.activeCredentialSlot === 'Primary' ? 'Secondary' : 'Primary');
-                          setFallbackMinutes('60');
-                          setActivating(endpoint);
-                        }}>Activate</Button>
-                      )}
-                      {endpoint.fallbackCredentialSlot && (
-                        <Button appearance="subtle" onClick={() => run(
-                          () => disableEndpointCredentialFallback(endpoint.id),
-                          () => undefined,
-                        )}>Stop fallback</Button>
-                      )}
-                      {endpoint.hasSecondarySecret && endpoint.activeCredentialSlot !== 'Secondary' && endpoint.fallbackCredentialSlot !== 'Secondary' && (
-                        <Button appearance="subtle" onClick={() => run(
-                          () => removeEndpointCredential(endpoint.id, 'Secondary'),
-                          () => undefined,
-                        )}>Remove Secondary</Button>
-                      )}
-                    </>
-                  )}
-                  <ConfirmDialog
-                    trigger={<Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Delete ${endpoint.name}`} />}
-                    title={`Delete '${endpoint.name}'?`}
-                    message="The endpoint can only be deleted when it is not assigned to any model."
-                    confirmLabel="Delete"
-                    onConfirm={async () => {
-                      await deleteEndpoint(endpoint.id);
-                      reload();
-                    }}
-                  />
-                </TableCell>
+        <div className={styles.tableViewport}>
+          <Table className={styles.table}>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell style={{ width: '15%' }}>Name</TableHeaderCell>
+                <TableHeaderCell style={{ width: '24%' }}>Base URL</TableHeaderCell>
+                <TableHeaderCell style={{ width: '33%' }}>Authentication</TableHeaderCell>
+                <TableHeaderCell style={{ width: '8%' }}>Timeout</TableHeaderCell>
+                <TableHeaderCell style={{ width: '7%' }}>Retries</TableHeaderCell>
+                <TableHeaderCell style={{ width: '13%' }}>Actions</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {endpoints.map(endpoint => (
+                <TableRow key={endpoint.id}>
+                  <TableCell><TableCellLayout>{endpoint.name}</TableCellLayout></TableCell>
+                  <TableCell title={endpoint.baseUrl}><TableCellLayout truncate>{endpoint.baseUrl}</TableCellLayout></TableCell>
+                  <TableCell>
+                    {endpoint.authMode === 'ApiKey' ? (
+                      <CredentialStatus endpoint={endpoint} styles={styles} />
+                    ) : (
+                      <Badge appearance="tint" color="informative">Managed identity</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>{endpoint.timeoutSeconds}s</TableCell>
+                  <TableCell>{endpoint.maxRetries}</TableCell>
+                  <TableCell>
+                    <div className={styles.actions}>
+                      <Tooltip content="Edit endpoint" relationship="label">
+                        <Button appearance="subtle" icon={<EditRegular />} aria-label={`Edit ${endpoint.name}`} onClick={() => setEditing(endpoint)} />
+                      </Tooltip>
+                      {endpoint.authMode === 'ApiKey' && (
+                        <Menu>
+                          <MenuTrigger disableButtonEnhancement>
+                            <Tooltip content="Manage credentials" relationship="label">
+                              <Button appearance="subtle" icon={<KeyRegular />} aria-label={`Manage credentials for ${endpoint.name}`} />
+                            </Tooltip>
+                          </MenuTrigger>
+                          <MenuPopover>
+                            <MenuList>
+                              <MenuItem icon={<ArrowRotateClockwiseRegular />} onClick={() => {
+                                setSecret('');
+                                setSettingCredential({ endpoint, slot: 'Primary' });
+                              }}>Set Primary</MenuItem>
+                              <MenuItem icon={<ArrowRotateClockwiseRegular />} onClick={() => {
+                                setSecret('');
+                                setSettingCredential({ endpoint, slot: 'Secondary' });
+                              }}>Set Secondary</MenuItem>
+                              {endpoint.hasSecondarySecret && (
+                                <MenuItem onClick={() => {
+                                  setActivationSlot(endpoint.activeCredentialSlot === 'Primary' ? 'Secondary' : 'Primary');
+                                  setFallbackMinutes('0');
+                                  setActivating(endpoint);
+                                }}>Activate credential</MenuItem>
+                              )}
+                              {endpoint.fallbackCredentialSlot && (
+                                <MenuItem onClick={() => run(
+                                  () => disableEndpointCredentialFallback(endpoint.id),
+                                  () => undefined,
+                                )}>Stop fallback</MenuItem>
+                              )}
+                              {endpoint.hasSecondarySecret && endpoint.activeCredentialSlot !== 'Secondary' && endpoint.fallbackCredentialSlot !== 'Secondary' && (
+                                <MenuItem onClick={() => run(
+                                  () => removeEndpointCredential(endpoint.id, 'Secondary'),
+                                  () => undefined,
+                                )}>Remove Secondary</MenuItem>
+                              )}
+                            </MenuList>
+                          </MenuPopover>
+                        </Menu>
+                      )}
+                      <Tooltip content="Delete endpoint" relationship="label">
+                        <ConfirmDialog
+                          trigger={<Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Delete ${endpoint.name}`} />}
+                          title={`Delete '${endpoint.name}'?`}
+                          message="The endpoint can only be deleted when it is not assigned to any model."
+                          confirmLabel="Delete"
+                          onConfirm={async () => {
+                            await deleteEndpoint(endpoint.id);
+                            reload();
+                          }}
+                        />
+                      </Tooltip>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       <Dialog open={editing !== null} onOpenChange={(_, data) => !data.open && setEditing(null)}>
@@ -315,6 +378,54 @@ export function EndpointsPage() {
         </DialogSurface>
       </Dialog>
     </PageContainer>
+  );
+}
+
+function CredentialStatus({ endpoint, styles }: { endpoint: EndpointConfig; styles: ReturnType<typeof useStyles> }) {
+  const fallbackExpired = endpoint.fallbackExpiresAt && new Date(endpoint.fallbackExpiresAt) <= new Date();
+
+  return (
+    <div className={styles.authCell}>
+      <Text size={200} className={styles.authType}>API key</Text>
+      <CredentialSlotStatus
+        name="Primary"
+        configured={endpoint.hasPrimarySecret}
+        active={endpoint.activeCredentialSlot === 'Primary'}
+        styles={styles}
+      />
+      <CredentialSlotStatus
+        name="Secondary"
+        configured={endpoint.hasSecondarySecret}
+        active={endpoint.activeCredentialSlot === 'Secondary'}
+        styles={styles}
+      />
+      {endpoint.fallbackCredentialSlot && endpoint.fallbackExpiresAt && (
+        <Text className={styles.fallback}>
+          Fallback: {endpoint.fallbackCredentialSlot} {fallbackExpired ? 'expired' : 'until'}{' '}
+          {new Date(endpoint.fallbackExpiresAt).toLocaleString()}
+        </Text>
+      )}
+    </div>
+  );
+}
+
+function CredentialSlotStatus({
+  name,
+  configured,
+  active,
+  styles,
+}: {
+  name: EndpointCredentialSlot;
+  configured: boolean;
+  active: boolean;
+  styles: ReturnType<typeof useStyles>;
+}) {
+  return (
+    <div className={styles.slotRow}>
+      <span className={styles.slotName}>{name}</span>
+      <span className={configured ? undefined : styles.slotEmpty}>{configured ? 'Configured' : 'Empty'}</span>
+      {active && <Badge size="small" appearance="filled" color="success">Active</Badge>}
+    </div>
   );
 }
 

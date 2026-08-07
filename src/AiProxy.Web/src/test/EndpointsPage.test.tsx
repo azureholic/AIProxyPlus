@@ -80,7 +80,8 @@ describe('EndpointsPage', () => {
     const user = userEvent.setup();
     render(<EndpointsPage />);
 
-    await user.click(await screen.findByRole('button', { name: 'Set Secondary' }));
+    await user.click(await screen.findByRole('button', { name: 'Manage credentials for shared-openai' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Set Secondary' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('New API key'), { target: { value: 'sk-secondary' } });
     await user.click(within(dialog).getByRole('button', { name: 'Rotate', hidden: true }));
@@ -105,7 +106,8 @@ describe('EndpointsPage', () => {
     const user = userEvent.setup();
     render(<EndpointsPage />);
 
-    await user.click(await screen.findByRole('button', { name: 'Activate' }));
+    await user.click(await screen.findByRole('button', { name: 'Manage credentials for shared-openai' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Activate credential' }));
     const dialog = await screen.findByRole('dialog');
     const fallbackInput = within(dialog).getByLabelText('Fallback window (minutes)');
     fireEvent.change(fallbackInput, { target: { value: '-1' } });
@@ -145,9 +147,13 @@ describe('EndpointsPage', () => {
     const user = userEvent.setup();
     render(<EndpointsPage />);
 
-    expect(await screen.findByText(/Fallback Primary expired/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Stop fallback' }));
-    await user.click(screen.getByRole('button', { name: 'Remove Secondary' }));
+    expect(await screen.findByText(/Fallback: Primary expired/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Manage credentials for expired rotation' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Stop fallback' }));
+
+    await user.click(screen.getByRole('button', { name: 'Manage credentials for ready rotation' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Remove Secondary' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
