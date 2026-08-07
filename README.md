@@ -36,7 +36,7 @@ phase-by-phase build log in [specs/iterations/iteration-1/tasks.md](specs/iterat
 dotnet run --project src/AiProxy.AppHost
 ```
 
-This starts persistent Postgres, dev-mode Vault, and Keycloak containers, then the API, and prints an Aspire
+This starts persistent Postgres, local file-backed Vault, and Keycloak containers, then the API, and prints an Aspire
 dashboard URL (traces/metrics/logs for every service). Before the first run, set the local OIDC secrets:
 
 ```powershell
@@ -64,10 +64,11 @@ On first run:
   again (only its hash is stored).
 - `GET /health/live` is always healthy; `GET /health/ready` reports Postgres/Vault reachability individually.
 
-Aspire keeps the Postgres, Vault, and Keycloak containers running across AppHost restarts. Postgres and Keycloak
-also use named storage volumes. Vault runs in dev mode and stores secrets in memory, so its data survives an
-AppHost restart only while that persistent container still exists; deleting/recreating the container or restarting
-Docker loses those dev-mode secrets.
+Aspire keeps the Postgres, Vault, and Keycloak containers running across AppHost restarts, and all three use named
+storage volumes. Local Vault uses its file backend, so endpoint credentials survive AppHost, container, and Docker
+restarts. To intentionally reset local Vault, stop the AppHost, remove its Vault container, delete `vault-data`,
+and restart; this removes both Vault data and the local-only unseal key, and existing API-key endpoints must then
+have their secrets set again.
 
 ### Option B — Docker Compose
 
@@ -75,7 +76,7 @@ Docker loses those dev-mode secrets.
 docker compose up -d
 ```
 
-Brings up Postgres, dev-mode Vault, and the API (built from `src/AiProxy.Api/Dockerfile`) on `localhost:8080`.
+Brings up Postgres, local file-backed Vault, and the API (built from `src/AiProxy.Api/Dockerfile`) on `localhost:8080`.
 Apply migrations the same way as above, pointing at `localhost:5432`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` in
 `docker-compose.yml` if you have an external OTLP collector; leave it blank to disable OTLP export.
 

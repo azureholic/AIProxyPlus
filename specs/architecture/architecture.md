@@ -344,11 +344,13 @@ key material, only the `secret_ref` path (endpoints) or consumer metadata withou
 
 ## 8. Secrets Management
 
-**HashiCorp Vault (OSS)** runs as a container alongside the proxy (dev mode locally via Aspire; `file` or
-`raft` storage backend in real deployments). API keys are stored under a **KV v2** engine at
+**HashiCorp Vault (OSS)** runs as a container alongside the proxy (a local-only bootstrapped `file` backend via
+Aspire/Compose; operator-managed `file` or `raft` storage in real deployments). API keys are stored under a **KV v2** engine at
 `secret/ai-proxy/endpoints/{endpointId}`. The proxy authenticates to Vault using **AppRole** (role id + wrapped
-secret id supplied via environment/orchestrator secret, never committed) — for local Aspire runs, dev-mode Vault
-with a well-known root token confined to the dev environment is acceptable.
+secret id supplied via environment/orchestrator secret, never committed). Local runs use a fixed development-only
+token restricted to `secret/ai-proxy/*`; the bootstrap persists its single local unseal key beside Vault's file
+backend in the `vault-data` volume so Docker restarts do not orphan endpoint credentials. This automatic unseal
+shape and fixed token are confined to local development and are not acceptable deployment defaults.
 
 - `Endpoint.SecretRef` in Postgres stores only the Vault **path**, never the secret value.
 - `ManagedIdentity`-mode endpoints have no Vault entry; the proxy instead acquires an Entra ID access token via
@@ -683,9 +685,9 @@ endpoints. One authority/issuer and client are supported per running deployment.
   - the **Aspire dashboard**, which receives OTLP traces/metrics/logs from the API via service-discovery-injected
     `OTEL_EXPORTER_OTLP_ENDPOINT`.
   - `AiProxy.ServiceDefaults` wires health checks, resilience, and OpenTelemetry consistently for the API project.
-  Postgres, Vault, and Keycloak use Aspire persistent container lifetimes. Postgres and Keycloak use named data
-  volumes. Dev-mode Vault stores secrets in memory: persistence keeps that container alive across AppHost restarts,
-  but deleting/recreating it or restarting Docker does not preserve its secret data.
+  Postgres, Vault, and Keycloak use Aspire persistent container lifetimes and named data volumes. Local Vault uses
+  its `file` backend and an idempotent local bootstrap, so endpoint secrets survive AppHost, container, and Docker
+  restarts. Deleting `vault-data` intentionally resets both encrypted Vault data and its local unseal key.
 - **Container-only (no Aspire)**: `docker-compose.yml` at the repo root stands up the same three containers for
   environments where Aspire isn't used (e.g. CI, or a simple `docker compose up` for manual testing), with an
   external OTLP collector endpoint configurable via env var.

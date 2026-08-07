@@ -29,13 +29,13 @@ var postgres = builder.AddPostgres("postgres")
     .WithLifetime(ContainerLifetime.Persistent)
     .AddDatabase("aiproxydb");
 
-// Dev-mode Vault (architecture.md §8): well-known root token, mlock disabled since dev containers typically
-// lack IPC_LOCK — acceptable for local Aspire runs only, never for real deployments.
-var vault = builder.AddContainer("vault", "hashicorp/vault")
-    .WithEnvironment("VAULT_DEV_ROOT_TOKEN_ID", "dev-only-root-token")
-    .WithEnvironment("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200")
-    .WithEnvironment("VAULT_DISABLE_MLOCK", "true")
+// Local-only Vault bootstrap persists endpoint credentials across Docker and container restarts.
+var vault = builder.AddContainer("vault", "hashicorp/vault", "2.0.3")
+    .WithEntrypoint("/bin/sh")
+    .WithArgs("/vault/config/bootstrap.sh")
     .WithHttpEndpoint(targetPort: 8200, name: "http")
+    .WithHttpHealthCheck("/v1/sys/health", endpointName: "http")
+    .WithBindMount("./vault", "/vault/config", isReadOnly: true)
     .WithVolume("vault-data", "/vault/file")
     .WithLifetime(ContainerLifetime.Persistent);
 

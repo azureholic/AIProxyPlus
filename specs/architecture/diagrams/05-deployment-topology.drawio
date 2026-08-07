@@ -14,7 +14,7 @@
     <mxCell id="pg" value="postgres" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
       <mxGeometry x="120" y="240" width="140" height="90" as="geometry" />
     </mxCell>
-    <mxCell id="vault" value="vault" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+    <mxCell id="vault" value="vault&#10;KV v2 + file backend&#10;vault-data volume" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
       <mxGeometry x="380" y="240" width="140" height="90" as="geometry" />
     </mxCell>
     <mxCell id="dash" value="Aspire Dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
