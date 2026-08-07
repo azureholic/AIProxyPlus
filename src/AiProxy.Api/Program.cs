@@ -367,10 +367,13 @@ ingress.MapMethods(
     var allowedModelIds = ctx.Items.TryGetValue(ConsumerAuthEndpointFilter.AllowedModelIdsItemKey, out var allowedValue)
         ? (IReadOnlySet<Guid>?)allowedValue
         : null;
+    var consumerId = ctx.Items.TryGetValue(ConsumerAuthEndpointFilter.ConsumerIdItemKey, out var idValue)
+        ? (Guid?)idValue
+        : null;
     var consumerName = ctx.Items.TryGetValue(ConsumerAuthEndpointFilter.ConsumerNameItemKey, out var nameValue)
         ? (string?)nameValue
         : null;
-    var failure = await router.ProxyAsync(ctx, ct, allowedModelIds, consumerName);
+    var failure = await router.ProxyAsync(ctx, ct, consumerId, allowedModelIds, consumerName);
     if (failure is not null)
     {
         await WriteRoutingFailureAsync(ctx, failure);

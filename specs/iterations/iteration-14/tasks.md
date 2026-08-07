@@ -41,4 +41,28 @@ defects found during manual testing and keeps each repair independently reproduc
 ### Validation
 
 - [x] Add and run a regression test proving `CONNECT` reaches Realtime routing instead of returning `405`.
-- [ ] Confirm the Voice Playground connects to the configured live OpenAI Realtime model in Chromium.
+- [x] Confirm the Voice Playground connects to the configured live OpenAI Realtime model in Chromium.
+
+## Bug 3 — Realtime Voice usage is not reported
+
+### Reproduction and root cause
+
+- [x] Complete a successful live Voice Playground response and confirm that no usage record appears.
+- [x] Identify that `RealtimeProxyService` forwards backend frames without observing OpenAI's terminal
+  `response.done.response.usage` object.
+
+### Repair
+
+- [x] Pass the authenticated consumer id into Realtime routing and preserve the existing consumer name attribution.
+- [x] Passively assemble backend text-message fragments while forwarding every fragment unchanged.
+- [x] Persist one `RealtimeVoice` usage record per unique usage-bearing `response.done`, grouped by connection id.
+- [x] Ignore duplicate ids, malformed JSON, and events without authoritative usage without affecting the socket.
+- [x] Synchronize the architecture's Realtime and usage-capture contracts.
+
+### Validation
+
+- [x] Prove fragmented `response.done` forwarding remains byte-for-byte equivalent and captures token totals with
+  consumer, model, provider, and endpoint attribution.
+- [x] Prove multiple responses on one connection create separate records with one session id while duplicates and
+  invalid events create no records.
+- [ ] Confirm a live Voice Playground response appears in the Usage dashboard.

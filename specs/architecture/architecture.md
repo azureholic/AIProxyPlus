@@ -215,8 +215,10 @@ credential, and opens an outbound `ClientWebSocket` to the backend before accept
 both legs are connected, frames are relayed bidirectionally, byte-for-byte, until either side closes — see §9
 for the failover and close-propagation details. Iteration 2 targets the **OpenAI Realtime API** only
 (`wss://.../v1/realtime?model=...`, `Authorization: Bearer` auth); Azure OpenAI Realtime and generic/self-hosted
-WebSocket backends are deferred, as is usage/token capture for this operation type (`OperationType.RealtimeVoice`
-exists for future use, but no `IUsageExtractor` reads a Realtime session yet).
+WebSocket backends are deferred. For chargeback, the backend-to-client relay passively assembles complete text
+messages and records the authoritative token counts from each `response.done.response.usage` object as one
+`OperationType.RealtimeVoice` record. The response id identifies the record and one connection id groups every
+response produced on the same socket; observed fragments are still forwarded unchanged.
 
 ### 6.6 Request/response speech (Iteration 9)
 
@@ -536,6 +538,12 @@ shape and fixed token are confined to local development and are not acceptable d
   Responses API's `response.completed` event, or an image `*.completed` event — each with an
   `input_tokens`/`output_tokens`/`total_tokens` usage object), recording it, and otherwise passing bytes through
   untouched (no buffering of the whole stream — must preserve time-to-first-byte).
+- The Realtime WebSocket relay similarly observes complete backend text messages after forwarding each fragment.
+  Every `response.done` event with an authoritative `response.usage` object creates one asynchronously persisted
+  `RealtimeVoice` record attributed to the authenticated consumer, selected endpoint, model, and provider. Multiple
+  responses on one socket produce separate records sharing a connection session id; duplicate response ids,
+  malformed JSON, and events without usage are ignored. Observation never changes the forwarded frames or closes
+  an otherwise healthy socket.
 - If the **client's original request did not** ask for usage (`include_usage` absent for OpenAI, or an Anthropic
   client that doesn't expect a usage-only trailing event), the proxy removes the *injected* usage-only chunk from
   what is sent downstream, so the client-visible stream is unchanged relative to calling the backend directly.
@@ -574,7 +582,7 @@ shape and fixed token are confined to local development and are not acceptable d
 | OpenAI ingress (images) | `POST /openai/v1/images/generations`, `POST /openai/v1/images/edits`, `POST /openai/v1/images/variations` | Passthrough proxy; generation/edit support `stream: true` for GPT Image-style models (§10), variations is always non-streaming; usage (tokens when reported, metrics otherwise) captured via the image `IUsageExtractor` |
 | OpenAI ingress (responses) | `POST /openai/v1/responses` | Passthrough proxy, streaming and non-streaming; stateful via `previous_response_id` — see §9 |
 | Anthropic ingress | `POST /anthropic/v1/messages` | Passthrough proxy, streaming supported |
-| Realtime (voice) ingress (Iteration 2) | `GET` (HTTP/1.1) or `CONNECT` (HTTP/2) `/openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover — see §6.5/§9. Usage capture deferred |
+| Realtime (voice) ingress (Iteration 2) | `GET` (HTTP/1.1) or `CONNECT` (HTTP/2) `/openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover, and per-`response.done` usage capture — see §6.5/§9/§10 |
 | Speech ingress (Iteration 9) | `POST /openai/v1/audio/transcriptions`, `POST /openai/v1/audio/speech` | Multipart transcription and binary synthesis passthrough — see §6.6. OpenAI-compatible providers only |
 | Configuration | `/api/v1/config/*` | See §7.2, incl. `consumers` CRUD |
 | Usage query | `GET /api/v1/usage` | Chargeback / reporting, filterable by deployment and consumer |
@@ -793,7 +801,7 @@ Clean Architecture is enforced and verified, not just aspirational:
   expiry, which is acceptable for a single-instance or short-TTL multi-instance deployment).
 - Automatic Vault secret rotation workflows.
 - Moderation endpoints. Request/response speech-to-text and text-to-speech are implemented in Iteration 9
-  (§6.6/§19.6). Realtime usage/token capture remains deferred to a later iteration.
+  (§6.6/§19.6).
 - Azure OpenAI Realtime and generic/self-hosted WebSocket backends for the Realtime API (Iteration 2 targets
   the OpenAI Realtime API only).
 - Additional providers beyond OpenAI-compatible and Anthropic (e.g. Google Gemini, Cohere).

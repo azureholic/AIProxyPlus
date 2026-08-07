@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -20,6 +21,8 @@ public sealed class FakeRealtimeBackend : IAsyncDisposable
     public string Url { get; private set; } = "";
 
     public bool RejectHandshake { get; set; }
+
+    public IReadOnlyList<string> ServerMessageFragments { get; set; } = [];
 
     public int AcceptedConnectionCount => _acceptedConnectionCount;
 
@@ -44,6 +47,16 @@ public sealed class FakeRealtimeBackend : IAsyncDisposable
 
             using var socket = await context.WebSockets.AcceptWebSocketAsync();
             Interlocked.Increment(ref backend._acceptedConnectionCount);
+            for (var fragmentIndex = 0; fragmentIndex < backend.ServerMessageFragments.Count; fragmentIndex++)
+            {
+                var fragment = Encoding.UTF8.GetBytes(backend.ServerMessageFragments[fragmentIndex]);
+                await socket.SendAsync(
+                    fragment,
+                    WebSocketMessageType.Text,
+                    endOfMessage: fragmentIndex == backend.ServerMessageFragments.Count - 1,
+                    context.RequestAborted);
+            }
+
             var buffer = new byte[8192];
             while (socket.State == WebSocketState.Open)
             {

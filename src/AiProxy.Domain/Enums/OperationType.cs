@@ -19,6 +19,6 @@ public enum OperationType
     /// <summary>Anthropic's native Messages API (§9) — distinct from OpenAI-style ChatCompletion passthrough.</summary>
     MessagesApi,
 
-    /// <summary>WebSocket-based realtime/voice API (§9) — connection-scoped affinity, no usage capture yet.</summary>
+    /// <summary>WebSocket-based realtime/voice API (§9) with connection-scoped affinity.</summary>
     RealtimeVoice
 }

@@ -53,6 +53,22 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
 
     private Uri RealtimeUri(string model) => new(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={model}");
 
+    private async Task<IReadOnlyList<UsageRecord>> WaitForUsageRecordCountAsync(int expectedCount)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var records = _factory.UsageRecords.Records;
+            if (records.Count == expectedCount)
+            {
+                return records;
+            }
+
+            await Task.Delay(20);
+        }
+
+        throw new TimeoutException($"Expected {expectedCount} Realtime usage records within the timeout.");
+    }
+
     [Fact]
     public async Task SuccessfulHandshake_EchoesMessagesOverTheConnection()
     {
@@ -71,6 +87,89 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
 
         Encoding.UTF8.GetString(buffer, 0, result.Count).Should().Be("hello realtime");
         _backend1.AcceptedConnectionCount.Should().Be(1);
+
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task FragmentedResponseDone_ForwardsUnchangedAndCapturesAttributedUsage()
+    {
+        const string responseId = "resp_realtime_usage_1";
+        const string firstFragment = "{\"type\":\"response.done\",\"response\":{\"id\":\"resp_realtime";
+        const string secondFragment = "_usage_1\",\"usage\":{\"input_tokens\":12,\"output_tokens\":8,\"total_tokens\":20}}}";
+        _backend1.ServerMessageFragments = [firstFragment, secondFragment];
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        var assignment = NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1);
+        model.AddEndpoint(assignment);
+        _factory.Models.Seed(model);
+
+        using var socket = await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(modelName), CancellationToken.None);
+
+        var buffer = new byte[1024];
+        var firstResult = await socket.ReceiveAsync(buffer, CancellationToken.None);
+        Encoding.UTF8.GetString(buffer, 0, firstResult.Count).Should().Be(firstFragment);
+        firstResult.MessageType.Should().Be(WebSocketMessageType.Text);
+        firstResult.EndOfMessage.Should().BeFalse();
+        var secondResult = await socket.ReceiveAsync(buffer, CancellationToken.None);
+        Encoding.UTF8.GetString(buffer, 0, secondResult.Count).Should().Be(secondFragment);
+        secondResult.MessageType.Should().Be(WebSocketMessageType.Text);
+        secondResult.EndOfMessage.Should().BeTrue();
+        var usage = (await WaitForUsageRecordCountAsync(1)).Single();
+        usage.Should().BeEquivalentTo(new
+        {
+            ModelName = modelName,
+            ConsumerId = _factory.DefaultConsumer.Id,
+            ConsumerName = _factory.DefaultConsumer.Name,
+            EndpointId = assignment.EndpointId,
+            EndpointName = assignment.Endpoint.Name,
+            Provider = Provider.OpenAI,
+            OperationType = OperationType.RealtimeVoice,
+            RequestId = responseId,
+            PromptTokens = (int?)12,
+            CompletionTokens = (int?)8,
+            TotalTokens = (int?)20,
+            Streaming = true,
+            HttpStatusCode = (int)HttpStatusCode.SwitchingProtocols,
+        });
+        usage.SessionId.Should().NotBeNullOrWhiteSpace();
+
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task MultipleResponseDoneEvents_CapturesEachResponseOnce_AndIgnoresInvalidEvents()
+    {
+        const string firstResponse = "{\"type\":\"response.done\",\"response\":{\"id\":\"resp_1\",\"usage\":{\"input_tokens\":4,\"output_tokens\":6,\"total_tokens\":10}}}";
+        const string secondResponse = "{\"type\":\"response.done\",\"response\":{\"id\":\"resp_2\",\"usage\":{\"input_tokens\":7,\"output_tokens\":3,\"total_tokens\":10}}}";
+        _backend1.ServerMessageFragments = [firstResponse];
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        _factory.Models.Seed(model);
+
+        using var socket = await NewAuthenticatedWebSocketClient().ConnectAsync(RealtimeUri(modelName), CancellationToken.None);
+        var buffer = new byte[1024];
+        await socket.ReceiveAsync(buffer, CancellationToken.None);
+
+        foreach (var message in new[]
+        {
+            secondResponse,
+            secondResponse,
+            "{not-json",
+            "{\"type\":1}",
+            "{\"type\":\"response.done\",\"response\":{\"id\":\"resp_without_usage\"}}",
+        })
+        {
+            var payload = Encoding.UTF8.GetBytes(message);
+            await socket.SendAsync(payload, WebSocketMessageType.Text, endOfMessage: true, CancellationToken.None);
+            var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+            Encoding.UTF8.GetString(buffer, 0, result.Count).Should().Be(message);
+        }
+
+        var records = await WaitForUsageRecordCountAsync(2);
+        records.Select(record => record.RequestId).Should().BeEquivalentTo("resp_1", "resp_2");
+        records.Select(record => record.SessionId).Distinct().Should().ContainSingle().Which.Should().NotBeNullOrWhiteSpace();
 
         await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
     }
