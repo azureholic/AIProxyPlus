@@ -166,8 +166,10 @@ who may sign in to this client at the provider: every admitted browser user is a
 
 Configure the provider only in `src/AiProxy.AppHost/appsettings.json`. AppHost resolves
 `ClientSecretParameter` from an Aspire secret parameter and passes `Authentication__Oidc__*` values only to the
-API. The frontend receives no provider settings. `Authority` must be HTTPS except for loopback development,
-`Scopes` must contain `openid`, and `AllowedSigningAlgorithms` is an explicit asymmetric allow-list.
+API. Set `DisplayName` to the user-facing provider name, such as `Keycloak`, `Microsoft Entra ID`, `Okta`, or
+`Auth0`; this non-secret label is the only provider setting exposed to the frontend. `Authority` must be HTTPS
+except for loopback development, `Scopes` must contain `openid`, and `AllowedSigningAlgorithms` is an explicit
+asymmetric allow-list.
 
 OIDC users become Consumers on their first inference request. Their immutable identity is exact issuer + subject;
 the username claim is mutable display and chargeback metadata. A username collision is rejected rather than merged.

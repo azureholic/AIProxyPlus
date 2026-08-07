@@ -13,6 +13,19 @@ namespace AiProxy.Api.Tests.Infrastructure;
 public class SessionAuthenticationTests
 {
     [Fact]
+    public async Task Provider_WithoutAuthentication_ReturnsConfiguredDisplayName()
+    {
+        await using var factory = new ApiTestFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/v1/auth/provider");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("displayName").GetString().Should().Be("OpenID Connect");
+    }
+
+    [Fact]
     public void SessionCookie_UsesAbsoluteExpiration()
     {
         using var factory = new ApiTestFactory();

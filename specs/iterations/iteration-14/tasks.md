@@ -66,3 +66,18 @@ defects found during manual testing and keeps each repair independently reproduc
 - [x] Prove multiple responses on one connection create separate records with one session id while duplicates and
   invalid events create no records.
 - [x] Confirm a live Voice Playground response appears in the Usage dashboard.
+
+## Improvement 4 — Provider-aware login screen
+
+### Repair
+
+- [x] Add a provider-neutral OIDC display-name setting and expose only that non-secret label to the frontend.
+- [x] Center the unauthenticated login surface and identify the configured provider in its copy and action.
+- [x] Configure the local Aspire deployment to display `Keycloak` without coupling the UI to Keycloak.
+- [x] Synchronize architecture and local provider-setup documentation.
+
+### Validation
+
+- [x] Prove the public provider metadata endpoint returns the configured display name without authentication.
+- [x] Prove an unauthenticated frontend session renders the centered provider-aware login action.
+- [ ] Confirm the login screen layout and Keycloak label in the live desktop and mobile browser views.

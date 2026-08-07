@@ -625,6 +625,14 @@ app.MapGroup("/api/v1")
 
 var authenticationEndpoints = app.MapGroup("/api/v1/auth");
 
+authenticationEndpoints.MapGet("/provider", () => Results.Ok(new
+{
+    displayName = oidcOptions.DisplayName,
+}))
+    .WithName("GetAuthenticationProvider")
+    .WithSummary("Gets public identity-provider display metadata")
+    .Produces(StatusCodes.Status200OK);
+
 authenticationEndpoints.MapGet("/session", (HttpContext context) =>
 {
     if (context.User.Identity?.IsAuthenticated != true)

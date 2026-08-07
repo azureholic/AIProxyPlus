@@ -25,6 +25,23 @@ describe('App shell + navigation', () => {
     expect(await screen.findByText('New model')).toBeInTheDocument();
   });
 
+  it('centers sign-in around the configured identity provider when unauthenticated', async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const path = input.toString();
+      if (path === '/api/v1/auth/session') {
+        return Promise.resolve(new Response(null, { status: 401 }));
+      }
+
+      return Promise.resolve(new Response(JSON.stringify({ displayName: 'Keycloak' }), { status: 200 }));
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: 'Sign in with Keycloak' })).toBeInTheDocument();
+    expect(screen.getByText('Administrator access is provided by Keycloak.')).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveStyle({ minHeight: '100vh', justifyContent: 'center' });
+  });
+
   it('navigates to each top-level page via the sidebar', async () => {
     const user = userEvent.setup();
     render(<App />);

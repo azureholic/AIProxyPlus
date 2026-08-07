@@ -4,6 +4,7 @@ var oidcSection = builder.Configuration.GetSection("Authentication:Oidc");
 var oidc = new OidcAppHostOptions
 {
     Enabled = bool.TryParse(oidcSection["Enabled"], out var enabled) && enabled,
+    DisplayName = oidcSection["DisplayName"] ?? "OpenID Connect",
     Authority = oidcSection["Authority"] ?? string.Empty,
     ClientId = oidcSection["ClientId"] ?? string.Empty,
     ClientSecretParameter = oidcSection["ClientSecretParameter"] ?? string.Empty,
@@ -57,6 +58,7 @@ var api = builder.AddProject<Projects.AiProxy_Api>("api")
     .WithEnvironment("Vault__Address", vault.GetEndpoint("http"))
     .WithEnvironment("Vault__Token", "dev-only-root-token")
     .WithEnvironment("Authentication__Oidc__Enabled", oidc.Enabled.ToString())
+    .WithEnvironment("Authentication__Oidc__DisplayName", oidc.DisplayName)
     .WithEnvironment("Authentication__Oidc__Authority", oidc.Authority)
     .WithEnvironment("Authentication__Oidc__ClientId", oidc.ClientId)
     .WithEnvironment("Authentication__Oidc__ClientSecret", oidcClientSecret)
@@ -86,6 +88,7 @@ builder.Build().Run();
 sealed class OidcAppHostOptions
 {
     public bool Enabled { get; init; }
+    public string DisplayName { get; init; } = "OpenID Connect";
     public string Authority { get; init; } = string.Empty;
     public string ClientId { get; init; } = string.Empty;
     public string ClientSecretParameter { get; init; } = string.Empty;
@@ -110,10 +113,11 @@ sealed class OidcAppHostOptions
             throw new InvalidOperationException("Authentication:Oidc:Authority must be an absolute HTTPS or loopback URI.");
         }
 
-        if (string.IsNullOrWhiteSpace(ClientId) || string.IsNullOrWhiteSpace(ClientSecretParameter) ||
+        if (string.IsNullOrWhiteSpace(DisplayName) || string.IsNullOrWhiteSpace(ClientId) ||
+            string.IsNullOrWhiteSpace(ClientSecretParameter) ||
             string.IsNullOrWhiteSpace(UsernameClaim) || !Scopes.Contains("openid", StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("Authentication:Oidc requires ClientId, ClientSecretParameter, UsernameClaim, and the openid scope.");
+            throw new InvalidOperationException("Authentication:Oidc requires DisplayName, ClientId, ClientSecretParameter, UsernameClaim, and the openid scope.");
         }
     }
 }

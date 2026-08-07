@@ -9,6 +9,7 @@ export interface UserSession {
 
 interface AuthState {
   session: UserSession | null;
+  providerName: string;
   loading: boolean;
   error: string | null;
   login: () => void;
@@ -19,22 +20,35 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<UserSession | null>(null);
+  const [providerName, setProviderName] = useState('OpenID Connect');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/v1/auth/session', { credentials: 'include', signal: controller.signal })
-      .then(async (response) => {
-        if (response.status === 401) {
-          return null;
-        }
-        if (!response.ok) {
-          throw new Error(`Session request failed with status ${response.status}`);
-        }
-        return (await response.json()) as UserSession;
+    Promise.all([
+      fetch('/api/v1/auth/session', { credentials: 'include', signal: controller.signal })
+        .then(async (response) => {
+          if (response.status === 401) {
+            return null;
+          }
+          if (!response.ok) {
+            throw new Error(`Session request failed with status ${response.status}`);
+          }
+          return (await response.json()) as UserSession;
+        }),
+      fetch('/api/v1/auth/provider', { signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Provider request failed with status ${response.status}`);
+          }
+          return (await response.json()) as { displayName: string };
+        }),
+    ])
+      .then(([sessionValue, provider]) => {
+        setSession(sessionValue);
+        setProviderName(provider.displayName);
       })
-      .then((value) => setSession(value))
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setError(reason instanceof Error ? reason.message : 'Unable to load session');
@@ -65,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, loading, error, login, logout }}>
+    <AuthContext.Provider value={{ session, providerName, loading, error, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

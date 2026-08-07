@@ -5,6 +5,7 @@ public sealed class OidcAuthenticationOptions
     public const string SectionName = "Authentication:Oidc";
 
     public bool Enabled { get; init; }
+    public string DisplayName { get; init; } = "OpenID Connect";
     public string Authority { get; init; } = string.Empty;
     public string ClientId { get; init; } = string.Empty;
     public string ClientSecret { get; init; } = string.Empty;
@@ -27,6 +28,11 @@ public sealed class OidcAuthenticationOptions
             (authority.Scheme != Uri.UriSchemeHttps && !authority.IsLoopback))
         {
             throw new InvalidOperationException("Authentication:Oidc:Authority must be an absolute HTTPS or loopback URI.");
+        }
+
+        if (string.IsNullOrWhiteSpace(DisplayName))
+        {
+            throw new InvalidOperationException("Authentication:Oidc:DisplayName is required when authentication is enabled.");
         }
 
         if (string.IsNullOrWhiteSpace(ClientId) || string.IsNullOrWhiteSpace(ClientSecret))

@@ -681,8 +681,10 @@ consumed atomically before upgrade. Browser handshakes with an `Origin` must mat
 `AiProxy.AppHost` is the only deploy-time configuration owner. It binds provider-neutral `Authentication:Oidc`
 settings, resolves the client credential from an Aspire secret parameter, and forwards only required values to the
 API through `Authentication__Oidc__*` environment variables. Child projects do not duplicate provider settings.
-The frontend receives no OIDC configuration because it uses same-origin login, session, antiforgery, and logout
-endpoints. One authority/issuer and client are supported per running deployment.
+The frontend receives only the configured, non-secret provider display name through the anonymous
+`GET /api/v1/auth/provider` endpoint so the centered login screen can identify the provider. Authority, client,
+scope, token, and credential settings remain server-only; browser authentication otherwise uses same-origin login,
+session, antiforgery, and logout endpoints. One authority/issuer and client are supported per running deployment.
 
 ## 14. Deployment Topology & Local Development
 
