@@ -359,7 +359,10 @@ ingress.MapPost("/openai/v1/audio/speech", (HttpContext ctx, ProxyRoutingService
     RouteOrFailAsync(ctx, router, OperationType.TextToSpeech, ct));
 ingress.MapPost("/anthropic/v1/messages", (HttpContext ctx, ProxyRoutingService router, CancellationToken ct) =>
     RouteOrFailAsync(ctx, router, OperationType.MessagesApi, ct));
-ingress.MapGet("/openai/v1/realtime", async (HttpContext ctx, RealtimeProxyService router, CancellationToken ct) =>
+ingress.MapMethods(
+    "/openai/v1/realtime",
+    [HttpMethods.Get, HttpMethods.Connect],
+    async (HttpContext ctx, RealtimeProxyService router, CancellationToken ct) =>
 {
     var allowedModelIds = ctx.Items.TryGetValue(ConsumerAuthEndpointFilter.AllowedModelIdsItemKey, out var allowedValue)
         ? (IReadOnlySet<Guid>?)allowedValue

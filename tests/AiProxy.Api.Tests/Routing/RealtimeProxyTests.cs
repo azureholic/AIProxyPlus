@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using AiProxy.Application.Abstractions;
@@ -118,6 +119,16 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
 
         var replay = async () => await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None);
         await replay.Should().ThrowAsync<InvalidOperationException>().WithMessage("*401*");
+    }
+
+    [Fact]
+    public async Task ConnectMethod_WithAuthentication_ReachesRealtimeModelResolution()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Connect, "/openai/v1/realtime?model=unused");
+
+        using var response = await _factory.CreateClient().SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

@@ -23,3 +23,22 @@ defects found during manual testing and keeps each repair independently reproduc
 - [x] Store a fake endpoint secret, restart the Vault container, and resolve the same value from the persisted volume.
 - [x] Run the architecture regression test and build the AppHost.
 - [ ] Re-enter any external-provider keys already lost by the old in-memory Vault and confirm live OpenAI/Anthropic calls.
+
+## Bug 2 — Voice Playground WebSocket fails over HTTP/2
+
+### Reproduction and root cause
+
+- [x] Reproduce the Voice Playground failure in Chromium: ticket issuance succeeds, then the socket closes with
+  code `1006`.
+- [x] Confirm the browser negotiates HTTP/2 and sends an extended `CONNECT /openai/v1/realtime`, while the Minimal
+  API route accepts only `GET` and returns `405` before authentication or proxy routing runs.
+
+### Repair
+
+- [x] Map both HTTP/1.1 `GET` and HTTP/2 `CONNECT` to the same authenticated Realtime handler.
+- [x] Synchronize the documented Realtime ingress contract.
+
+### Validation
+
+- [x] Add and run a regression test proving `CONNECT` reaches Realtime routing instead of returning `405`.
+- [ ] Confirm the Voice Playground connects to the configured live OpenAI Realtime model in Chromium.

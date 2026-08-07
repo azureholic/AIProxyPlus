@@ -205,8 +205,10 @@ the note in §9). Usage is extracted the same way as any other operation, just v
 
 ### 6.5 Realtime (voice) API — WebSocket proxy (Iteration 2)
 
-`GET /openai/v1/realtime?model={deploymentName}` is not a request/response call — the client upgrades to a
-WebSocket and the connection stays open for the duration of a voice session. `RealtimeProxyService` resolves the
+`GET /openai/v1/realtime?model={deploymentName}` over HTTP/1.1, or extended
+`CONNECT /openai/v1/realtime?model={deploymentName}` over HTTP/2, is not a request/response call — the client
+upgrades to a WebSocket and the connection stays open for the duration of a voice session. Both methods map to
+the same authenticated ingress handler. `RealtimeProxyService` resolves the
 `Model` from the `model` **query string** (there is no request body to peek at handshake time),
 picks an endpoint via the same priority + round-robin `EndpointSelector` used for HTTP ingress, resolves its
 credential, and opens an outbound `ClientWebSocket` to the backend before accepting the inbound upgrade. Once
@@ -572,7 +574,7 @@ shape and fixed token are confined to local development and are not acceptable d
 | OpenAI ingress (images) | `POST /openai/v1/images/generations`, `POST /openai/v1/images/edits`, `POST /openai/v1/images/variations` | Passthrough proxy; generation/edit support `stream: true` for GPT Image-style models (§10), variations is always non-streaming; usage (tokens when reported, metrics otherwise) captured via the image `IUsageExtractor` |
 | OpenAI ingress (responses) | `POST /openai/v1/responses` | Passthrough proxy, streaming and non-streaming; stateful via `previous_response_id` — see §9 |
 | Anthropic ingress | `POST /anthropic/v1/messages` | Passthrough proxy, streaming supported |
-| Realtime (voice) ingress (Iteration 2) | `GET /openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover — see §6.5/§9. Usage capture deferred |
+| Realtime (voice) ingress (Iteration 2) | `GET` (HTTP/1.1) or `CONNECT` (HTTP/2) `/openai/v1/realtime?model={name}` | WebSocket upgrade, not request/response; connection-scoped affinity, handshake-only failover — see §6.5/§9. Usage capture deferred |
 | Speech ingress (Iteration 9) | `POST /openai/v1/audio/transcriptions`, `POST /openai/v1/audio/speech` | Multipart transcription and binary synthesis passthrough — see §6.6. OpenAI-compatible providers only |
 | Configuration | `/api/v1/config/*` | See §7.2, incl. `consumers` CRUD |
 | Usage query | `GET /api/v1/usage` | Chargeback / reporting, filterable by deployment and consumer |
