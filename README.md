@@ -1,13 +1,47 @@
 # AI Proxy
 
-A reverse proxy for OpenAI, Azure OpenAI, and Anthropic-compatible inference APIs, with priority + round-robin
-load-balanced routing (failover on `429`/`5xx`), automatic affinity for stateful calls (OpenAI Responses API
-`previous_response_id` chaining, and a WebSocket proxy for the OpenAI Realtime/voice API), streaming-safe usage
-capture for chargeback, and a small configuration REST API — built as a clean, testable .NET 10 solution with
-.NET Aspire for local orchestration.
+AI Proxy is a self-hosted reverse proxy that sits in front of one or more LLM inference backends and gives a
+team one stable, internally-governed endpoint to call instead of many provider-specific ones. It centralizes
+authentication and secrets, tracks token usage per caller for chargeback, and adds resiliency — priority-tiered
+routing with round-robin distribution and automatic failover — without getting in the way of streaming or
+stateful conversations.
 
-Full design detail lives in [specs/architecture/architecture.md](specs/architecture/architecture.md) and the
-phase-by-phase build log in [specs/iterations/iteration-1/tasks.md](specs/iterations/iteration-1/tasks.md).
+It is a clean-slate, vendor-neutral rewrite of [azureholic/ai-proxy](https://github.com/azureholic/ai-proxy).
+The original proxied only Azure OpenAI, logged usage to Log Analytics, and relied on Azure Managed Identity. This
+version speaks the OpenAI-compatible and Anthropic wire protocols, can route to a backend hosted anywhere — local,
+OpenAI, Anthropic, Azure AI Foundry, self-hosted vLLM/Ollama — and stores its own configuration, usage, and
+secrets rather than depending on any single cloud. Azure Managed Identity is still supported, but only as one
+optional, per-endpoint authentication mode.
+
+## What it does
+
+- **Unifies ingress**: `/openai/v1/...` and `/anthropic/v1/...` passthrough for chat/completions, embeddings,
+  images, the stateful Responses API, and the Realtime (voice) WebSocket API, plus request/response speech
+  (transcription and text-to-speech).
+- **Routes with resiliency**: each model can have several endpoints across priority tiers; requests round-robin
+  within a tier and fail over to the next tier on `429`/`5xx`, without ever double-committing a response to the
+  caller.
+- **Preserves protocol-inherent affinity**: Responses API calls stay pinned to the endpoint that owns their
+  `previous_response_id`; Realtime calls stay pinned to their WebSocket connection. There is no generic
+  session-affinity configuration to get wrong.
+- **Captures usage without buffering**: streaming responses are relayed to the caller incrementally while token
+  usage is extracted server-side per provider/operation, even when the client itself never asked for usage data.
+- **Keeps secrets out of the database**: outbound endpoint credentials, the admin API key, and the Consumer key
+  pepper live in HashiCorp Vault; Consumer API keys themselves are one-way hashed in PostgreSQL and only ever
+  shown once.
+- **Rotates credentials safely**: an endpoint can hold a Primary and an optional Secondary API key. Activating a
+  new key can retain the old one as a time-bounded, single-retry fallback so a bad rotation doesn't cause an
+  outage.
+- **Supports more than API keys**: administrators sign in through any OIDC provider (Keycloak, Microsoft Entra
+  ID, Okta, Auth0, ...); machine callers can authenticate with Consumer API keys, a generic OIDC access token, or
+  a Microsoft Entra managed identity.
+- **Is observable by default**: OpenTelemetry traces, metrics, and logs for every request, wired through a
+  shared `AiProxy.ServiceDefaults` project.
+- **Ships a small ops UI**: a React/FluentUI frontend for managing models, endpoints, routes, and consumers, plus
+  a chat/image/voice/speech playground and a usage dashboard — served from the same container as the API.
+
+The full design rationale lives in [specs/architecture/architecture.md](specs/architecture/architecture.md), and
+the phase-by-phase build history for every iteration is under [specs/iterations/](specs/iterations/).
 
 ## Architecture at a glance
 
@@ -80,23 +114,23 @@ Brings up Postgres, local file-backed Vault, and the API (built from `src/AiProx
 Apply migrations the same way as above, pointing at `localhost:5432`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` in
 `docker-compose.yml` if you have an external OTLP collector; leave it blank to disable OTLP export.
 
-### Routing configuration (Iteration 12)
+### Routing configuration
 
-Two previously-hardcoded values are now configurable via `appsettings`/environment variables — local dev needs
-neither, both fall back to their existing defaults when unset:
+Two values are configurable via `appsettings`/environment variables — local dev needs neither, both fall back to
+their existing defaults when unset:
 
 | Key | Default | Purpose |
 |---|---|---|
-| `Routing:SessionAffinityTtl` | `00:30:00` (30 minutes) | How long a Responses API `previous_response_id` stays pinned to its originating endpoint (architecture.md §9/§17). |
-| `Routing:UnhealthyCooldown` | `00:00:30` (30 seconds) | How long a same-tier endpoint that just failed is skipped on *subsequent* requests before becoming eligible again (the cross-request passive circuit breaker, architecture.md §9). |
+| `Routing:SessionAffinityTtl` | `00:30:00` (30 minutes) | How long a Responses API `previous_response_id` stays pinned to its originating endpoint. |
+| `Routing:UnhealthyCooldown` | `00:00:30` (30 seconds) | How long a same-tier endpoint that just failed is skipped on *subsequent* requests before becoming eligible again (a cross-request passive circuit breaker). |
 
-### Endpoint credential rotation (Iteration 16)
+### Endpoint credential rotation
 
-API-key endpoints have required Primary and optional Secondary slots. Setting a slot writes a new immutable Vault
-reference but does not activate it. HTTP requests may use the previous slot once, only after an explicit upstream
-`401` and only inside an administrator-supplied fallback window. Realtime WebSockets use immediate cutover because
-portable handshake errors cannot be classified reliably. Endpoint responses expose slot state but never plaintext
-or Vault references.
+API-key endpoints have a required Primary and an optional Secondary slot. Setting a slot writes a new immutable
+Vault reference but does not activate it. HTTP requests may use the previous slot once, only after an explicit
+upstream `401` and only inside an administrator-supplied fallback window. Realtime WebSockets use immediate
+cutover instead, because portable handshake errors cannot be classified reliably. Endpoint responses expose slot
+state but never plaintext or Vault references.
 
 | Key | Default | Purpose |
 |---|---|---|
@@ -110,7 +144,7 @@ Rotation runbook:
 1. Enable a standby key at the provider and set it in the inactive slot.
 2. Activate that slot with a short fallback expiry, or omit the expiry for immediate cutover.
 3. Treat any successful credential fallback metric as rotation drift requiring investigation.
-4. Stop fallback, revoke the old provider key, then optionally remove inactive Secondary.
+4. Stop fallback, revoke the old provider key, then optionally remove the inactive Secondary slot.
 
 The mutating replica queues old Vault values for grace-period deletion and retries failures. This queue is
 process-local and best-effort; a restart can leave an unreachable old Vault version that requires operator cleanup,
@@ -137,24 +171,22 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE O
 
 Point `ConnectionStrings:aiproxydb-migrations` at `aiproxy_migrator` and `ConnectionStrings:aiproxydb` at the
 narrower `aiproxy_app` — the API applies migrations through the first connection at startup only, then serves
-every runtime request through the second. Omitting `ConnectionStrings:aiproxydb-migrations` keeps today's
+every runtime request through the second. Omitting `ConnectionStrings:aiproxydb-migrations` keeps the
 single-connection-string behavior unchanged.
 
 ## Frontend (`src/AiProxy.Web`)
 
-A React + TypeScript + FluentUI admin/ops UI (Config, Playground, Usage dashboard — see
-[specs/iterations/iteration-3/tasks.md](specs/iterations/iteration-3/tasks.md)), served by the **same**
-container as the API — no separate frontend host/deployment.
+A React + TypeScript + FluentUI admin/ops UI, served by the **same** container as the API — there is no separate
+frontend host or deployment.
 
 - **Pages**: Config → Models, Endpoints, API Routes, Consumers; Playground → Chat
   (streaming/non-streaming), Images, Realtime Voice (push-to-talk microphone input, streaming speaker output, and
   raw Realtime event diagnostics), and Speech (file/microphone transcription plus text-to-speech playback and
   download); Dashboard → Usage (filters, table, token/request charts).
-- **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it
-  for you) writes the compiled static files straight into `src/AiProxy.Api/wwwroot`, which `AiProxy.Api` then
-  serves at `/` (with a client-side-routing fallback to `index.html`) alongside its existing `/api/*`,
-  `/openai/*`, `/anthropic/*` routes. `wwwroot`'s contents are git-ignored — they're a build artifact, not
-  source (same convention as `logs/`/`test-results/`).
+- **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it for
+  you) writes the compiled static files straight into `src/AiProxy.Api/wwwroot`, which `AiProxy.Api` then serves
+  at `/` (with a client-side-routing fallback to `index.html`) alongside its existing `/api/*`, `/openai/*`,
+  `/anthropic/*` routes. `wwwroot`'s contents are git-ignored — they're a build artifact, not source.
 - **Local frontend development** (hot reload, no rebuild loop):
   ```powershell
   # Terminal 1 — the API (Aspire or plain `dotnet run`)
@@ -170,17 +202,14 @@ container as the API — no separate frontend host/deployment.
   provider tokens and the confidential-client credential remain on the server. Config, Usage, Chat, and Images
   use the encrypted same-origin session. Voice exchanges that session for a 30-second, single-use Realtime ticket.
 - Voice requires a browser with Web Audio, AudioWorklet, and microphone support. Connect to a configured OpenAI
-  Realtime model, hold **Hold to talk** while speaking, and release to commit the turn. The browser requests
-  microphone permission on first use and plays response audio automatically. Microphone access requires HTTPS or
-  a loopback development origin such as `localhost`.
+  Realtime model, hold **Hold to talk** while speaking, and release to commit the turn. Microphone access
+  requires HTTPS or a loopback development origin such as `localhost`.
 - Every model has one or more administrator-managed capabilities: `Chat`, `ImageGeneration`, `Realtime`,
   `SpeechToText`, and `TextToSpeech`. Playground selectors show only models with the matching capability. These
   values are discovery metadata; provider and operation compatibility are still enforced by routing.
 - Speech is separate from Realtime Voice. Speech-to-text sends a selected audio file or an ephemeral microphone
   recording to `/openai/v1/audio/transcriptions`; text-to-speech sends text and a voice to
   `/openai/v1/audio/speech`, then offers browser playback and download. Audio is not persisted by AI Proxy.
-  Microphone recording requires `MediaRecorder`, media-device support, and a secure or loopback origin. Uploads
-  remain subject to the API server's configured request-body limit.
 - Frontend tests: `cd src/AiProxy.Web && npm test` (Vitest + React Testing Library).
 
 ## OIDC provider setup
@@ -202,9 +231,7 @@ the username claim is mutable display and chargeback metadata. A username collis
 Disabling a Consumer reversibly blocks local inference without changing its keys, OIDC identity, or model access.
 Re-enabling restores access with the same configuration. Revocation is an irreversible security action; deletion is
 available only after revocation and removes the Consumer record while preserving denormalized historical usage.
-Disabling or revoking an OIDC Consumer does not disable the upstream identity. OIDC Consumers have no Consumer API
-key and cannot rotate one. External clients may authenticate with Consumer API keys or the optional workload
-bearer schemes below.
+OIDC Consumers have no Consumer API key and cannot rotate one.
 
 ## Workload OIDC and managed identity
 
@@ -219,15 +246,8 @@ pair on the Consumers page or through the configuration API. Local disable/revok
 attribution then work exactly as they do for API-key Consumers. Workload identities are never auto-provisioned.
 
 The static Admin API Key is a disabled-by-default migration/break-glass path. Set
-`Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration. Browser sessions require the
-antiforgery header on unsafe requests; API-key clients do not. Before onboarding another provider, verify discovery,
-exact issuer, confidential Code + PKCE support, JWKS/signing-algorithm overlap, client audience, username source,
-callback URIs, key rotation, session expiry, and optional logout behavior. Providers without discovery/JWKS, stable
-`iss` + `sub`, or a usable username source require a separately designed adapter.
-
-Common failures are usually exact-value mismatches: compare the discovery `issuer`, registered client ID, callback
-URI including scheme/host/port/path, username claim location, and secure-cookie behavior at the TLS-terminating
-proxy. Production reverse proxies must preserve the external HTTPS scheme and host through forwarded headers.
+`Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration. Browser sessions require
+the antiforgery header on unsafe requests; API-key clients do not.
 
 ## Example requests
 
@@ -303,11 +323,6 @@ curl -X PUT http://localhost:8080/api/v1/config/consumers/my-team/allowed-models
 the normalized upstream prefix. A model assignment combines both, so one Foundry endpoint can be reused with the
 built-in Third Party OpenAI (`/openai/v1`) and Foundry Microsoft AI (`/mai/v1`) routes. OpenAI uses bearer
 authorization, Microsoft AI uses `api-key`, and Anthropic uses `x-api-key`.
-
-The Iteration 7 migration creates four built-in routes and backfills existing assignments and Responses affinity.
-Legacy Azure OpenAI and OpenAI-compatible assignments map to the Third Party OpenAI route; Native OpenAI and Anthropic
-map to their matching built-ins. Downgrade is blocked if a model uses the same endpoint through multiple routes,
-because the legacy schema cannot represent that state.
 
 OpenAI-shaped ingress:
 
