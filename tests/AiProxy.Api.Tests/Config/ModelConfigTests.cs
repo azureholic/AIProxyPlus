@@ -40,8 +40,12 @@ public class ModelConfigTests : IDisposable
         createEndpointResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         using var endpointDoc = JsonDocument.Parse(await createEndpointResponse.Content.ReadAsStringAsync());
         var endpointId = endpointDoc.RootElement.GetProperty("id").GetGuid();
-        endpointDoc.RootElement.TryGetProperty("secretRef", out var secretRefProp).Should().BeTrue();
-        secretRefProp.GetString().Should().NotBeNullOrEmpty();
+        endpointDoc.RootElement.GetProperty("hasPrimarySecret").GetBoolean().Should().BeTrue();
+        endpointDoc.RootElement.GetProperty("hasSecondarySecret").GetBoolean().Should().BeFalse();
+        endpointDoc.RootElement.GetProperty("activeCredentialSlot").GetString().Should().Be("Primary");
+        endpointDoc.RootElement.TryGetProperty("secretRef", out _).Should().BeFalse();
+        endpointDoc.RootElement.TryGetProperty("primarySecretRef", out _).Should().BeFalse();
+        endpointDoc.RootElement.TryGetProperty("secondarySecretRef", out _).Should().BeFalse();
         endpointDoc.RootElement.ToString().Should().NotContain("sk-test-123", "the plaintext key must never be echoed back");
 
         var createApiRouteResponse = await client.PostAsJsonAsync(

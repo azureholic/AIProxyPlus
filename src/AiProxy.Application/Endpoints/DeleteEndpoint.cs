@@ -17,7 +17,9 @@ public sealed class DeleteEndpointValidator : AbstractValidator<DeleteEndpointCo
 
 public sealed class DeleteEndpointHandler(
     IEndpointRepository repository,
-    ISecretResolver secretResolver,
+    IEndpointCredentialCache credentialCache,
+    IEndpointCredentialInvalidationPublisher invalidationPublisher,
+    IEndpointCredentialRetirementQueue retirementQueue,
     IValidator<DeleteEndpointCommand> validator)
 {
     public async Task HandleAsync(DeleteEndpointCommand command, CancellationToken cancellationToken = default)
@@ -33,10 +35,20 @@ public sealed class DeleteEndpointHandler(
         }
 
         await repository.DeleteAsync(endpoint.Id, cancellationToken);
-
-        if (endpoint.AuthMode == AuthMode.ApiKey && endpoint.SecretRef is not null)
+        if (endpoint.AuthMode != AuthMode.ApiKey)
         {
-            await secretResolver.DeleteAsync(endpoint.SecretRef, cancellationToken);
+            return;
         }
+
+        var secretRefs = new[] { endpoint.PrimarySecretRef, endpoint.SecondarySecretRef }
+            .OfType<string>()
+            .ToArray();
+        foreach (var secretRef in secretRefs)
+        {
+            credentialCache.Invalidate(secretRef);
+            retirementQueue.ScheduleRetirement(endpoint.Id, secretRef);
+        }
+        await invalidationPublisher.PublishAsync(
+            new EndpointCredentialInvalidation(endpoint.Id, secretRefs), cancellationToken);
     }
 }

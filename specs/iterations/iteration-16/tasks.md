@@ -1,7 +1,7 @@
 # Iteration 16 — Dual Endpoint Credentials & Bounded Rotation Fallback
 
-Companion to [specs/architecture/architecture.md](../../architecture/architecture.md). This is a specification-only
-slot for later implementation. No Iteration 16 runtime behavior is implemented yet.
+Companion to [specs/architecture/architecture.md](../../architecture/architecture.md). Iteration 16 runtime behavior
+is implemented; unchecked items below remain explicit validation or follow-up gaps.
 
 ## Goal
 
@@ -105,77 +105,77 @@ release, then is removed deliberately in a later versioned change.
 
 ## Phase 1 — Architecture specification
 
-- [ ] Update architecture.md domain/schema, Secrets Management, routing/retry, multi-replica, API, observability,
+- [x] Update architecture.md domain/schema, Secrets Management, routing/retry, multi-replica, API, observability,
   security, and future-work sections with the controlling decisions above.
-- [ ] Update `02-domain-model.drawio`, `03-sequence-non-streaming-failover.drawio`, and affected exported images.
-- [ ] Resolve the current statement that the proxy is stateless across requests: credential caches are
+- [x] Update `02-domain-model.drawio`, `03-sequence-non-streaming-failover.drawio`, and affected exported images.
+- [x] Resolve the current statement that the proxy is stateless across requests: credential caches are
   replica-local, while immutable references plus shared endpoint state preserve correctness.
-- [ ] Confirm the exact structured provider error codes eligible for `403` fallback; default to none when evidence
+- [x] Confirm the exact structured provider error codes eligible for `403` fallback; default to none when evidence
   is unavailable.
-- [ ] Confirm Vault retirement grace period and cleanup ownership before implementation.
+- [x] Confirm Vault retirement grace period and cleanup ownership before implementation.
 
 ## Phase 2 — Domain model
 
-- [ ] Add `EndpointCredentialSlot` and the dual-slot/fallback fields and methods to `Endpoint`.
-- [ ] Add methods equivalent to `SetSecretReference`, `ActivateCredential`, `DisableCredentialFallback`, and
+- [x] Add `EndpointCredentialSlot` and the dual-slot/fallback fields and methods to `Endpoint`.
+- [x] Add methods equivalent to `SetSecretReference`, `ActivateCredential`, `DisableCredentialFallback`, and
   `RemoveSecondarySecret`, enforcing all slot/auth-mode/expiry invariants inside the aggregate.
-- [ ] Add Domain tests named `MethodName_Condition_ExpectedResult()` for migrated defaults, optional Slot 2,
+- [x] Add Domain tests named `MethodName_Condition_ExpectedResult()` for migrated defaults, optional Slot 2,
   activation, bounded fallback, expiry, removal guards, and managed-identity rejection.
 
 ## Phase 3 — Persistence migration
 
-- [ ] Map the new endpoint fields, UTC expiry, slot conversions, and database check constraints.
-- [ ] Migrate existing `secret_ref` values to `primary_secret_ref` with Primary active; preserve every current
+- [x] Map the new endpoint fields, UTC expiry, slot conversions, and database check constraints.
+- [x] Migrate existing `secret_ref` values to `primary_secret_ref` with Primary active; preserve every current
   endpoint id and Vault reference.
-- [ ] Add optimistic concurrency for endpoint credential-state updates so simultaneous rotations cannot silently
+- [x] Add optimistic concurrency for endpoint credential-state updates so simultaneous rotations cannot silently
   overwrite each other.
 - [ ] Add PostgreSQL integration tests for migration/backward compatibility, constraints, and concurrent activation.
 
 ## Phase 4 — Vault version lifecycle
 
-- [ ] Change slot writes to create immutable versioned secret references.
-- [ ] Implement safe retirement of unreferenced Vault versions after the agreed grace period, with retryable cleanup
+- [x] Change slot writes to create immutable versioned secret references.
+- [x] Implement safe retirement of unreferenced Vault versions after the agreed grace period, with retryable cleanup
   and telemetry; never delete a reference still active or eligible as fallback.
-- [ ] Make failed Vault-write/database-update sequences observable and cleanup-safe without logging secret values.
+- [x] Make failed Vault-write/database-update sequences observable and cleanup-safe without logging secret values.
 - [ ] Add Vault integration tests covering write-before-pointer-switch, failed database update, retirement, and
   plaintext redaction.
 
 ## Phase 5 — Multi-replica invalidation
 
-- [ ] Add a PostgreSQL notification publisher and hosted listener through Application abstractions implemented in
+- [x] Add a PostgreSQL notification publisher and hosted listener through Application abstractions implemented in
   Infrastructure; payloads contain identifiers/references only.
-- [ ] Invalidate credential and endpoint-configuration cache entries on every replica after committed slot mutation.
-- [ ] Add generation/tombstone protection against an in-flight stale read repopulating a retired cache entry.
-- [ ] Keep TTL expiry as missed-notification fallback and expose notification/reconnection/failure metrics.
+- [x] Invalidate credential cache entries on every replica after committed slot mutation; no endpoint-configuration cache exists today.
+- [x] Add generation/tombstone protection against an in-flight stale read repopulating a retired cache entry.
+- [x] Keep TTL expiry as missed-notification fallback and expose notification/reconnection/failure metrics.
 - [ ] Add a two-instance integration test proving rotation on replica A causes replica B to use the new reference
   without waiting for TTL, plus tests for listener reconnect and missed-notification recovery.
 
 ## Phase 6 — Application commands and API
 
-- [ ] Add slot-aware set/remove, activate, and disable-fallback commands, validators, handlers, DTOs, and routes.
-- [ ] Keep the legacy Slot 1 route as a documented compatibility alias and add deprecation metadata to OpenAPI.
-- [ ] Ensure a successful mutation returns only metadata; plaintext endpoint credentials remain write-only.
+- [x] Add slot-aware set/remove, activate, and disable-fallback commands, validators, handlers, DTOs, and routes.
+- [x] Keep the legacy Slot 1 route as a documented compatibility alias and add deprecation metadata to OpenAPI.
+- [x] Ensure a successful mutation returns only metadata; plaintext endpoint credentials remain write-only.
 - [ ] Add Application and API tests for valid workflows, absent Slot 2, active/fallback deletion conflicts,
   expiry limits, managed-identity conflicts, optimistic concurrency, authorization, and secret non-disclosure.
 
 ## Phase 7 — HTTP credential fallback
 
 - [ ] Introduce a provider-aware structured credential-rejection classifier; do not use substring matching.
-- [ ] Extend credential resolution to return active and currently eligible fallback candidates without loading
+- [x] Extend credential resolution to return active and currently eligible fallback candidates without loading
   unused slots unnecessarily.
-- [ ] Add exactly one pre-commit fallback attempt to buffered HTTP forwarding while preserving existing `429`/`5xx`
+- [x] Add exactly one pre-commit fallback attempt to buffered HTTP forwarding while preserving existing `429`/`5xx`
   retry, endpoint failover, affinity, usage extraction, and first-failure replay semantics.
-- [ ] Ensure credential rejection does not mark endpoint connectivity unhealthy or consume round-robin state.
+- [x] Ensure credential rejection does not mark endpoint connectivity unhealthy or consume round-robin state.
 - [ ] Add tests for active success, fallback success, expired/disabled fallback, generic `403`, `429`, `5xx`, timeout,
   streaming pre-commit behavior, binary requests, stateful Responses calls, and both-key rejection.
 
 ## Phase 8 — Realtime credential fallback
 
-- [ ] Verify the target .NET `ClientWebSocket` API exposes handshake status reliably on all supported platforms.
+- [x] Verify the target .NET `ClientWebSocket` API exposes handshake status reliably on all supported platforms.
 - [ ] Retry once with fallback only for an explicit eligible handshake response before accepting the client socket.
 - [ ] Add tests proving generic WebSocket failures never trigger fallback and successful fallback establishes only
   one client-facing WebSocket.
-- [ ] If reliable status classification is unavailable, document Realtime as immediate-cutover-only and leave its
+- [x] If reliable status classification is unavailable, document Realtime as immediate-cutover-only and leave its
   fallback unimplemented rather than weakening the rejection rules.
 
 ## Phase 9 — Observability and security
@@ -190,19 +190,19 @@ release, then is removed deliberately in a later versioned change.
 
 ## Phase 10 — Frontend
 
-- [ ] Show Slot 1/Slot 2 configured state, active slot, and fallback expiry without revealing values or references.
-- [ ] Add separate set/replace actions, an explicit activation dialog with bounded expiry, immediate fallback stop,
+- [x] Show Slot 1/Slot 2 configured state, active slot, and fallback expiry without revealing values or references.
+- [x] Add separate set/replace actions, an explicit activation dialog with bounded expiry, immediate fallback stop,
   and guarded inactive Slot 2 deletion.
-- [ ] Present single-key providers as a supported Slot 1-only workflow, not an error state.
-- [ ] Add frontend tests for rotation workflow, validation, expired fallback display, and secret non-disclosure.
+- [x] Present single-key providers as a supported Slot 1-only workflow, not an error state.
+- [x] Add frontend tests for rotation workflow, validation, expired fallback display, and secret non-disclosure.
 
 ## Phase 11 — Validation and rollout
 
-- [ ] Run affected Domain, Application, Infrastructure, API, architecture, and frontend tests, then the complete
+- [x] Run affected Domain, Application, Infrastructure, API, architecture, and frontend tests, then the complete
   backend suite plus frontend test/build checks.
 - [ ] Live-test OpenAI-compatible and Anthropic endpoints with two provider keys: active success, bounded fallback,
   explicit cutover, fallback disable, and old-key revocation.
 - [ ] Run at least two AI Proxy replicas against shared PostgreSQL/Vault and prove cache convergence without TTL wait.
-- [ ] Verify a Slot 1-only backend retains current behavior.
-- [ ] Update README, architecture diagrams, API documentation, operator rotation runbook, and this task file only
+- [x] Verify a Slot 1-only backend retains current behavior.
+- [x] Update README, architecture diagrams, API documentation, operator rotation runbook, and this task file only
   after implementation and validation are complete.

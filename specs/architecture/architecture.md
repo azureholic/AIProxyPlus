@@ -100,7 +100,9 @@ ai-proxy/
   `EndpointSelector` (the priority + round-robin selection algorithm — Iteration 2 rework, see §9), domain
   invariants (a `UsageRecord` must always reference a valid `Consumer`; token fields are optional but at least
   one usage signal — tokens or `UsageMetrics` — must be present). `Endpoint` is a reusable aggregate containing
-  only target connectivity and credential configuration. `ApiRoute` is a reusable aggregate containing a display
+  only target connectivity and credential configuration. For API-key endpoints it owns Primary and optional
+  Secondary immutable Vault references, the explicitly selected active slot, and an optional bounded fallback
+  slot/expiry; managed-identity endpoints own none of those API-key fields. `ApiRoute` is a reusable aggregate containing a display
   name, closed `Provider` (`OpenAI`, `MicrosoftAI`, or `Anthropic`), normalized upstream path prefix, and whether
   it originated as a built-in route. `ModelEndpoint` assigns one endpoint and one API route to a model and owns
   routing-specific priority, enabled state, and health. An assignment has its own stable identifier and is unique
@@ -220,6 +222,11 @@ messages and records the authoritative token counts from each `response.done.res
 `OperationType.RealtimeVoice` record. The response id identifies the record and one connection id groups every
 response produced on the same socket; observed fragments are still forwarded unchanged.
 
+Realtime credential rotation is immediate-cutover-only. The portable `ClientWebSocket` surface does not expose a
+reliable structured handshake status on every supported platform, so the proxy uses only the active credential and
+never infers an authentication rejection from exception text. HTTP's bounded credential fallback therefore does
+not apply to Realtime connections.
+
 ### 6.6 Request/response speech (Iteration 9)
 
 `POST /openai/v1/audio/transcriptions` accepts OpenAI-compatible multipart form data. The router buffers the raw
@@ -243,7 +250,7 @@ only when the provider returns a real token or non-token usage signal; the proxy
 |---|---|---|
 | `models` | Routing key + policy | `id`, `name` (unique), `strategy` |
 | `model_capabilities` | Model-owned Playground discovery metadata | `model_id`, `capability`; composite primary key, cascades with model |
-| `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries` |
+| `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `auth_mode`, `primary_secret_ref?`, `secondary_secret_ref?`, `active_credential_slot?`, `fallback_credential_slot?`, `fallback_expires_at?`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries`, `xmin` concurrency token |
 | `api_routes` | Reusable provider API surfaces | `id`, `name` (unique), `provider`, `path_prefix`, `is_built_in`; `(provider, path_prefix)` unique |
 | `model_endpoints` | Model-to-endpoint/API-route assignments | `id`, `model_id`, `endpoint_id`, `api_route_id`, `priority`, `enabled`, `health`; `(model_id, endpoint_id, api_route_id)` unique |
 | `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), mutually exclusive API-key hashes, OIDC `issuer` + `subject`, or managed-identity `tenant_id` + `object_id`, `enabled`, `created_at`, `revoked_at` |
@@ -287,6 +294,13 @@ administrator's own rename.
 Existing assignments are backfilled to the route matching their former API family without changing priority,
 enabled state, health, or endpoint credentials.
 
+API-key endpoint credentials use two slots. Primary is required, Secondary is optional, and setting either slot
+does not activate it. The active slot must reference a configured secret; an optional fallback must be the other
+configured slot and have a future expiry. Expired fallback is ineffective even before a later command clears its
+metadata. Managed-identity endpoints have no slot state. The dual-slot migration preserves every existing
+`secret_ref` as `primary_secret_ref` with Primary active, and PostgreSQL's `xmin` token prevents concurrent
+credential-state updates from silently overwriting one another.
+
 > **Implementation note:** the originally-planned in-memory config cache (with in-process change-token
 > invalidation on writes) was **not** built in Iteration 1 — `IModelRepository`/`IConsumerRepository`
 > hit Postgres directly on every call, including once per ingress request for deployment resolution. This is a
@@ -311,7 +325,11 @@ enabled state, health, or endpoint credentials.
 | POST | `/api/v1/config/endpoints` | Create a reusable endpoint; API-key plaintext is written to Vault |
 | PUT | `/api/v1/config/endpoints/{id}` | Update reusable target/auth configuration |
 | DELETE | `/api/v1/config/endpoints/{id}` | Delete an unassigned endpoint; returns conflict while assigned |
-| PUT | `/api/v1/config/endpoints/{id}/secret` | Set/replace the API key (writes to Vault, never returned by GET) |
+| PUT | `/api/v1/config/endpoints/{id}/secrets/{slot}` | Set/replace `Primary` or `Secondary` at a new immutable Vault reference without activating it |
+| DELETE | `/api/v1/config/endpoints/{id}/secrets/{slot}` | Remove inactive, non-fallback Secondary; Primary cannot be removed |
+| PUT | `/api/v1/config/endpoints/{id}/credential-activation` | Select the active slot and optionally retain the previous slot until `fallbackExpiresAt` |
+| DELETE | `/api/v1/config/endpoints/{id}/credential-fallback` | Stop fallback immediately without changing the active slot |
+| PUT | `/api/v1/config/endpoints/{id}/secret` | Deprecated compatibility alias for setting Primary |
 | GET | `/api/v1/config/api-routes` | List reusable API routes |
 | GET | `/api/v1/config/api-routes/{id}` | Get one reusable API route |
 | POST | `/api/v1/config/api-routes` | Create a reusable API route |
@@ -338,8 +356,9 @@ their denormalized consumer identity. The UI uses Pause/Play for disable/enable,
 revocation, and Trash only for permanent deletion.
 
 All write routes require an admin API key (`X-Admin-Api-Key` header, validated against a hash stored in Vault) for
-Iteration 1. Requests/responses are validated with FluentValidation; secrets are **write-only** — no GET ever returns
-key material, only the `secret_ref` path (endpoints) or consumer metadata without the key/hash (consumers).
+Iteration 1. Requests/responses are validated with FluentValidation; secrets are **write-only**. Endpoint responses
+return only configured-slot booleans, active/fallback slot labels, and fallback expiry; no endpoint API returns
+plaintext or either Vault reference. Consumer responses likewise omit stored key hashes.
 
 > **Implementation note (Phase 7):** admin auth (`AdminAuthEndpointFilter`) is applied to the *entire*
 > `/api/v1/config/*` and `/api/v1/usage` surface, not just write routes as originally scoped above — deployment
@@ -355,23 +374,33 @@ key material, only the `secret_ref` path (endpoints) or consumer metadata withou
 
 **HashiCorp Vault (OSS)** runs as a container alongside the proxy (a local-only bootstrapped `file` backend via
 Aspire/Compose; operator-managed `file` or `raft` storage in real deployments). API keys are stored under a **KV v2** engine at
-`secret/ai-proxy/endpoints/{endpointId}`. The proxy authenticates to Vault using **AppRole** (role id + wrapped
+immutable references such as `secret/ai-proxy/endpoints/{endpointId}/primary/{credentialVersionId}`. The proxy
+authenticates to Vault using **AppRole** (role id + wrapped
 secret id supplied via environment/orchestrator secret, never committed). Local runs use a fixed development-only
 token restricted to `secret/ai-proxy/*`; the bootstrap persists its single local unseal key beside Vault's file
 backend in the `vault-data` volume so Docker restarts do not orphan endpoint credentials. This automatic unseal
 shape and fixed token are confined to local development and are not acceptable deployment defaults.
 
-- `Endpoint.SecretRef` in Postgres stores only the Vault **path**, never the secret value.
+- `Endpoint.PrimarySecretRef` and `SecondarySecretRef` in Postgres store only immutable Vault **references**, never
+  secret values. Replacement writes Vault first, atomically switches the PostgreSQL pointer, publishes cache
+  invalidation after commit, and schedules the old unreferenced value for deletion after a configurable grace period.
+  A failed database update deletes the newly orphaned value immediately when possible and otherwise queues cleanup.
 - `ManagedIdentity`-mode endpoints have no Vault entry; the proxy instead acquires an Entra ID access token via
   `Azure.Identity` (`DefaultAzureCredential`/`ManagedIdentityCredential`) scoped to the target resource
   (e.g. Azure AI Foundry / Cognitive Services scope) and attaches it as a bearer token. An endpoint may also
   specify `ManagedIdentityTenantId` to request the token from the target resource's Entra tenant; when omitted,
   the credential chain's default tenant behavior is preserved. The tenant ID is configuration, not secret
   material. This is the **only** place the solution touches an Azure SDK, and it's opt-in per endpoint.
-- Resolved secrets are cached in-memory with a short TTL (e.g. 5 minutes) to avoid a Vault round trip per request;
-  successfully replacing an endpoint secret invalidates its cache entry immediately so subsequent traffic cannot use
-  superseded credentials,
-  and are never logged (Serilog destructuring policies + explicit redaction for auth headers).
+- Resolved secrets are cached per replica for five minutes to avoid a Vault round trip per request. PostgreSQL
+  `LISTEN/NOTIFY` broadcasts endpoint ids and affected references only; every listener evicts the same singleton
+  local cache used by requests. A per-reference generation prevents an in-flight pre-invalidation Vault read from
+  refilling a retired cache entry. TTL remains the recovery bound for a missed notification. Plaintext is never
+  placed in PostgreSQL or a distributed cache and is never logged.
+- The replica committing replacement/removal owns delayed cleanup through an in-memory hosted retirement queue.
+  Unreferenced values wait `Vault:Retirement:GracePeriod` (one hour by default); failed deletions retry with bounded
+  exponential backoff, while failed-transaction orphans are eligible immediately. Queue work is best-effort and is
+  not durable across a process restart, so an interrupted cleanup can leave an unreachable Vault version for an
+  operator to remove; it cannot reactivate or affect request correctness because references are immutable.
 - **Scope note**: Vault holds secrets the proxy must *present outbound* (endpoint credentials, the admin key hash).
   Inbound **Consumer** API keys (see the domain model in §5 and authentication in §13) are a different concern —
   the proxy only ever needs to *verify* them, never retrieve or replay them — so they are stored as a salted
@@ -434,6 +463,13 @@ shape and fixed token are confined to local development and are not acceptable d
   tried, bounded by the deployment's total endpoint count. `429` was added in Iteration 2: it's the single most
   common real-world reason to want failover, and treating it identically to `5xx` means a rate-limited primary
   endpoint no longer fails every in-flight request while a secondary endpoint sits idle.
+- **Bounded credential fallback (Iteration 16)**: HTTP forwarding resolves the active endpoint credential first.
+  During an explicitly configured, unexpired window it may retry the same buffered request exactly once with the
+  previous slot, without delay, only after an upstream HTTP `401` received before any client response is committed.
+  No provider-specific structured `403` rejection codes are currently proven, so every `403`, `429`, `5xx`, timeout,
+  and transport failure is ineligible. Credential fallback does not advance round-robin state, mark the endpoint
+  unhealthy, promote either slot, or consume an endpoint retry. If fallback also fails, the original active-key
+  response is replayed. Realtime remains immediate-cutover-only (§6.5).
 - **Sticky sessions — automatic and protocol-inherent only (Iteration 2)**: there is no deployment-level sticky
   session config flag and no generic client-supplied `session`/`X-Session-Id` mechanism — both existed in
   Iteration 1 and were removed. Every request that isn't inherently stateful just uses priority + round-robin
@@ -480,8 +516,8 @@ shape and fixed token are confined to local development and are not acceptable d
   stateful-session failure" policy.) A request that fails before any endpoint is even attempted (e.g. the
   deployment has zero enabled endpoints) has no upstream response to replay and still gets the generic
   `RoutingFailureReason`-mapped error.
-- **Multiple AI Proxy replicas behind a load balancer / ingress controller**: the proxy itself is stateless
-  across requests — nothing above depends on which replica handles a given call, so horizontal scaling needs no
+- **Multiple AI Proxy replicas behind a load balancer / ingress controller**: correctness does not depend on which
+  replica handles a call, so horizontal scaling needs no
   special ingress-level session affinity/sticky routing to the *same AI Proxy instance*:
   - **Responses API affinity** is keyed by `previous_response_id` and persisted in `session_affinity`
     (Postgres, shared across replicas) — whichever replica receives the follow-up call looks up the same row
@@ -513,6 +549,10 @@ shape and fixed token are confined to local development and are not acceptable d
     larger feature, not a passive-circuit-breaker fix) — the in-memory tracker above is what actually drives
     cross-request routing behavior today; the persisted column is administrator/future-health-check-owned
     display state only.
+  - **Credential caches and retirement queues** are also replica-local. Immutable Vault references and shared
+    PostgreSQL slot state preserve routing correctness; `LISTEN/NOTIFY` accelerates cache convergence without
+    distributing plaintext, and the five-minute TTL bounds missed notifications. Retirement affects storage
+    reclamation only and is owned by the replica that commits the mutation (§8).
 
   Route selection does not otherwise change retry/failover semantics. Health and same-request exclusion remain
   keyed to the physical endpoint because connectivity and credentials are endpoint concerns; a failed host is not
@@ -571,6 +611,9 @@ shape and fixed token are confined to local development and are not acceptable d
   - `ai_proxy.tokens.prompt` / `ai_proxy.tokens.completion` / `ai_proxy.tokens.total` (tags: deployment, endpoint)
   - `ai_proxy.request.duration` (histogram, tags as above)
   - `ai_proxy.failover.count` (tags: deployment, from_endpoint, to_endpoint)
+  - `ai_proxy.credential_fallback.count` (tags: provider, endpoint id/name, outcome)
+  - `ai_proxy.credential_invalidation_notification.count` (tags: operation, outcome)
+  - `ai_proxy.credential_retirement.count` (tags: reason, outcome)
   - Standard ASP.NET Core / HttpClient / Npgsql instrumentation metrics.
 - **Logs**: Serilog configured as the ILogger provider, enriched with trace/span ids, exported via OTLP **and**
   written to `logs/ai-proxy-.log` (rolling file) for local debugging — see §14.
@@ -599,7 +642,8 @@ shape and fixed token are confined to local development and are not acceptable d
 ## 13. Security Considerations (OWASP-aligned)
 
 - **Secrets**: never stored in Postgres or logs; Vault is the single source of truth; in-memory cache is
-  process-local and short-lived; Serilog enrichers redact `Authorization`/`api-key` headers.
+  process-local and short-lived; configuration responses and notification/metric payloads always omit key
+  material; Serilog enrichers redact `Authorization`/`api-key` headers.
 - **SSRF**: `Endpoint.BaseUrl` is admin-supplied (trusted input via the config API), but is still validated
   (must be `https://` except explicit `http://localhost`/loopback allowance for local dev) to avoid accidental
   misconfiguration pointing at internal metadata endpoints.
@@ -821,9 +865,8 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Cross-protocol request/response translation.
 - Per-user RBAC or provider role/group mapping. Iteration 4 authenticates the existing ops/config frontend, but every
   user admitted by the configured OIDC client is an administrator.
-- Multi-region / multi-instance cache invalidation via Postgres `LISTEN/NOTIFY` (Iteration 1 uses TTL-based cache
-  expiry, which is acceptable for a single-instance or short-TTL multi-instance deployment).
-- Automatic Vault secret rotation workflows.
+- Durable, restart-safe persistence for delayed Vault retirement work; current cleanup is best-effort per replica.
+- Provider-managed automatic credential creation/revocation; Iteration 16 supplies explicit dual-slot operator rotation.
 - Moderation endpoints. Request/response speech-to-text and text-to-speech are implemented in Iteration 9
   (§6.6/§19.6).
 - Azure OpenAI Realtime and generic/self-hosted WebSocket backends for the Realtime API (Iteration 2 targets

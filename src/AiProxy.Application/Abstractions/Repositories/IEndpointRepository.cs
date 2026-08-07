@@ -12,6 +12,8 @@ public interface IEndpointRepository
 
     Task<bool> IsAssignedAsync(Guid id, CancellationToken cancellationToken = default);
 
+    Task<bool> IsSecretReferenceInUseAsync(string secretRef, CancellationToken cancellationToken = default);
+
     Task AddAsync(Endpoint endpoint, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(Endpoint endpoint, CancellationToken cancellationToken = default);

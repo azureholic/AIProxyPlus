@@ -24,6 +24,13 @@ public sealed class EndpointRepository(AiProxyDbContext dbContext) : IEndpointRe
     public Task<bool> IsAssignedAsync(Guid id, CancellationToken cancellationToken = default) =>
         dbContext.ModelEndpoints.AnyAsync(assignment => assignment.EndpointId == id, cancellationToken);
 
+    public Task<bool> IsSecretReferenceInUseAsync(string secretRef, CancellationToken cancellationToken = default) =>
+        dbContext.Endpoints
+            .AsNoTracking()
+            .AnyAsync(
+                endpoint => endpoint.PrimarySecretRef == secretRef || endpoint.SecondarySecretRef == secretRef,
+                cancellationToken);
+
     public async Task AddAsync(Endpoint endpoint, CancellationToken cancellationToken = default)
     {
         dbContext.Endpoints.Add(endpoint);

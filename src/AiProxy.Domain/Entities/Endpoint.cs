@@ -10,7 +10,12 @@ public sealed class Endpoint
     public string Name { get; private set; }
     public string BaseUrl { get; private set; }
     public AuthMode AuthMode { get; private set; }
-    public string? SecretRef { get; private set; }
+    public string? PrimarySecretRef { get; private set; }
+    public string? SecondarySecretRef { get; private set; }
+    public EndpointCredentialSlot? ActiveCredentialSlot { get; private set; }
+    public EndpointCredentialSlot? FallbackCredentialSlot { get; private set; }
+    public DateTimeOffset? FallbackExpiresAt { get; private set; }
+    public string? SecretRef => PrimarySecretRef;
     public string? ManagedIdentityScope { get; private set; }
     public string? ManagedIdentityTenantId { get; private set; }
     public int TimeoutSeconds { get; private set; }
@@ -38,7 +43,8 @@ public sealed class Endpoint
         Name = name;
         BaseUrl = baseUrl;
         AuthMode = authMode;
-        SecretRef = secretRef;
+        PrimarySecretRef = secretRef;
+        ActiveCredentialSlot = authMode == AuthMode.ApiKey ? EndpointCredentialSlot.Primary : null;
         ManagedIdentityScope = managedIdentityScope;
         ManagedIdentityTenantId = managedIdentityTenantId;
         TimeoutSeconds = timeoutSeconds;
@@ -176,5 +182,97 @@ public sealed class Endpoint
         }
 
         ManagedIdentityTenantId = string.IsNullOrWhiteSpace(managedIdentityTenantId) ? null : managedIdentityTenantId;
+    }
+
+    public void SetSecretReference(EndpointCredentialSlot slot, string secretRef)
+    {
+        EnsureApiKeyMode();
+        if (string.IsNullOrWhiteSpace(secretRef))
+        {
+            throw new DomainException("Endpoint secret reference must not be empty.");
+        }
+
+        if (slot == EndpointCredentialSlot.Primary)
+        {
+            PrimarySecretRef = secretRef;
+        }
+        else
+        {
+            SecondarySecretRef = secretRef;
+        }
+    }
+
+    public void ActivateCredential(
+        EndpointCredentialSlot slot,
+        DateTimeOffset? fallbackExpiresAt,
+        DateTimeOffset now)
+    {
+        EnsureApiKeyMode();
+        if (GetSecretReference(slot) is null)
+        {
+            throw new DomainException($"Credential slot '{slot}' is not configured.");
+        }
+
+        var previousSlot = ActiveCredentialSlot
+            ?? throw new DomainException("An ApiKey-mode endpoint must have an active credential slot.");
+        if (slot == previousSlot && fallbackExpiresAt is not null)
+        {
+            throw new DomainException("Credential fallback requires activating a different slot.");
+        }
+        if (fallbackExpiresAt is not null && fallbackExpiresAt <= now)
+        {
+            throw new DomainException("Credential fallback expiry must be in the future.");
+        }
+
+        ActiveCredentialSlot = slot;
+        FallbackCredentialSlot = fallbackExpiresAt is null || slot == previousSlot ? null : previousSlot;
+        FallbackExpiresAt = FallbackCredentialSlot is null ? null : fallbackExpiresAt;
+    }
+
+    public void DisableCredentialFallback()
+    {
+        EnsureApiKeyMode();
+        FallbackCredentialSlot = null;
+        FallbackExpiresAt = null;
+    }
+
+    public void RemoveSecondarySecret(DateTimeOffset now)
+    {
+        EnsureApiKeyMode();
+        if (ActiveCredentialSlot == EndpointCredentialSlot.Secondary)
+        {
+            throw new DomainException("The active credential slot cannot be removed.");
+        }
+        if (FallbackCredentialSlot == EndpointCredentialSlot.Secondary && FallbackExpiresAt > now)
+        {
+            throw new DomainException("A credential slot with an active fallback window cannot be removed.");
+        }
+
+        SecondarySecretRef = null;
+        if (FallbackCredentialSlot == EndpointCredentialSlot.Secondary)
+        {
+            DisableCredentialFallback();
+        }
+    }
+
+    public string GetActiveSecretReference() =>
+        GetSecretReference(ActiveCredentialSlot
+            ?? throw new DomainException("Endpoint has no active credential slot."))
+        ?? throw new DomainException("The active credential slot is not configured.");
+
+    public string? GetEligibleFallbackSecretReference(DateTimeOffset now) =>
+        FallbackCredentialSlot is { } slot && FallbackExpiresAt > now
+            ? GetSecretReference(slot)
+            : null;
+
+    private string? GetSecretReference(EndpointCredentialSlot slot) =>
+        slot == EndpointCredentialSlot.Primary ? PrimarySecretRef : SecondarySecretRef;
+
+    private void EnsureApiKeyMode()
+    {
+        if (AuthMode != AuthMode.ApiKey)
+        {
+            throw new DomainException("Only ApiKey-mode endpoints have credential slots.");
+        }
     }
 }

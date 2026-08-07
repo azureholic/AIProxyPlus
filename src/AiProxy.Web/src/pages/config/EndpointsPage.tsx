@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Button,
+  Badge,
   Dialog,
   DialogActions,
   DialogBody,
@@ -21,14 +22,17 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ArrowRotateClockwiseRegular, DeleteRegular, EditRegular } from '@fluentui/react-icons';
 import {
+  activateEndpointCredential,
   createEndpoint,
   deleteEndpoint,
+  disableEndpointCredentialFallback,
   listEndpoints,
-  setEndpointSecret,
+  removeEndpointCredential,
+  setEndpointCredential,
   updateEndpointConfig,
   type CreateEndpointInput,
 } from '../../api/endpoints';
-import type { AuthMode, EndpointConfig } from '../../api/types';
+import type { AuthMode, EndpointConfig, EndpointCredentialSlot } from '../../api/types';
 import { ErrorBanner } from '../../components/Banners';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
@@ -51,7 +55,10 @@ export function EndpointsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newEndpoint, setNewEndpoint] = useState<CreateEndpointInput>(emptyEndpoint);
   const [editing, setEditing] = useState<EndpointConfig | null>(null);
-  const [rotating, setRotating] = useState<EndpointConfig | null>(null);
+  const [settingCredential, setSettingCredential] = useState<{ endpoint: EndpointConfig; slot: EndpointCredentialSlot } | null>(null);
+  const [activating, setActivating] = useState<EndpointConfig | null>(null);
+  const [activationSlot, setActivationSlot] = useState<EndpointCredentialSlot>('Secondary');
+  const [fallbackMinutes, setFallbackMinutes] = useState('0');
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -139,21 +146,61 @@ export function EndpointsPage() {
               <TableRow key={endpoint.id}>
                 <TableCell><TableCellLayout>{endpoint.name}</TableCellLayout></TableCell>
                 <TableCell><TableCellLayout truncate>{endpoint.baseUrl}</TableCellLayout></TableCell>
-                <TableCell>{endpoint.authMode === 'ApiKey' ? 'API key' : 'Managed identity'}</TableCell>
+                <TableCell>
+                  {endpoint.authMode === 'ApiKey' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span>
+                        Primary {endpoint.hasPrimarySecret ? 'configured' : 'missing'}
+                        {endpoint.activeCredentialSlot === 'Primary' && <Badge appearance="filled" color="success">Active</Badge>}
+                      </span>
+                      <span>
+                        Secondary {endpoint.hasSecondarySecret ? 'configured' : 'empty'}
+                        {endpoint.activeCredentialSlot === 'Secondary' && <Badge appearance="filled" color="success">Active</Badge>}
+                      </span>
+                      {endpoint.fallbackCredentialSlot && endpoint.fallbackExpiresAt && (
+                        <span>
+                          Fallback {endpoint.fallbackCredentialSlot}{' '}
+                          {new Date(endpoint.fallbackExpiresAt) <= new Date() ? 'expired' : 'until'}{' '}
+                          {new Date(endpoint.fallbackExpiresAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  ) : 'Managed identity'}
+                </TableCell>
                 <TableCell>{endpoint.timeoutSeconds}s</TableCell>
                 <TableCell>{endpoint.maxRetries}</TableCell>
                 <TableCell>
                   <Button appearance="subtle" icon={<EditRegular />} aria-label={`Edit ${endpoint.name}`} onClick={() => setEditing(endpoint)} />
                   {endpoint.authMode === 'ApiKey' && (
-                    <Button
-                      appearance="subtle"
-                      icon={<ArrowRotateClockwiseRegular />}
-                      aria-label={`Rotate API key for ${endpoint.name}`}
-                      onClick={() => {
+                    <>
+                      <Button appearance="subtle" icon={<ArrowRotateClockwiseRegular />} onClick={() => {
                         setSecret('');
-                        setRotating(endpoint);
-                      }}
-                    />
+                        setSettingCredential({ endpoint, slot: 'Primary' });
+                      }}>Set Primary</Button>
+                      <Button appearance="subtle" onClick={() => {
+                        setSecret('');
+                        setSettingCredential({ endpoint, slot: 'Secondary' });
+                      }}>Set Secondary</Button>
+                      {endpoint.hasSecondarySecret && (
+                        <Button appearance="subtle" onClick={() => {
+                          setActivationSlot(endpoint.activeCredentialSlot === 'Primary' ? 'Secondary' : 'Primary');
+                          setFallbackMinutes('60');
+                          setActivating(endpoint);
+                        }}>Activate</Button>
+                      )}
+                      {endpoint.fallbackCredentialSlot && (
+                        <Button appearance="subtle" onClick={() => run(
+                          () => disableEndpointCredentialFallback(endpoint.id),
+                          () => undefined,
+                        )}>Stop fallback</Button>
+                      )}
+                      {endpoint.hasSecondarySecret && endpoint.activeCredentialSlot !== 'Secondary' && endpoint.fallbackCredentialSlot !== 'Secondary' && (
+                        <Button appearance="subtle" onClick={() => run(
+                          () => removeEndpointCredential(endpoint.id, 'Secondary'),
+                          () => undefined,
+                        )}>Remove Secondary</Button>
+                      )}
+                    </>
                   )}
                   <ConfirmDialog
                     trigger={<Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Delete ${endpoint.name}`} />}
@@ -204,10 +251,10 @@ export function EndpointsPage() {
         </DialogSurface>
       </Dialog>
 
-      <Dialog open={rotating !== null} onOpenChange={(_, data) => !data.open && setRotating(null)}>
+      <Dialog open={settingCredential !== null} onOpenChange={(_, data) => !data.open && setSettingCredential(null)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>Rotate API key</DialogTitle>
+            <DialogTitle>Set {settingCredential?.slot} credential</DialogTitle>
             <DialogContent>
               <Field label="New API key">
                 <Input type="password" value={secret} onChange={(_, data) => setSecret(data.value)} />
@@ -215,14 +262,54 @@ export function EndpointsPage() {
               <ErrorBanner error={error} />
             </DialogContent>
             <DialogActions>
-              <Button appearance="secondary" onClick={() => setRotating(null)}>Cancel</Button>
+              <Button appearance="secondary" onClick={() => setSettingCredential(null)}>Cancel</Button>
               <Button
                 appearance="primary"
                 disabled={busy || !secret}
-                onClick={() => rotating && run(() => setEndpointSecret(rotating.id, secret), () => setRotating(null))}
+                onClick={() => settingCredential && run(
+                  () => setEndpointCredential(settingCredential.endpoint.id, settingCredential.slot, secret),
+                  () => setSettingCredential(null),
+                )}
               >
                 Rotate
               </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      <Dialog open={activating !== null} onOpenChange={(_, data) => !data.open && setActivating(null)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Activate credential</DialogTitle>
+            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="Active slot">
+                <select value={activationSlot} onChange={event => setActivationSlot(event.target.value as EndpointCredentialSlot)}>
+                  <option value="Primary">Primary</option>
+                  <option value="Secondary">Secondary</option>
+                </select>
+              </Field>
+              <Field label="Fallback window (minutes)" hint="Use 0 for immediate cutover; the server enforces its configured maximum.">
+                <Input type="number" min={0} value={fallbackMinutes} onChange={(_, data) => setFallbackMinutes(data.value)} />
+              </Field>
+              <ErrorBanner error={error} />
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setActivating(null)}>Cancel</Button>
+              <Button
+                appearance="primary"
+                disabled={busy || Number(fallbackMinutes) < 0}
+                onClick={() => activating && run(
+                  () => activateEndpointCredential(
+                    activating.id,
+                    activationSlot,
+                    Number(fallbackMinutes) > 0
+                      ? new Date(Date.now() + Number(fallbackMinutes) * 60_000).toISOString()
+                      : undefined,
+                  ),
+                  () => setActivating(null),
+                )}
+              >Activate</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

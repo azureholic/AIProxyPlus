@@ -90,6 +90,32 @@ neither, both fall back to their existing defaults when unset:
 | `Routing:SessionAffinityTtl` | `00:30:00` (30 minutes) | How long a Responses API `previous_response_id` stays pinned to its originating endpoint (architecture.md §9/§17). |
 | `Routing:UnhealthyCooldown` | `00:00:30` (30 seconds) | How long a same-tier endpoint that just failed is skipped on *subsequent* requests before becoming eligible again (the cross-request passive circuit breaker, architecture.md §9). |
 
+### Endpoint credential rotation (Iteration 16)
+
+API-key endpoints have required Primary and optional Secondary slots. Setting a slot writes a new immutable Vault
+reference but does not activate it. HTTP requests may use the previous slot once, only after an explicit upstream
+`401` and only inside an administrator-supplied fallback window. Realtime WebSockets use immediate cutover because
+portable handshake errors cannot be classified reliably. Endpoint responses expose slot state but never plaintext
+or Vault references.
+
+| Key | Default | Purpose |
+|---|---|---|
+| `Endpoints:MaxCredentialFallbackWindow` | `01:00:00` | Maximum requested fallback window; must be greater than zero and no more than 24 hours. |
+| `Vault:Retirement:GracePeriod` | `01:00:00` | Delay before deleting a replaced or removed immutable Vault value; zero to 24 hours. |
+| `Vault:Retirement:RetryDelay` | `00:00:05` | Initial cleanup retry delay. |
+| `Vault:Retirement:MaxRetryDelay` | `00:05:00` | Maximum bounded cleanup retry delay. |
+
+Rotation runbook:
+
+1. Enable a standby key at the provider and set it in the inactive slot.
+2. Activate that slot with a short fallback expiry, or omit the expiry for immediate cutover.
+3. Treat any successful credential fallback metric as rotation drift requiring investigation.
+4. Stop fallback, revoke the old provider key, then optionally remove inactive Secondary.
+
+The mutating replica queues old Vault values for grace-period deletion and retries failures. This queue is
+process-local and best-effort; a restart can leave an unreachable old Vault version that requires operator cleanup,
+but immutable references prevent it from becoming active again.
+
 ### Least-privilege Postgres role (production)
 
 Local Aspire/docker-compose dev intentionally uses one Postgres role for both migrations and runtime queries —
@@ -240,6 +266,20 @@ curl -X PUT http://localhost:8080/api/v1/config/consumers/my-team/enable `
 curl -X POST http://localhost:8080/api/v1/config/endpoints `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"name":"primary-foundry","baseUrl":"https://my-foundry-resource.example.com","authMode":"ApiKey","apiKeyPlaintext":"sk-...","timeoutSeconds":100,"maxRetries":2}'
+
+# Stage a Secondary key without activating it.
+curl -X PUT http://localhost:8080/api/v1/config/endpoints/<endpoint-id>/secrets/Secondary `
+  -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
+  -d '{"apiKeyPlaintext":"sk-new-..."}'
+
+# Activate Secondary and retain Primary as fallback until the supplied UTC expiry.
+curl -X PUT http://localhost:8080/api/v1/config/endpoints/<endpoint-id>/credential-activation `
+  -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
+  -d '{"activeSlot":"Secondary","fallbackExpiresAt":"2030-01-01T12:10:00Z"}'
+
+# End fallback as soon as the new provider key is proven healthy.
+curl -X DELETE http://localhost:8080/api/v1/config/endpoints/<endpoint-id>/credential-fallback `
+  -H "X-Admin-Api-Key: <admin-key>"
 
 # Create a reusable provider API surface. The migration also supplies deterministic built-in routes.
 curl -X POST http://localhost:8080/api/v1/config/api-routes `

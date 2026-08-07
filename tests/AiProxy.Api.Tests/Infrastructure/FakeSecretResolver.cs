@@ -10,6 +10,8 @@ public sealed class FakeSecretResolver : ISecretResolver
 
     public void Seed(string secretRef, string plaintextValue) => _values[secretRef] = plaintextValue;
 
+    public bool ContainsPlaintext(string plaintextValue) => _values.Values.Contains(plaintextValue, StringComparer.Ordinal);
+
     public Task<string?> TryResolveAsync(string secretRef, CancellationToken cancellationToken = default) =>
         Task.FromResult(_values.GetValueOrDefault(secretRef));
 

@@ -28,7 +28,6 @@ describe('ModelDetailPage', () => {
       name: 'shared-openai',
       baseUrl: 'https://api.openai.com',
       authMode: 'ApiKey',
-      secretRef: 'endpoints/endpoint-id',
       managedIdentityScope: null,
       managedIdentityTenantId: null,
       timeoutSeconds: 100,

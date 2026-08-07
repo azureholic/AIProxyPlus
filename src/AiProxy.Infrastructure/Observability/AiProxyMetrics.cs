@@ -14,6 +14,9 @@ public sealed class AiProxyMetrics : IDisposable
     private readonly Counter<long> _totalTokens;
     private readonly Histogram<double> _requestDuration;
     private readonly Counter<long> _failoverCount;
+    private readonly Counter<long> _credentialFallbackCount;
+    private readonly Counter<long> _credentialInvalidationNotificationCount;
+    private readonly Counter<long> _credentialRetirementCount;
 
     public AiProxyMetrics()
     {
@@ -24,6 +27,13 @@ public sealed class AiProxyMetrics : IDisposable
         _totalTokens = _meter.CreateCounter<long>("ai_proxy.tokens.total", description: "Total tokens captured.");
         _requestDuration = _meter.CreateHistogram<double>("ai_proxy.request.duration", unit: "ms", description: "Ingress request duration.");
         _failoverCount = _meter.CreateCounter<long>("ai_proxy.failover.count", description: "Failovers from one endpoint to the next.");
+        _credentialFallbackCount = _meter.CreateCounter<long>("ai_proxy.credential_fallback.count", description: "Credential fallback attempts by outcome.");
+        _credentialInvalidationNotificationCount = _meter.CreateCounter<long>(
+            "ai_proxy.credential_invalidation_notification.count",
+            description: "Credential invalidation notification activity by operation and outcome.");
+        _credentialRetirementCount = _meter.CreateCounter<long>(
+            "ai_proxy.credential_retirement.count",
+            description: "Credential retirement work by reason and outcome.");
     }
 
     public void RecordRequest(string model, string provider, string endpoint, int statusCode) =>
@@ -72,6 +82,26 @@ public sealed class AiProxyMetrics : IDisposable
             new KeyValuePair<string, object?>("model", model),
             new KeyValuePair<string, object?>("from_endpoint", fromEndpoint),
             new KeyValuePair<string, object?>("to_endpoint", toEndpoint));
+
+    public void RecordCredentialFallback(string provider, Guid endpointId, string endpointName, string outcome) =>
+        _credentialFallbackCount.Add(
+            1,
+            new KeyValuePair<string, object?>("provider", provider),
+            new KeyValuePair<string, object?>("endpoint_id", endpointId),
+            new KeyValuePair<string, object?>("endpoint_name", endpointName),
+            new KeyValuePair<string, object?>("outcome", outcome));
+
+    public void RecordCredentialInvalidationNotification(string operation, string outcome) =>
+        _credentialInvalidationNotificationCount.Add(
+            1,
+            new KeyValuePair<string, object?>("operation", operation),
+            new KeyValuePair<string, object?>("outcome", outcome));
+
+    public void RecordCredentialRetirement(string reason, string outcome) =>
+        _credentialRetirementCount.Add(
+            1,
+            new KeyValuePair<string, object?>("reason", reason),
+            new KeyValuePair<string, object?>("outcome", outcome));
 
     public void Dispose() => _meter.Dispose();
 }

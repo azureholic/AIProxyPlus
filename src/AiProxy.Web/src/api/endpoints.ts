@@ -1,5 +1,5 @@
 import { adminJson } from './client';
-import type { AuthMode, EndpointConfig } from './types';
+import type { AuthMode, EndpointConfig, EndpointCredentialSlot } from './types';
 
 export function listEndpoints(): Promise<EndpointConfig[]> {
   return adminJson('/api/v1/config/endpoints');
@@ -42,4 +42,34 @@ export function setEndpointSecret(id: string, apiKeyPlaintext: string): Promise<
     method: 'PUT',
     body: JSON.stringify({ apiKeyPlaintext }),
   });
+}
+
+export function setEndpointCredential(
+  id: string,
+  slot: EndpointCredentialSlot,
+  apiKeyPlaintext: string,
+): Promise<EndpointConfig> {
+  return adminJson(`/api/v1/config/endpoints/${id}/secrets/${slot}`, {
+    method: 'PUT',
+    body: JSON.stringify({ apiKeyPlaintext }),
+  });
+}
+
+export function activateEndpointCredential(
+  id: string,
+  activeSlot: EndpointCredentialSlot,
+  fallbackExpiresAt?: string,
+): Promise<EndpointConfig> {
+  return adminJson(`/api/v1/config/endpoints/${id}/credential-activation`, {
+    method: 'PUT',
+    body: JSON.stringify({ activeSlot, fallbackExpiresAt }),
+  });
+}
+
+export function disableEndpointCredentialFallback(id: string): Promise<EndpointConfig> {
+  return adminJson(`/api/v1/config/endpoints/${id}/credential-fallback`, { method: 'DELETE' });
+}
+
+export function removeEndpointCredential(id: string, slot: EndpointCredentialSlot): Promise<EndpointConfig> {
+  return adminJson(`/api/v1/config/endpoints/${id}/secrets/${slot}`, { method: 'DELETE' });
 }

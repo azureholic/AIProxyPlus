@@ -83,6 +83,34 @@ public class ApiKeyCredentialProviderTests
     }
 
     [Fact]
+    public async Task Invalidate_DuringSecretResolution_DoesNotRepopulateRetiredReference()
+    {
+        var firstResolutionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completeFirstResolution = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secretResolver = Substitute.For<ISecretResolver>();
+        secretResolver.TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>())
+            .Returns(
+                _ =>
+                {
+                    firstResolutionStarted.SetResult();
+                    return completeFirstResolution.Task;
+                },
+                _ => Task.FromResult<string?>("sk-new"));
+        var provider = new ApiKeyCredentialProvider(
+            secretResolver, new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromMinutes(5));
+        var endpoint = NewAssignment(Provider.OpenAI);
+
+        var inFlightCredential = provider.GetCredentialAsync(endpoint);
+        await firstResolutionStarted.Task;
+        provider.Invalidate("endpoints/abc");
+        completeFirstResolution.SetResult("sk-old");
+
+        (await inFlightCredential).HeaderValue.Should().Be("Bearer sk-old");
+        (await provider.GetCredentialAsync(endpoint)).HeaderValue.Should().Be("Bearer sk-new");
+        await secretResolver.Received(2).TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task GetCredentialAsync_WhenSecretMissingInVault_Throws()
     {
         var secretResolver = Substitute.For<ISecretResolver>();
@@ -92,5 +120,27 @@ public class ApiKeyCredentialProviderTests
         var act = () => provider.GetCredentialAsync(NewAssignment(Provider.OpenAI));
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task GetCredentialCandidatesAsync_WithConfiguredFallback_ResolvesOnlyActiveCredential()
+    {
+        var assignment = NewAssignment(Provider.OpenAI);
+        assignment.Endpoint.SetSecretReference(EndpointCredentialSlot.Secondary, "endpoints/secondary");
+        assignment.Endpoint.ActivateCredential(
+            EndpointCredentialSlot.Secondary,
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            DateTimeOffset.UtcNow);
+        var secretResolver = Substitute.For<ISecretResolver>();
+        secretResolver.TryResolveAsync("endpoints/secondary", Arg.Any<CancellationToken>()).Returns("sk-active");
+        secretResolver.TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>())
+            .Returns<Task<string?>>(_ => throw new InvalidOperationException("Fallback unavailable"));
+        var provider = new ApiKeyCredentialProvider(secretResolver, new MemoryCache(new MemoryCacheOptions()));
+
+        var candidates = await provider.GetCredentialCandidatesAsync(assignment);
+
+        candidates.Active.HeaderValue.Should().Be("Bearer sk-active");
+        candidates.ResolveFallbackAsync.Should().NotBeNull();
+        await secretResolver.DidNotReceive().TryResolveAsync("endpoints/abc", Arg.Any<CancellationToken>());
     }
 }

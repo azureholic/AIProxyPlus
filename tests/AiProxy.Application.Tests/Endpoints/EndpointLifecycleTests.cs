@@ -14,6 +14,10 @@ public class EndpointLifecycleTests
     private readonly IEndpointRepository _repository = Substitute.For<IEndpointRepository>();
     private readonly ISecretResolver _secretResolver = Substitute.For<ISecretResolver>();
     private readonly IEndpointCredentialCache _credentialCache = Substitute.For<IEndpointCredentialCache>();
+    private readonly IEndpointCredentialInvalidationPublisher _invalidationPublisher =
+        Substitute.For<IEndpointCredentialInvalidationPublisher>();
+    private readonly IEndpointCredentialRetirementQueue _retirementQueue =
+        Substitute.For<IEndpointCredentialRetirementQueue>();
 
     [Fact]
     public async Task CreateAsync_WithApiKey_StoresSecretAndPersistsEndpoint()
@@ -24,7 +28,7 @@ public class EndpointLifecycleTests
             "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, "sk-test"));
 
         endpoint.Name.Should().Be("OpenAI primary");
-        endpoint.SecretRef.Should().Be($"endpoints/{endpoint.Id}");
+        endpoint.SecretRef.Should().StartWith($"endpoints/{endpoint.Id}/primary/");
         await _secretResolver.Received(1).StoreAsync(endpoint.SecretRef, "sk-test", Arg.Any<CancellationToken>());
         await _repository.Received(1).AddAsync(endpoint, Arg.Any<CancellationToken>());
     }
@@ -101,27 +105,34 @@ public class EndpointLifecycleTests
         var endpoint = CreateApiKeyEndpoint();
         _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
         _repository.IsAssignedAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(true);
-        var handler = new DeleteEndpointHandler(_repository, _secretResolver, new DeleteEndpointValidator());
+        var handler = new DeleteEndpointHandler(
+            _repository, _credentialCache, _invalidationPublisher, _retirementQueue, new DeleteEndpointValidator());
 
         var act = () => handler.HandleAsync(new DeleteEndpointCommand(endpoint.Id));
 
         await act.Should().ThrowAsync<ConflictException>();
         await _repository.DidNotReceiveWithAnyArgs().DeleteAsync(default, default);
-        await _secretResolver.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+        _retirementQueue.DidNotReceiveWithAnyArgs().ScheduleRetirement(default, default!);
     }
 
     [Fact]
-    public async Task DeleteAsync_WhenEndpointIsUnassigned_DeletesEndpointAndSecret()
+    public async Task DeleteAsync_WhenEndpointIsUnassigned_DeletesEndpointAndSchedulesCredentialRetirement()
     {
         var endpoint = CreateApiKeyEndpoint();
         _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
         _repository.IsAssignedAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(false);
-        var handler = new DeleteEndpointHandler(_repository, _secretResolver, new DeleteEndpointValidator());
+        var handler = new DeleteEndpointHandler(
+            _repository, _credentialCache, _invalidationPublisher, _retirementQueue, new DeleteEndpointValidator());
 
         await handler.HandleAsync(new DeleteEndpointCommand(endpoint.Id));
 
         await _repository.Received(1).DeleteAsync(endpoint.Id, Arg.Any<CancellationToken>());
-        await _secretResolver.Received(1).DeleteAsync(endpoint.SecretRef!, Arg.Any<CancellationToken>());
+        _credentialCache.Received(1).Invalidate(endpoint.SecretRef!);
+        _retirementQueue.Received(1).ScheduleRetirement(endpoint.Id, endpoint.SecretRef!);
+        await _invalidationPublisher.Received(1).PublishAsync(
+            Arg.Is<EndpointCredentialInvalidation>(message =>
+                message.EndpointId == endpoint.Id && message.SecretRefs.SequenceEqual(new[] { endpoint.SecretRef! })),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -132,11 +143,26 @@ public class EndpointLifecycleTests
             managedIdentityScope: "https://ai.azure.com/.default");
         _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
         var handler = new SetEndpointSecretHandler(
-            _repository, _secretResolver, _credentialCache, new SetEndpointSecretValidator());
+            _repository, _secretResolver, _credentialCache, _invalidationPublisher, _retirementQueue, new SetEndpointSecretValidator());
 
         var act = () => handler.HandleAsync(new SetEndpointSecretCommand(endpoint.Id, "sk-new"));
 
         await act.Should().ThrowAsync<ConflictException>();
+    }
+
+    [Fact]
+    public async Task RemoveCredentialAsync_WithInactiveSecondary_SchedulesRemovedReferenceForRetirement()
+    {
+        var endpoint = CreateApiKeyEndpoint();
+        const string secondaryRef = "endpoints/secondary/version-1";
+        endpoint.SetSecretReference(EndpointCredentialSlot.Secondary, secondaryRef);
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        var handler = new RemoveEndpointCredentialHandler(
+            _repository, _invalidationPublisher, _retirementQueue, TimeProvider.System);
+
+        await handler.HandleAsync(new RemoveEndpointCredentialCommand(endpoint.Id, EndpointCredentialSlot.Secondary));
+
+        _retirementQueue.Received(1).ScheduleRetirement(endpoint.Id, secondaryRef);
     }
 
     [Fact]
@@ -145,7 +171,7 @@ public class EndpointLifecycleTests
         var endpoint = CreateApiKeyEndpoint();
         _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
         var handler = new SetEndpointSecretHandler(
-            _repository, _secretResolver, _credentialCache, new SetEndpointSecretValidator());
+            _repository, _secretResolver, _credentialCache, _invalidationPublisher, _retirementQueue, new SetEndpointSecretValidator());
 
         await handler.HandleAsync(new SetEndpointSecretCommand(endpoint.Id, "sk-new"));
 
@@ -153,6 +179,114 @@ public class EndpointLifecycleTests
         _credentialCache.Received(1).Invalidate(endpoint.SecretRef!);
     }
 
+    [Fact]
+    public async Task SetCredentialAsync_WithSecondarySlot_WritesImmutableReferenceBeforeUpdatingEndpoint()
+    {
+        var endpoint = CreateApiKeyEndpoint();
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        var handler = new SetEndpointCredentialHandler(
+            _repository, _secretResolver, _credentialCache, _invalidationPublisher, _retirementQueue, new SetEndpointCredentialValidator());
+
+        var result = await handler.HandleAsync(
+            new SetEndpointCredentialCommand(endpoint.Id, EndpointCredentialSlot.Secondary, "sk-secondary"));
+
+        result.SecondarySecretRef.Should().StartWith($"endpoints/{endpoint.Id}/secondary/");
+        await _secretResolver.Received(1).StoreAsync(
+            result.SecondarySecretRef!, "sk-secondary", Arg.Any<CancellationToken>());
+        await _repository.Received(1).UpdateAsync(endpoint, Arg.Any<CancellationToken>());
+        await _invalidationPublisher.Received(1).PublishAsync(
+            Arg.Is<EndpointCredentialInvalidation>(message =>
+                message.EndpointId == endpoint.Id && message.SecretRefs.Contains(result.SecondarySecretRef!)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SetCredentialAsync_WhenPersistenceFails_DeletesNewUnreferencedSecret()
+    {
+        var endpoint = CreateApiKeyEndpoint();
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        _repository.IsSecretReferenceInUseAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        _repository.UpdateAsync(endpoint, Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Database unavailable"));
+        var handler = new SetEndpointCredentialHandler(
+            _repository, _secretResolver, _credentialCache, _invalidationPublisher, _retirementQueue, new SetEndpointCredentialValidator());
+
+        var act = () => handler.HandleAsync(
+            new SetEndpointCredentialCommand(endpoint.Id, EndpointCredentialSlot.Secondary, "sk-secondary"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await _secretResolver.Received(1).DeleteAsync(
+            Arg.Is<string>(secretRef => secretRef.StartsWith($"endpoints/{endpoint.Id}/secondary/")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SetCredentialAsync_WhenPersistenceThrowsAfterCommit_ReconcilesAsSuccess()
+    {
+        var endpoint = CreateApiKeyEndpoint();
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        _repository.IsSecretReferenceInUseAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        _repository.UpdateAsync(endpoint, Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Commit outcome unknown"));
+        var handler = new SetEndpointCredentialHandler(
+            _repository, _secretResolver, _credentialCache, _invalidationPublisher, _retirementQueue, new SetEndpointCredentialValidator());
+
+        var result = await handler.HandleAsync(
+            new SetEndpointCredentialCommand(endpoint.Id, EndpointCredentialSlot.Secondary, "sk-secondary"));
+
+        result.Should().BeSameAs(endpoint);
+        await _secretResolver.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+        _credentialCache.Received(1).Invalidate(endpoint.SecondarySecretRef!);
+        await _invalidationPublisher.Received(1).PublishAsync(
+            Arg.Is<EndpointCredentialInvalidation>(message =>
+                message.EndpointId == endpoint.Id && message.SecretRefs.SequenceEqual(new[] { endpoint.SecondarySecretRef! })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ActivateCredentialAsync_WhenFallbackExceedsConfiguredMaximum_ThrowsValidationException()
+    {
+        var now = new DateTimeOffset(2026, 8, 7, 12, 0, 0, TimeSpan.Zero);
+        var endpoint = CreateApiKeyEndpoint();
+        endpoint.SetSecretReference(EndpointCredentialSlot.Secondary, "endpoints/secondary");
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        var handler = new ActivateEndpointCredentialHandler(
+            _repository,
+            _invalidationPublisher,
+            new FixedTimeProvider(now),
+            new EndpointCredentialOptions { MaxCredentialFallbackWindow = TimeSpan.FromHours(1) });
+
+        var act = () => handler.HandleAsync(new ActivateEndpointCredentialCommand(
+            endpoint.Id, EndpointCredentialSlot.Secondary, now.AddHours(2)));
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task RemoveCredentialAsync_WhenSecondaryIsFallback_ThrowsConflictException()
+    {
+        var now = new DateTimeOffset(2026, 8, 7, 12, 0, 0, TimeSpan.Zero);
+        var endpoint = CreateApiKeyEndpoint();
+        endpoint.SetSecretReference(EndpointCredentialSlot.Secondary, "endpoints/secondary");
+        endpoint.ActivateCredential(EndpointCredentialSlot.Secondary, null, now);
+        endpoint.ActivateCredential(EndpointCredentialSlot.Primary, now.AddMinutes(10), now);
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        var handler = new RemoveEndpointCredentialHandler(
+            _repository, _invalidationPublisher, _retirementQueue, new FixedTimeProvider(now));
+
+        var act = () => handler.HandleAsync(
+            new RemoveEndpointCredentialCommand(endpoint.Id, EndpointCredentialSlot.Secondary));
+
+        await act.Should().ThrowAsync<ConflictException>();
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+    }
+
     private static Endpoint CreateApiKeyEndpoint() => Endpoint.Create(
         Guid.NewGuid(), "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, secretRef: "endpoints/abc");
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 }

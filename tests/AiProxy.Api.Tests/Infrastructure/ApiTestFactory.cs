@@ -46,6 +46,8 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public FakeSecretResolver Secrets { get; } = new();
 
+    public FakeCredentialProvider Credentials { get; } = new();
+
     public Consumer DefaultConsumer { get; }
 
     public ApiTestFactory()
@@ -84,7 +86,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             services.AddSingleton<IEndpointRepository>(Endpoints);
             services.AddSingleton<IApiRouteRepository>(ApiRoutes);
             services.AddSingleton<ISessionAffinityStore>(Affinity);
-            services.AddSingleton<ICredentialProvider, FakeCredentialProvider>();
+            services.AddSingleton<ICredentialProvider>(Credentials);
             services.AddSingleton<IUsageRecordRepository>(UsageRecords);
             services.AddSingleton<IConsumerRepository>(Consumers);
             services.AddSingleton<IRealtimeTicketService>(RealtimeTickets);

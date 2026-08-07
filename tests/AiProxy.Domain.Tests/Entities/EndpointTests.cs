@@ -22,6 +22,61 @@ public class EndpointTests
 
         endpoint.AuthMode.Should().Be(AuthMode.ApiKey);
         endpoint.Name.Should().Be("OpenAI primary");
+        endpoint.PrimarySecretRef.Should().Be("secret/ai-proxy/endpoints/abc");
+        endpoint.ActiveCredentialSlot.Should().Be(EndpointCredentialSlot.Primary);
+    }
+
+    [Fact]
+    public void ActivateCredential_WithConfiguredSecondary_ActivatesSecondaryAndRetainsPrimaryFallback()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var endpoint = CreateValidApiKeyEndpoint();
+        endpoint.SetSecretReference(EndpointCredentialSlot.Secondary, "endpoints/secondary/version-1");
+
+        endpoint.ActivateCredential(EndpointCredentialSlot.Secondary, now.AddMinutes(10), now);
+
+        endpoint.ActiveCredentialSlot.Should().Be(EndpointCredentialSlot.Secondary);
+        endpoint.FallbackCredentialSlot.Should().Be(EndpointCredentialSlot.Primary);
+        endpoint.GetActiveSecretReference().Should().Be("endpoints/secondary/version-1");
+        endpoint.GetEligibleFallbackSecretReference(now).Should().Be("secret/ai-proxy/endpoints/abc");
+    }
+
+    [Fact]
+    public void GetEligibleFallbackSecretReference_AfterExpiry_ReturnsNull()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var endpoint = CreateValidApiKeyEndpoint();
+        endpoint.SetSecretReference(EndpointCredentialSlot.Secondary, "endpoints/secondary/version-1");
+        endpoint.ActivateCredential(EndpointCredentialSlot.Secondary, now.AddMinutes(1), now);
+
+        var result = endpoint.GetEligibleFallbackSecretReference(now.AddMinutes(2));
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void RemoveSecondarySecret_WhenSecondaryIsActive_Throws()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var endpoint = CreateValidApiKeyEndpoint();
+        endpoint.SetSecretReference(EndpointCredentialSlot.Secondary, "endpoints/secondary/version-1");
+        endpoint.ActivateCredential(EndpointCredentialSlot.Secondary, null, now);
+
+        var act = () => endpoint.RemoveSecondarySecret(now);
+
+        act.Should().Throw<DomainException>().WithMessage("*active credential slot*");
+    }
+
+    [Fact]
+    public void SetSecretReference_WithManagedIdentityEndpoint_Throws()
+    {
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), "Foundry", "https://foundry.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://ai.azure.com/.default");
+
+        var act = () => endpoint.SetSecretReference(EndpointCredentialSlot.Primary, "endpoints/x");
+
+        act.Should().Throw<DomainException>().WithMessage("*ApiKey-mode*");
     }
 
     [Fact]

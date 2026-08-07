@@ -16,4 +16,15 @@ public sealed class CredentialProvider(
             AuthMode.ManagedIdentity => managedIdentityCredentialProvider.GetCredentialAsync(assignment, cancellationToken),
             _ => throw new NotSupportedException($"Unsupported AuthMode '{assignment.AuthMode}'."),
         };
+
+    public async Task<EndpointCredentialCandidates> GetCredentialCandidatesAsync(
+        ModelEndpoint assignment,
+        CancellationToken cancellationToken = default) =>
+        assignment.AuthMode switch
+        {
+            AuthMode.ApiKey => await apiKeyCredentialProvider.GetCredentialCandidatesAsync(assignment, cancellationToken),
+            AuthMode.ManagedIdentity => new(
+                await managedIdentityCredentialProvider.GetCredentialAsync(assignment, cancellationToken), null),
+            _ => throw new NotSupportedException($"Unsupported AuthMode '{assignment.AuthMode}'."),
+        };
 }

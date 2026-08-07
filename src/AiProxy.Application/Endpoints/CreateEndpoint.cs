@@ -71,7 +71,9 @@ public sealed class CreateEndpointHandler(
         }
 
         var endpointId = Guid.NewGuid();
-        var secretRef = command.AuthMode == AuthMode.ApiKey ? $"endpoints/{endpointId}" : null;
+        var secretRef = command.AuthMode == AuthMode.ApiKey
+            ? $"endpoints/{endpointId}/primary/{Guid.NewGuid():n}"
+            : null;
         var endpoint = Endpoint.Create(
             endpointId,
             command.Name,

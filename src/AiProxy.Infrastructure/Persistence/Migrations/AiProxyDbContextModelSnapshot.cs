@@ -146,6 +146,10 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ActiveCredentialSlot")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("AuthMode")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -155,6 +159,13 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("FallbackCredentialSlot")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("FallbackExpiresAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ManagedIdentityScope")
                         .HasMaxLength(500)
@@ -172,12 +183,22 @@ namespace AiProxy.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("SecretRef")
+                    b.Property<string>("PrimarySecretRef")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("SecondarySecretRef")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
                     b.Property<int>("TimeoutSeconds")
                         .HasColumnType("integer");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 

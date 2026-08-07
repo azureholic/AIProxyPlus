@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AiProxy.Application.Abstractions;
 using AiProxy.Domain.Entities;
 using AiProxy.Domain.Enums;
@@ -12,29 +13,50 @@ namespace AiProxy.Infrastructure.Secrets;
 public sealed class ApiKeyCredentialProvider(ISecretResolver secretResolver, IMemoryCache cache, TimeSpan? cacheTtl = null)
     : IEndpointCredentialCache
 {
+    private readonly ConcurrentDictionary<string, long> _cacheGenerations = new(StringComparer.Ordinal);
     private readonly TimeSpan _cacheTtl = cacheTtl ?? TimeSpan.FromMinutes(5);
 
     public async Task<EndpointCredential> GetCredentialAsync(ModelEndpoint assignment, CancellationToken cancellationToken = default)
     {
         var endpoint = assignment.Endpoint;
-        if (endpoint.SecretRef is null)
-        {
-            throw new InvalidOperationException($"Endpoint '{endpoint.Id}' has AuthMode.ApiKey but no SecretRef.");
-        }
+        return BuildCredential(assignment.Provider, await ResolveAsync(endpoint.GetActiveSecretReference(), endpoint.Id, cancellationToken));
+    }
 
-        var cacheKey = CacheKey(endpoint.SecretRef);
+    public async Task<EndpointCredentialCandidates> GetCredentialCandidatesAsync(
+        ModelEndpoint assignment,
+        CancellationToken cancellationToken = default)
+    {
+        var endpoint = assignment.Endpoint;
+        var activeRef = endpoint.GetActiveSecretReference();
+        var active = BuildCredential(assignment.Provider, await ResolveAsync(activeRef, endpoint.Id, cancellationToken));
+        var fallbackRef = endpoint.GetEligibleFallbackSecretReference(DateTimeOffset.UtcNow);
+        Func<CancellationToken, Task<EndpointCredential>>? resolveFallback = fallbackRef is null
+            ? null
+            : async token => BuildCredential(
+                assignment.Provider,
+                await ResolveAsync(fallbackRef, endpoint.Id, token));
+        return new EndpointCredentialCandidates(active, resolveFallback, endpoint.ActiveCredentialSlot, endpoint.FallbackCredentialSlot);
+    }
+
+    private async Task<string> ResolveAsync(string secretRef, Guid endpointId, CancellationToken cancellationToken)
+    {
+        var cacheKey = CacheKey(secretRef);
         if (!cache.TryGetValue(cacheKey, out string? apiKey))
         {
-            apiKey = await secretResolver.TryResolveAsync(endpoint.SecretRef, cancellationToken)
-                ?? throw new InvalidOperationException($"No secret found at '{endpoint.SecretRef}' for endpoint '{endpoint.Id}'.");
-            cache.Set(cacheKey, apiKey, _cacheTtl);
+            var generation = _cacheGenerations.GetOrAdd(secretRef, 0);
+            apiKey = await secretResolver.TryResolveAsync(secretRef, cancellationToken)
+                ?? throw new InvalidOperationException($"No secret found at '{secretRef}' for endpoint '{endpointId}'.");
+            if (_cacheGenerations.GetOrAdd(secretRef, 0) == generation)
+            {
+                cache.Set(cacheKey, apiKey, _cacheTtl);
+            }
         }
-
-        return BuildCredential(assignment.Provider, apiKey!);
+        return apiKey!;
     }
 
     public void Invalidate(string secretRef)
     {
+        _cacheGenerations.AddOrUpdate(secretRef, 1, static (_, generation) => generation + 1);
         cache.Remove(CacheKey(secretRef));
     }
 

@@ -26,6 +26,10 @@ public sealed class FakeEndpointRepository(FakeModelRepository models) : IEndpoi
         (await models.GetAllAsync(cancellationToken))
             .Any(model => model.Endpoints.Any(assignment => assignment.EndpointId == id));
 
+    public Task<bool> IsSecretReferenceInUseAsync(string secretRef, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_byId.Values.Any(endpoint =>
+            endpoint.PrimarySecretRef == secretRef || endpoint.SecondarySecretRef == secretRef));
+
     public Task AddAsync(Endpoint endpoint, CancellationToken cancellationToken = default)
     {
         _byId[endpoint.Id] = endpoint;

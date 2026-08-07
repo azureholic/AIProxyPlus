@@ -135,4 +135,19 @@ internal static class DirectHttpProxy
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         return new UpstreamFailureSnapshot((int)response.StatusCode, headers, body);
     }
+
+    internal static async Task ReplaySnapshotAsync(
+        UpstreamFailureSnapshot snapshot,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        httpContext.Response.StatusCode = snapshot.StatusCode;
+        foreach (var header in snapshot.Headers)
+        {
+            httpContext.Response.Headers[header.Key] = header.Value;
+        }
+        var bytes = Encoding.UTF8.GetBytes(snapshot.Body);
+        httpContext.Response.ContentLength = bytes.Length;
+        await httpContext.Response.Body.WriteAsync(bytes, cancellationToken);
+    }
 }

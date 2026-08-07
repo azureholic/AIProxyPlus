@@ -151,10 +151,10 @@ public sealed class ProxyRoutingService(
                 metrics.RecordFailover(model.Name, previouslyFailedEndpoint.BaseUrl, endpoint.BaseUrl);
             }
 
-            EndpointCredential credential;
+            EndpointCredentialCandidates credentials;
             using (AiProxyActivitySource.Instance.StartActivity("secret_resolution"))
             {
-                credential = await credentialProvider.GetCredentialAsync(assignment, cancellationToken);
+                credentials = await credentialProvider.GetCredentialCandidatesAsync(assignment, cancellationToken);
             }
 
             var usageExtractor = TryResolveUsageExtractor(assignment.Provider, operationType);
@@ -163,7 +163,7 @@ public sealed class ProxyRoutingService(
                 : OutboundBodyMutator.EnsureStreamUsageRequested(bodyBytes, assignment.Provider, operationType, fields.Streaming);
 
             var outcome = await TryForwardWithRetriesAsync(
-                httpContext, endpoint, targetUri, credential, outboundBody, usageExtractor,
+                httpContext, endpoint, assignment.Provider, targetUri, credentials, outboundBody, usageExtractor,
                 captureResponseId: operationType == OperationType.ResponsesApi,
                 clientRequestedUsage: fields.ClientRequestedUsage,
                 streaming: fields.Streaming,
@@ -264,8 +264,9 @@ public sealed class ProxyRoutingService(
     private async Task<ForwardOutcome> TryForwardWithRetriesAsync(
         HttpContext httpContext,
         Endpoint endpoint,
+        Provider provider,
         Uri targetUri,
-        EndpointCredential credential,
+        EndpointCredentialCandidates credentials,
         byte[] bodyBytes,
         IUsageExtractor? usageExtractor,
         bool captureResponseId,
@@ -275,12 +276,17 @@ public sealed class ProxyRoutingService(
         CancellationToken cancellationToken)
     {
         UpstreamFailureSnapshot? lastFailureSnapshot = null;
+        UpstreamFailureSnapshot? activeCredentialRejection = null;
+        var credential = credentials.Active;
+        var fallbackAttempted = false;
+        var skipBackoff = false;
         for (var attempt = 0; attempt <= endpoint.MaxRetries; attempt++)
         {
-            if (attempt > 0)
+            if (attempt > 0 && !skipBackoff)
             {
                 await Task.Delay(JitteredBackoff(attempt), cancellationToken);
             }
+            skipBackoff = false;
 
             HttpResponseMessage? response;
             using var backendCallActivity = AiProxyActivitySource.Instance.StartActivity("backend_call");
@@ -293,11 +299,23 @@ public sealed class ProxyRoutingService(
             }
             catch (HttpRequestException)
             {
+                if (fallbackAttempted && activeCredentialRejection is not null)
+                {
+                    metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
+                    await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
+                    return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
+                }
                 // Connection-level failure (refused, DNS, TLS, etc.) — treat as retriable and try the next attempt.
                 continue;
             }
             catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
+                if (fallbackAttempted && activeCredentialRejection is not null)
+                {
+                    metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
+                    await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
+                    return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
+                }
                 // Upstream timeout distinct from the caller cancelling the original request — also retriable.
                 continue;
             }
@@ -306,6 +324,40 @@ public sealed class ProxyRoutingService(
             {
                 var statusCode = (int)response.StatusCode;
                 backendCallActivity?.SetTag("status_code", statusCode);
+                if (statusCode == StatusCodes.Status401Unauthorized
+                    && credentials.ResolveFallbackAsync is not null
+                    && !fallbackAttempted)
+                {
+                    activeCredentialRejection = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
+                    fallbackAttempted = true;
+                    metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "attempted");
+                    try
+                    {
+                        credential = await credentials.ResolveFallbackAsync(cancellationToken);
+                    }
+                    catch
+                    {
+                        metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
+                        await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
+                        return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
+                    }
+                    skipBackoff = true;
+                    attempt--;
+                    continue;
+                }
+
+                if (fallbackAttempted && activeCredentialRejection is not null
+                    && statusCode >= 400)
+                {
+                    metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
+                    await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
+                    return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
+                }
+
+                if (fallbackAttempted)
+                {
+                    metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "succeeded");
+                }
                 if (statusCode == 429 || statusCode >= 500)
                 {
                     lastFailureSnapshot = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);

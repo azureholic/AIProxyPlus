@@ -71,6 +71,16 @@ builder.Services.AddSingleton<AiProxy.Application.Abstractions.IEndpointHealthTr
     sp => sp.GetRequiredService<EndpointHealthTracker>());
 builder.Services.AddSingleton<IEndpointRoundRobinCounter, EndpointRoundRobinCounter>();
 builder.Services.AddSingleton<AiProxyMetrics>();
+builder.Services.AddSingleton(TimeProvider.System);
+var endpointCredentialOptions = builder.Configuration
+    .GetSection(EndpointCredentialOptions.SectionName)
+    .Get<EndpointCredentialOptions>() ?? new EndpointCredentialOptions();
+if (endpointCredentialOptions.MaxCredentialFallbackWindow <= TimeSpan.Zero
+    || endpointCredentialOptions.MaxCredentialFallbackWindow > TimeSpan.FromHours(24))
+{
+    throw new InvalidOperationException("Endpoints:MaxCredentialFallbackWindow must be greater than zero and no more than 24 hours.");
+}
+builder.Services.AddSingleton(endpointCredentialOptions);
 
 // Postgres (architecture.md §7.1) — the Aspire client integration resolves the "aiproxydb" connection string
 // (injected by AiProxy.AppHost via WithReference) and wires resiliency/health checks/OTel automatically.
@@ -92,8 +102,39 @@ builder.Services.AddSingleton<IVaultClient>(sp => VaultClientFactory.Create(sp.G
 builder.Services.AddSingleton<ISecretResolver, VaultSecretResolver>();
 
 builder.Services.AddMemoryCache();
-builder.Services.AddScoped<ApiKeyCredentialProvider>();
-builder.Services.AddScoped<IEndpointCredentialCache>(services => services.GetRequiredService<ApiKeyCredentialProvider>());
+builder.Services.AddSingleton<ApiKeyCredentialProvider>();
+builder.Services.AddSingleton<IEndpointCredentialCache>(services => services.GetRequiredService<ApiKeyCredentialProvider>());
+var runtimeDatabaseConnectionString = builder.Configuration.GetConnectionString("aiproxydb");
+if (string.IsNullOrWhiteSpace(runtimeDatabaseConnectionString))
+{
+    builder.Services.AddSingleton<IEndpointCredentialInvalidationPublisher, NoOpEndpointCredentialInvalidationPublisher>();
+}
+else
+{
+    builder.Services.AddSingleton<IEndpointCredentialInvalidationPublisher>(services =>
+        new PostgresEndpointCredentialInvalidationPublisher(
+            runtimeDatabaseConnectionString,
+            services.GetRequiredService<AiProxyMetrics>(),
+            services.GetRequiredService<ILogger<PostgresEndpointCredentialInvalidationPublisher>>()));
+    builder.Services.AddSingleton<PostgresEndpointCredentialInvalidationListener>(services =>
+        new PostgresEndpointCredentialInvalidationListener(
+            runtimeDatabaseConnectionString,
+            services.GetRequiredService<IEndpointCredentialCache>(),
+            services.GetRequiredService<AiProxyMetrics>(),
+            services.GetRequiredService<ILogger<PostgresEndpointCredentialInvalidationListener>>()));
+    builder.Services.AddHostedService(services => services.GetRequiredService<PostgresEndpointCredentialInvalidationListener>());
+}
+var retirementOptions = builder.Configuration.GetSection("Vault:Retirement").Get<VaultSecretRetirementOptions>()
+    ?? new VaultSecretRetirementOptions();
+if (retirementOptions.GracePeriod < TimeSpan.Zero || retirementOptions.GracePeriod > TimeSpan.FromHours(24))
+{
+    throw new InvalidOperationException("Vault:Retirement:GracePeriod must be between zero and 24 hours.");
+}
+builder.Services.AddSingleton(retirementOptions);
+builder.Services.AddSingleton<VaultSecretRetirementQueue>();
+builder.Services.AddSingleton<IEndpointCredentialRetirementQueue>(services =>
+    services.GetRequiredService<VaultSecretRetirementQueue>());
+builder.Services.AddHostedService(services => services.GetRequiredService<VaultSecretRetirementQueue>());
 builder.Services.AddSingleton<TokenCredential>(new DefaultAzureCredential());
 builder.Services.AddScoped<ManagedIdentityCredentialProvider>();
 builder.Services.AddScoped<ICredentialProvider, CredentialProvider>();
@@ -251,6 +292,7 @@ builder.Services.AddSingleton<IValidator<CreateEndpointCommand>, CreateEndpointV
 builder.Services.AddSingleton<IValidator<UpdateEndpointConfigurationCommand>, UpdateEndpointConfigurationValidator>();
 builder.Services.AddSingleton<IValidator<DeleteEndpointCommand>, DeleteEndpointValidator>();
 builder.Services.AddSingleton<IValidator<SetEndpointSecretCommand>, SetEndpointSecretValidator>();
+builder.Services.AddSingleton<IValidator<SetEndpointCredentialCommand>, SetEndpointCredentialValidator>();
 builder.Services.AddSingleton<IValidator<CreateApiRouteCommand>, CreateApiRouteValidator>();
 builder.Services.AddSingleton<IValidator<UpdateApiRouteCommand>, UpdateApiRouteValidator>();
 builder.Services.AddSingleton<IValidator<DeleteApiRouteCommand>, DeleteApiRouteValidator>();
@@ -276,6 +318,10 @@ builder.Services.AddScoped<CreateEndpointHandler>();
 builder.Services.AddScoped<UpdateEndpointConfigurationHandler>();
 builder.Services.AddScoped<DeleteEndpointHandler>();
 builder.Services.AddScoped<SetEndpointSecretHandler>();
+builder.Services.AddScoped<SetEndpointCredentialHandler>();
+builder.Services.AddScoped<ActivateEndpointCredentialHandler>();
+builder.Services.AddScoped<DisableEndpointCredentialFallbackHandler>();
+builder.Services.AddScoped<RemoveEndpointCredentialHandler>();
 builder.Services.AddScoped<CreateApiRouteHandler>();
 builder.Services.AddScoped<UpdateApiRouteHandler>();
 builder.Services.AddScoped<DeleteApiRouteHandler>();
@@ -401,25 +447,27 @@ var config = app.MapGroup("/api/v1/config")
     .AddEndpointFilter<SessionAntiforgeryEndpointFilter>();
 
 config.MapGet("/models", async (IModelRepository repository, CancellationToken ct) =>
-    Results.Ok(await repository.GetAllAsync(ct)));
+    Results.Ok((await repository.GetAllAsync(ct)).Select(ModelResponse.From)));
 
 config.MapGet("/models/{name}", async (string name, IModelRepository repository, CancellationToken ct) =>
 {
     var model = await repository.GetByNameAsync(name, ct);
-    return model is null ? Results.NotFound(new { error = $"Model '{name}' was not found." }) : Results.Ok(model);
+    return model is null
+        ? Results.NotFound(new { error = $"Model '{name}' was not found." })
+        : Results.Ok(ModelResponse.From(model));
 });
 
 config.MapPost("/models", async (CreateModelCommand command, CreateModelHandler handler, CancellationToken ct) =>
 {
     var model = await handler.HandleAsync(command, ct);
-    return Results.Created($"/api/v1/config/models/{model.Name}", model);
+    return Results.Created($"/api/v1/config/models/{model.Name}", ModelResponse.From(model));
 });
 
 config.MapPut("/models/{name}", async (
     string name, UpdateModelBody body, UpdateModelHandler handler, CancellationToken ct) =>
 {
     var model = await handler.HandleAsync(new UpdateModelCommand(name, body.Strategy, body.Capabilities), ct);
-    return Results.Ok(model);
+    return Results.Ok(ModelResponse.From(model));
 });
 
 config.MapDelete("/models/{name}", async (string name, DeleteModelHandler handler, CancellationToken ct) =>
@@ -434,7 +482,8 @@ config.MapPost("/models/{name}/endpoints", async (
     var endpoint = await handler.HandleAsync(
         new AddEndpointCommand(name, body.EndpointId, body.ApiRouteId, body.Priority, body.Enabled),
         ct);
-    return Results.Created($"/api/v1/config/models/{name}/endpoints/{endpoint.Id}", endpoint);
+    return Results.Created(
+        $"/api/v1/config/models/{name}/endpoints/{endpoint.Id}", ModelEndpointResponse.From(endpoint));
 });
 
 config.MapPut("/models/{name}/endpoints/{id:guid}", async (
@@ -442,7 +491,7 @@ config.MapPut("/models/{name}/endpoints/{id:guid}", async (
 {
     var endpoint = await handler.HandleAsync(
         new UpdateEndpointCommand(name, id, body.Priority, body.Enabled), ct);
-    return Results.Ok(endpoint);
+    return Results.Ok(ModelEndpointResponse.From(endpoint));
 });
 
 config.MapDelete("/models/{name}/endpoints/{id:guid}", async (
@@ -453,21 +502,21 @@ config.MapDelete("/models/{name}/endpoints/{id:guid}", async (
 });
 
 config.MapGet("/endpoints", async (IEndpointRepository repository, CancellationToken ct) =>
-    Results.Ok(await repository.GetAllAsync(ct)));
+    Results.Ok((await repository.GetAllAsync(ct)).Select(EndpointResponse.From)));
 
 config.MapGet("/endpoints/{id:guid}", async (Guid id, IEndpointRepository repository, CancellationToken ct) =>
 {
     var endpoint = await repository.GetByIdAsync(id, ct);
     return endpoint is null
         ? Results.NotFound(new { error = $"Endpoint '{id}' was not found." })
-        : Results.Ok(endpoint);
+        : Results.Ok(EndpointResponse.From(endpoint));
 });
 
 config.MapPost("/endpoints", async (
     CreateEndpointCommand command, CreateEndpointHandler handler, CancellationToken ct) =>
 {
     var endpoint = await handler.HandleAsync(command, ct);
-    return Results.Created($"/api/v1/config/endpoints/{endpoint.Id}", endpoint);
+    return Results.Created($"/api/v1/config/endpoints/{endpoint.Id}", EndpointResponse.From(endpoint));
 });
 
 config.MapPut("/endpoints/{id:guid}", async (
@@ -481,7 +530,7 @@ config.MapPut("/endpoints/{id:guid}", async (
         body.TimeoutSeconds,
         body.MaxRetries,
         body.ManagedIdentityTenantId), ct);
-    return Results.Ok(endpoint);
+    return Results.Ok(EndpointResponse.From(endpoint));
 });
 
 config.MapDelete("/endpoints/{id:guid}", async (
@@ -496,7 +545,65 @@ config.MapPut("/endpoints/{id:guid}/secret", async (
 {
     await handler.HandleAsync(new SetEndpointSecretCommand(id, body.ApiKeyPlaintext), ct);
     return Results.NoContent();
-});
+})
+    .WithName("SetEndpointPrimarySecretLegacy")
+    .WithSummary("Replaces the Primary credential (deprecated compatibility alias)")
+    .WithMetadata(new ObsoleteAttribute("Use PUT /endpoints/{id}/secrets/Primary instead."))
+    .Produces(StatusCodes.Status204NoContent)
+    .ProducesProblem(StatusCodes.Status400BadRequest)
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
+
+config.MapPut("/endpoints/{id:guid}/secrets/{slot}", async (
+    Guid id, EndpointCredentialSlot slot, SetEndpointSecretBody body, SetEndpointCredentialHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(new SetEndpointCredentialCommand(id, slot, body.ApiKeyPlaintext), ct);
+    return Results.Ok(EndpointResponse.From(endpoint));
+})
+    .WithName("SetEndpointCredential")
+    .WithSummary("Sets or replaces an endpoint credential slot without activating it")
+    .Produces<EndpointResponse>()
+    .ProducesProblem(StatusCodes.Status400BadRequest)
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
+
+config.MapDelete("/endpoints/{id:guid}/secrets/{slot}", async (
+    Guid id, EndpointCredentialSlot slot, RemoveEndpointCredentialHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(new RemoveEndpointCredentialCommand(id, slot), ct);
+    return Results.Ok(EndpointResponse.From(endpoint));
+})
+    .WithName("RemoveEndpointCredential")
+    .WithSummary("Removes an inactive, non-fallback Secondary credential")
+    .Produces<EndpointResponse>()
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
+
+config.MapPut("/endpoints/{id:guid}/credential-activation", async (
+    Guid id, ActivateEndpointCredentialBody body, ActivateEndpointCredentialHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(
+        new ActivateEndpointCredentialCommand(id, body.ActiveSlot, body.FallbackExpiresAt), ct);
+    return Results.Ok(EndpointResponse.From(endpoint));
+})
+    .WithName("ActivateEndpointCredential")
+    .WithSummary("Activates a credential slot with an optional bounded fallback window")
+    .Produces<EndpointResponse>()
+    .ProducesProblem(StatusCodes.Status400BadRequest)
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
+
+config.MapDelete("/endpoints/{id:guid}/credential-fallback", async (
+    Guid id, DisableEndpointCredentialFallbackHandler handler, CancellationToken ct) =>
+{
+    var endpoint = await handler.HandleAsync(new DisableEndpointCredentialFallbackCommand(id), ct);
+    return Results.Ok(EndpointResponse.From(endpoint));
+})
+    .WithName("DisableEndpointCredentialFallback")
+    .WithSummary("Ends the credential fallback window immediately")
+    .Produces<EndpointResponse>()
+    .ProducesProblem(StatusCodes.Status404NotFound)
+    .ProducesProblem(StatusCodes.Status409Conflict);
 
 config.MapGet("/api-routes", async (GetApiRoutesHandler handler, CancellationToken ct) =>
         Results.Ok(await handler.HandleAsync(ct)))
@@ -899,6 +1006,96 @@ public sealed record UpdateEndpointConfigurationBody(
     string? ManagedIdentityTenantId = null);
 
 public sealed record SetEndpointSecretBody(string ApiKeyPlaintext);
+public sealed record ActivateEndpointCredentialBody(
+    EndpointCredentialSlot ActiveSlot,
+    DateTimeOffset? FallbackExpiresAt);
+
+public sealed record ModelResponse(
+    Guid Id,
+    string Name,
+    RoutingStrategy Strategy,
+    IReadOnlyList<ModelCapability> Capabilities,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<ModelEndpointResponse> Endpoints)
+{
+    public static ModelResponse From(Model model) => new(
+        model.Id,
+        model.Name,
+        model.Strategy,
+        model.Capabilities,
+        model.CreatedAt,
+        model.UpdatedAt,
+        model.Endpoints.Select(ModelEndpointResponse.From).ToArray());
+}
+
+public sealed record ModelEndpointResponse(
+    Guid Id,
+    Guid ModelId,
+    Guid EndpointId,
+    Guid ApiRouteId,
+    ApiRoute ApiRoute,
+    string Name,
+    string BaseUrl,
+    Provider Provider,
+    int Priority,
+    AuthMode AuthMode,
+    string? ManagedIdentityScope,
+    string? ManagedIdentityTenantId,
+    bool Enabled,
+    int TimeoutSeconds,
+    int MaxRetries,
+    EndpointHealthState Health)
+{
+    public static ModelEndpointResponse From(ModelEndpoint assignment) => new(
+        assignment.Id,
+        assignment.ModelId,
+        assignment.EndpointId,
+        assignment.ApiRouteId,
+        assignment.ApiRoute,
+        assignment.Name,
+        assignment.BaseUrl,
+        assignment.Provider,
+        assignment.Priority,
+        assignment.AuthMode,
+        assignment.ManagedIdentityScope,
+        assignment.ManagedIdentityTenantId,
+        assignment.Enabled,
+        assignment.TimeoutSeconds,
+        assignment.MaxRetries,
+        assignment.Health);
+}
+
+public sealed record EndpointResponse(
+    Guid Id,
+    string Name,
+    string BaseUrl,
+    AuthMode AuthMode,
+    bool HasPrimarySecret,
+    bool HasSecondarySecret,
+    EndpointCredentialSlot? ActiveCredentialSlot,
+    EndpointCredentialSlot? FallbackCredentialSlot,
+    DateTimeOffset? FallbackExpiresAt,
+    string? ManagedIdentityScope,
+    string? ManagedIdentityTenantId,
+    int TimeoutSeconds,
+    int MaxRetries)
+{
+    public static EndpointResponse From(AiProxy.Domain.Entities.Endpoint endpoint) => new(
+        endpoint.Id,
+        endpoint.Name,
+        endpoint.BaseUrl,
+        endpoint.AuthMode,
+        endpoint.PrimarySecretRef is not null,
+        endpoint.SecondarySecretRef is not null,
+        endpoint.ActiveCredentialSlot,
+        endpoint.FallbackCredentialSlot,
+        endpoint.FallbackExpiresAt,
+        endpoint.ManagedIdentityScope,
+        endpoint.ManagedIdentityTenantId,
+        endpoint.TimeoutSeconds,
+        endpoint.MaxRetries);
+}
 
 public sealed record ApiRouteBody(string Name, Provider Provider, string PathPrefix);
 

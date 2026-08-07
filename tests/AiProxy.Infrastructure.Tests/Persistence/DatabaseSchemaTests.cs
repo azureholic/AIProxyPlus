@@ -86,6 +86,40 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
     }
 
     [Fact]
+    public async Task EndpointCredentialConstraints_RejectIncompleteOrInapplicableSlotState()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync();
+        var invalidRows = new[]
+        {
+            """
+            INSERT INTO endpoints (
+                "Id", "Name", "BaseUrl", "AuthMode", "PrimarySecretRef", "TimeoutSeconds", "MaxRetries")
+            VALUES (@id, @name, 'https://api.example.com/', 'ApiKey', 'endpoints/test/primary', 30, 2)
+            """,
+            """
+            INSERT INTO endpoints (
+                "Id", "Name", "BaseUrl", "AuthMode", "PrimarySecretRef", "ActiveCredentialSlot",
+                "ManagedIdentityScope", "TimeoutSeconds", "MaxRetries")
+            VALUES (
+                @id, @name, 'https://api.example.com/', 'ManagedIdentity', 'endpoints/test/primary', 'Primary',
+                'https://example.com/.default', 30, 2)
+            """,
+        };
+
+        foreach (var sql in invalidRows)
+        {
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("id", Guid.NewGuid());
+            command.Parameters.AddWithValue("name", $"invalid-{Guid.NewGuid():N}");
+
+            var act = () => command.ExecuteNonQueryAsync();
+
+            (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
+        }
+    }
+
+    [Fact]
     public async Task ReclassifyAnthropicMessagesApiUsageMigration_BackfillsHistoricalRecords()
     {
         var connectionString = await fixture.CreateIsolatedDatabaseAsync();
@@ -146,8 +180,10 @@ public class DatabaseSchemaTests(PostgresContainerFixture fixture)
             await using var command = new NpgsqlCommand(
                 """
                 INSERT INTO endpoints (
-                    "Id", "Name", "BaseUrl", "AuthMode", "TimeoutSeconds", "MaxRetries")
-                VALUES (@endpointId, 'prod-anthropic', 'https://api.anthropic.com/', 'ApiKey', 30, 2);
+                    "Id", "Name", "BaseUrl", "AuthMode", "SecretRef", "TimeoutSeconds", "MaxRetries")
+                VALUES (
+                    @endpointId, 'prod-anthropic', 'https://api.anthropic.com/', 'ApiKey',
+                    'endpoints/prod-anthropic', 30, 2);
 
                 INSERT INTO usage_records (
                     "Id", "Timestamp", "ModelName", "ConsumerId", "ConsumerName", "EndpointId", "Provider",

@@ -4,6 +4,7 @@
 
 export type Provider = 'OpenAI' | 'MicrosoftAI' | 'Anthropic';
 export type AuthMode = 'ApiKey' | 'ManagedIdentity';
+export type EndpointCredentialSlot = 'Primary' | 'Secondary';
 export type RoutingStrategy = 'Priority';
 export type ModelCapability = 'Chat' | 'ImageGeneration' | 'Realtime' | 'SpeechToText' | 'TextToSpeech';
 export type EndpointHealthState = 'Unknown' | 'Healthy' | 'Unhealthy';
@@ -31,7 +32,6 @@ export interface Endpoint {
   provider: Provider;
   priority: number;
   authMode: AuthMode;
-  secretRef: string | null;
   managedIdentityScope: string | null;
   managedIdentityTenantId: string | null;
   enabled: boolean;
@@ -45,7 +45,11 @@ export interface EndpointConfig {
   name: string;
   baseUrl: string;
   authMode: AuthMode;
-  secretRef: string | null;
+  hasPrimarySecret: boolean;
+  hasSecondarySecret: boolean;
+  activeCredentialSlot: EndpointCredentialSlot | null;
+  fallbackCredentialSlot: EndpointCredentialSlot | null;
+  fallbackExpiresAt: string | null;
   managedIdentityScope: string | null;
   managedIdentityTenantId: string | null;
   timeoutSeconds: number;
