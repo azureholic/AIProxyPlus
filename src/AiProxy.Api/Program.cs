@@ -18,6 +18,7 @@ using AiProxy.Infrastructure.Usage;
 using Azure.Core;
 using Azure.Identity;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Antiforgery;
@@ -34,6 +35,9 @@ var builder = WebApplication.CreateBuilder(args);
 var oidcOptions = builder.Configuration.GetSection(OidcAuthenticationOptions.SectionName)
     .Get<OidcAuthenticationOptions>() ?? new OidcAuthenticationOptions();
 oidcOptions.Validate();
+var workloadOptions = builder.Configuration.GetSection(WorkloadAuthenticationOptions.SectionName)
+    .Get<WorkloadAuthenticationOptions>() ?? new WorkloadAuthenticationOptions();
+workloadOptions.Validate();
 
 builder.AddServiceDefaults();
 
@@ -142,7 +146,9 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<IApiKeyGenerator, ApiKeyGenerator>();
 builder.Services.AddScoped<IConsumerAuthenticator, ConsumerAuthenticator>();
 builder.Services.AddScoped<IOidcConsumerResolver, OidcConsumerResolver>();
+builder.Services.AddScoped<IFederatedConsumerResolver, FederatedConsumerResolver>();
 builder.Services.AddScoped<IRealtimeTicketService, RealtimeTicketService>();
+builder.Services.AddSingleton(workloadOptions);
 
 var authentication = builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -168,6 +174,12 @@ var authentication = builder.Services
     .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, AdminApiKeyAuthenticationHandler>(
         AdminApiKeyAuthenticationHandler.SchemeName,
         _ => { });
+
+AddWorkloadBearerScheme(authentication, WorkloadAuthenticationOptions.OidcScheme, workloadOptions.Oidc);
+AddWorkloadBearerScheme(
+    authentication,
+    WorkloadAuthenticationOptions.ManagedIdentityScheme,
+    workloadOptions.ManagedIdentity);
 
 if (oidcOptions.Enabled)
 {
@@ -243,6 +255,8 @@ builder.Services.AddSingleton<IValidator<CreateApiRouteCommand>, CreateApiRouteV
 builder.Services.AddSingleton<IValidator<UpdateApiRouteCommand>, UpdateApiRouteValidator>();
 builder.Services.AddSingleton<IValidator<DeleteApiRouteCommand>, DeleteApiRouteValidator>();
 builder.Services.AddSingleton<IValidator<CreateConsumerCommand>, CreateConsumerValidator>();
+builder.Services.AddSingleton<IValidator<CreateOidcConsumerCommand>, CreateOidcConsumerValidator>();
+builder.Services.AddSingleton<IValidator<CreateManagedIdentityConsumerCommand>, CreateManagedIdentityConsumerValidator>();
 builder.Services.AddSingleton<IValidator<RotateConsumerKeyCommand>, RotateConsumerKeyValidator>();
 builder.Services.AddSingleton<IValidator<DisableConsumerCommand>, DisableConsumerValidator>();
 builder.Services.AddSingleton<IValidator<EnableConsumerCommand>, EnableConsumerValidator>();
@@ -268,6 +282,8 @@ builder.Services.AddScoped<DeleteApiRouteHandler>();
 builder.Services.AddScoped<GetApiRoutesHandler>();
 builder.Services.AddScoped<GetApiRouteHandler>();
 builder.Services.AddScoped<CreateConsumerHandler>();
+builder.Services.AddScoped<CreateOidcConsumerHandler>();
+builder.Services.AddScoped<CreateManagedIdentityConsumerHandler>();
 builder.Services.AddScoped<RotateConsumerKeyHandler>();
 builder.Services.AddScoped<DisableConsumerHandler>();
 builder.Services.AddScoped<EnableConsumerHandler>();
@@ -544,6 +560,22 @@ config.MapPost("/consumers", async (CreateConsumerCommand command, CreateConsume
         new { consumer = ConsumerResponse.From(result.Consumer), apiKey1 = result.ApiKey1, apiKey2 = result.ApiKey2 });
 });
 
+config.MapPost("/consumers/oidc", async (
+    CreateOidcConsumerCommand command, CreateOidcConsumerHandler handler, CancellationToken ct) =>
+{
+    var consumer = await handler.HandleAsync(command, ct);
+    return Results.Created($"/api/v1/config/consumers/{consumer.Name}", ConsumerResponse.From(consumer));
+});
+
+config.MapPost("/consumers/managed-identity", async (
+    CreateManagedIdentityConsumerCommand command,
+    CreateManagedIdentityConsumerHandler handler,
+    CancellationToken ct) =>
+{
+    var consumer = await handler.HandleAsync(command, ct);
+    return Results.Created($"/api/v1/config/consumers/{consumer.Name}", ConsumerResponse.From(consumer));
+});
+
 config.MapPut("/consumers/{name}/rotate", async (
     string name, int? slot, RotateConsumerKeyHandler handler, CancellationToken ct) =>
 {
@@ -785,6 +817,32 @@ static bool IsSafeReturnUrl(string? returnUrl) =>
     !returnUrl.StartsWith("//", StringComparison.Ordinal) &&
     !returnUrl.Contains('\\');
 
+static void AddWorkloadBearerScheme(
+    Microsoft.AspNetCore.Authentication.AuthenticationBuilder authentication,
+    string scheme,
+    WorkloadJwtProviderOptions options)
+{
+    if (!options.Enabled)
+    {
+        return;
+    }
+
+    authentication.AddJwtBearer(scheme, jwt =>
+    {
+        jwt.Authority = options.Authority.TrimEnd('/');
+        jwt.Audience = options.Audience;
+        jwt.RequireHttpsMetadata = !Uri.TryCreate(options.Authority, UriKind.Absolute, out var authority) ||
+                                   !authority.IsLoopback;
+        jwt.MapInboundClaims = false;
+        jwt.TokenValidationParameters.ValidAlgorithms = options.AllowedSigningAlgorithms;
+        jwt.TokenValidationParameters.ValidateIssuer = true;
+        jwt.TokenValidationParameters.ValidateAudience = true;
+        jwt.TokenValidationParameters.ValidateLifetime = true;
+        jwt.TokenValidationParameters.NameClaimType = "name";
+        jwt.TokenValidationParameters.RoleClaimType = "roles";
+    });
+}
+
 /// <summary>A short-lived credential for one Realtime WebSocket handshake.</summary>
 sealed record RealtimeTicketResponse(string Ticket, int ExpiresInSeconds);
 
@@ -853,17 +911,25 @@ public sealed record ConsumerResponse(
     DateTimeOffset? RevokedAt,
     bool HasApiKey1,
     bool HasApiKey2,
+    string? OidcIssuer,
+    string? OidcSubject,
+    Guid? ManagedIdentityTenantId,
+    Guid? ManagedIdentityObjectId,
     IReadOnlyList<Guid> AllowedModelIds)
 {
     public static ConsumerResponse From(Consumer consumer) => new(
         consumer.Id,
         consumer.Name,
-        consumer.IsOidc ? "oidc" : "apiKey",
+        consumer.IsManagedIdentity ? "managedIdentity" : consumer.IsOidc ? "oidc" : "apiKey",
         consumer.Enabled,
         consumer.CreatedAt,
         consumer.RevokedAt,
         consumer.ApiKeyHash is not null,
         consumer.ApiKeyHash2 is not null,
+        consumer.OidcIssuer,
+        consumer.OidcSubject,
+        consumer.ManagedIdentityTenantId,
+        consumer.ManagedIdentityObjectId,
         consumer.AllowedModelIds);
 }
 

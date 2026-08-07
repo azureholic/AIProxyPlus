@@ -13,6 +13,11 @@ public interface IConsumerRepository
         string oidcSubject,
         CancellationToken cancellationToken = default);
 
+    Task<Consumer?> GetByManagedIdentityAsync(
+        Guid tenantId,
+        Guid objectId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Consumer>> GetAllAsync(CancellationToken cancellationToken = default);
 
     Task<bool> ExistsByNameAsync(string name, CancellationToken cancellationToken = default);

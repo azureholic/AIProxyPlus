@@ -106,6 +106,28 @@ public class ConsumerRepositoryTests(PostgresContainerFixture fixture)
     }
 
     [Fact]
+    public async Task GetByManagedIdentityAsync_FindsMatchingConsumer()
+    {
+        var consumer = Consumer.CreateManagedIdentity(
+            Guid.NewGuid(),
+            $"worker-{Guid.NewGuid():N}",
+            Guid.NewGuid(),
+            Guid.NewGuid());
+
+        await using var writeContext = fixture.CreateDbContext();
+        await new ConsumerRepository(writeContext).AddAsync(consumer);
+
+        await using var readContext = fixture.CreateDbContext();
+        var loaded = await new ConsumerRepository(readContext).GetByManagedIdentityAsync(
+            consumer.ManagedIdentityTenantId!.Value,
+            consumer.ManagedIdentityObjectId!.Value);
+
+        loaded.Should().NotBeNull();
+        loaded!.Id.Should().Be(consumer.Id);
+        loaded.ApiKeyHash.Should().BeNull();
+    }
+
+    [Fact]
     public async Task AddAsync_WithDuplicateName_ThrowsDueToUniqueIndex()
     {
         var name = $"team-{Guid.NewGuid():N}";

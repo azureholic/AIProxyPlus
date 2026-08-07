@@ -1,5 +1,6 @@
 using AiProxy.Application.Abstractions;
 using AiProxy.Application.Consumers;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -26,6 +27,11 @@ public sealed class ConsumerAuthEndpointFilter : IEndpointFilter
         if (headerApiKey is not null)
         {
             return await AuthenticateApiKeyAsync(httpContext, headerApiKey, context, next);
+        }
+
+        if (httpContext.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return await AuthenticateBearerAsync(httpContext, context, next);
         }
 
         if (httpContext.Request.Path.Equals(RealtimeTicketRoutes.OpenAiRealtime))
@@ -87,6 +93,91 @@ public sealed class ConsumerAuthEndpointFilter : IEndpointFilter
         }
 
         return Results.Json(new { error = "Missing X-Api-Key header." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    private static async ValueTask<object?> AuthenticateBearerAsync(
+        HttpContext httpContext,
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
+        var options = httpContext.RequestServices.GetRequiredService<WorkloadAuthenticationOptions>();
+        var resolver = httpContext.RequestServices.GetRequiredService<IFederatedConsumerResolver>();
+
+        if (options.ManagedIdentity.Enabled)
+        {
+            var result = await httpContext.AuthenticateAsync(
+                WorkloadAuthenticationOptions.ManagedIdentityScheme);
+            if (result.Succeeded && result.Principal is not null)
+            {
+                if (!result.Principal.FindAll("roles").Any(claim =>
+                        string.Equals(claim.Value, options.ManagedIdentity.RequiredRole, StringComparison.Ordinal)))
+                {
+                    return Results.Json(new { error = "The bearer token lacks the required application role." },
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                if (!Guid.TryParse(result.Principal.FindFirst("tid")?.Value, out var tenantId) ||
+                    !Guid.TryParse(result.Principal.FindFirst("oid")?.Value, out var objectId))
+                {
+                    return Results.Json(new { error = "The managed identity token lacks valid tid or oid claims." },
+                        statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                var consumer = await resolver.ResolveManagedIdentityAsync(
+                    new ManagedIdentityBearerIdentity(tenantId, objectId), httpContext.RequestAborted);
+                return await ContinueAsFederatedConsumerAsync(httpContext, consumer, context, next);
+            }
+        }
+
+        if (options.Oidc.Enabled)
+        {
+            var result = await httpContext.AuthenticateAsync(WorkloadAuthenticationOptions.OidcScheme);
+            if (result.Succeeded && result.Principal is not null)
+            {
+                var scopes = result.Principal.FindFirst("scope")?.Value ?? result.Principal.FindFirst("scp")?.Value;
+                if (string.IsNullOrWhiteSpace(scopes) || !scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        .Contains(options.Oidc.RequiredScope, StringComparer.Ordinal))
+                {
+                    return Results.Json(new { error = "The bearer token lacks the required scope." },
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                var issuer = result.Principal.FindFirst("iss")?.Value;
+                var subject = result.Principal.FindFirst("sub")?.Value;
+                if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
+                {
+                    return Results.Json(new { error = "The bearer token lacks required iss or sub claims." },
+                        statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                var consumer = await resolver.ResolveOidcAsync(
+                    new OidcBearerIdentity(issuer, subject), httpContext.RequestAborted);
+                return await ContinueAsFederatedConsumerAsync(httpContext, consumer, context, next);
+            }
+        }
+
+        return Results.Json(new { error = "Invalid bearer token." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    private static async ValueTask<object?> ContinueAsFederatedConsumerAsync(
+        HttpContext httpContext,
+        Domain.Entities.Consumer? consumer,
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
+        if (consumer is null)
+        {
+            return Results.Json(new { error = "This bearer identity is not enrolled." },
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        if (!consumer.Enabled)
+        {
+            return Results.Json(new { error = "This consumer is disabled." }, statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        SetConsumer(httpContext, consumer);
+        return await next(context);
     }
 
     private static async ValueTask<object?> AuthenticateApiKeyAsync(

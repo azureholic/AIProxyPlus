@@ -24,6 +24,13 @@ public sealed class FakeConsumerRepository : IConsumerRepository
         Task.FromResult(_byName.Values.FirstOrDefault(
             c => c.OidcIssuer == oidcIssuer && c.OidcSubject == oidcSubject));
 
+    public Task<Consumer?> GetByManagedIdentityAsync(
+        Guid tenantId,
+        Guid objectId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(_byName.Values.FirstOrDefault(
+            c => c.ManagedIdentityTenantId == tenantId && c.ManagedIdentityObjectId == objectId));
+
     public Task<IReadOnlyList<Consumer>> GetAllAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<Consumer>>(_byName.Values.ToList());
 

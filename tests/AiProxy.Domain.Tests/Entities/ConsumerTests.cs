@@ -7,6 +7,35 @@ namespace AiProxy.Domain.Tests.Entities;
 
 public class ConsumerTests
 {
+    [Fact]
+    public void CreateManagedIdentity_WithValidIdentity_CreatesKeylessConsumer()
+    {
+        var tenantId = Guid.NewGuid();
+        var objectId = Guid.NewGuid();
+
+        var consumer = Consumer.CreateManagedIdentity(Guid.NewGuid(), "payments-worker", tenantId, objectId);
+
+        consumer.ManagedIdentityTenantId.Should().Be(tenantId);
+        consumer.ManagedIdentityObjectId.Should().Be(objectId);
+        consumer.IsManagedIdentity.Should().BeTrue();
+        consumer.ApiKeyHash.Should().BeNull();
+        consumer.OidcIssuer.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void CreateManagedIdentity_WithEmptyIdentityCoordinate_Throws(bool emptyTenant, bool emptyObject)
+    {
+        var action = () => Consumer.CreateManagedIdentity(
+            Guid.NewGuid(),
+            "payments-worker",
+            emptyTenant ? Guid.Empty : Guid.NewGuid(),
+            emptyObject ? Guid.Empty : Guid.NewGuid());
+
+        action.Should().Throw<DomainException>();
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

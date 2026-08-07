@@ -3,7 +3,7 @@ using AiProxy.Domain.Exceptions;
 
 namespace AiProxy.Domain.Entities;
 
-/// <summary>A caller allowed to invoke the proxy through an API key or OIDC identity.</summary>
+/// <summary>A caller allowed to invoke the proxy through an API key, OIDC identity, or managed identity.</summary>
 public sealed class Consumer
 {
     private readonly List<ConsumerAllowedModel> _allowedModels = [];
@@ -17,7 +17,10 @@ public sealed class Consumer
     public string? ApiKeyHash2 { get; private set; }
     public string? OidcIssuer { get; private set; }
     public string? OidcSubject { get; private set; }
+    public Guid? ManagedIdentityTenantId { get; private set; }
+    public Guid? ManagedIdentityObjectId { get; private set; }
     public bool IsOidc => OidcIssuer is not null;
+    public bool IsManagedIdentity => ManagedIdentityTenantId is not null;
     public bool Enabled { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? RevokedAt { get; private set; }
@@ -40,6 +43,8 @@ public sealed class Consumer
         string? apiKeyHash2,
         string? oidcIssuer,
         string? oidcSubject,
+        Guid? managedIdentityTenantId,
+        Guid? managedIdentityObjectId,
         DateTimeOffset createdAt)
     {
         Id = id;
@@ -48,6 +53,8 @@ public sealed class Consumer
         ApiKeyHash2 = apiKeyHash2;
         OidcIssuer = oidcIssuer;
         OidcSubject = oidcSubject;
+        ManagedIdentityTenantId = managedIdentityTenantId;
+        ManagedIdentityObjectId = managedIdentityObjectId;
         Enabled = true;
         CreatedAt = createdAt;
     }
@@ -72,7 +79,7 @@ public sealed class Consumer
             ValidateApiKeyHash(apiKeyHash2);
         }
 
-        return new Consumer(id, name, apiKeyHash, apiKeyHash2, null, null, createdAt ?? DateTimeOffset.UtcNow);
+        return new Consumer(id, name, apiKeyHash, apiKeyHash2, null, null, null, null, createdAt ?? DateTimeOffset.UtcNow);
     }
 
     public static Consumer CreateOidc(
@@ -102,16 +109,40 @@ public sealed class Consumer
             null,
             issuer.AbsoluteUri.TrimEnd('/'),
             oidcSubject,
+            null,
+            null,
             createdAt ?? DateTimeOffset.UtcNow);
+    }
+
+    public static Consumer CreateManagedIdentity(
+        Guid id,
+        string name,
+        Guid tenantId,
+        Guid objectId,
+        DateTimeOffset? createdAt = null)
+    {
+        ValidateName(name);
+
+        if (tenantId == Guid.Empty)
+        {
+            throw new DomainException("Consumer.ManagedIdentityTenantId must not be empty.");
+        }
+
+        if (objectId == Guid.Empty)
+        {
+            throw new DomainException("Consumer.ManagedIdentityObjectId must not be empty.");
+        }
+
+        return new Consumer(id, name, null, null, null, null, tenantId, objectId, createdAt ?? DateTimeOffset.UtcNow);
     }
 
     /// <summary>Rotates one key slot independently — the other slot's hash is untouched and remains valid,
     /// giving zero-downtime rotation (architecture.md §8).</summary>
     public void RotateKey(ApiKeySlot slot, string newApiKeyHash)
     {
-        if (IsOidc)
+        if (IsOidc || IsManagedIdentity)
         {
-            throw new DomainException("OIDC consumers do not have API keys.");
+            throw new DomainException("Federated consumers do not have API keys.");
         }
 
         ValidateApiKeyHash(newApiKeyHash);

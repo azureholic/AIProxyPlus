@@ -40,6 +40,37 @@ describe('ConsumersPage', () => {
     expect(screen.getByText('You will not see this value again — copy it now.')).toBeInTheDocument();
   });
 
+  it('enrolls a managed identity without revealing API keys', async () => {
+    const consumer = { id: '1', name: 'worker', authenticationType: 'managedIdentity', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/managed-identity') && init?.method === 'POST') {
+        return jsonResponse(consumer, 201);
+      }
+      return jsonResponse([]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<ConsumersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'New consumer' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'worker' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Authentication' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Managed identity' }));
+    fireEvent.change(screen.getByLabelText('Tenant ID'), { target: { value: 'tenant-id' } });
+    fireEvent.change(screen.getByLabelText('Object ID'), { target: { value: 'object-id' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/config/consumers/managed-identity',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ name: 'worker', tenantId: 'tenant-id', objectId: 'object-id' }),
+      }),
+    ));
+    expect(screen.queryByLabelText('Key 1')).not.toBeInTheDocument();
+  });
+
   it('revokes a consumer only after the confirm dialog is accepted', async () => {
     const consumer = { id: '1', name: 'my-team', authenticationType: 'apiKey', enabled: true, createdAt: new Date().toISOString(), revokedAt: null };
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -160,12 +191,15 @@ describe('ConsumersPage', () => {
       enabled: true,
       createdAt: new Date().toISOString(),
       revokedAt: null,
+      oidcIssuer: 'https://identity.example.com',
+      oidcSubject: 'admin-42',
     };
     vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(url.includes('/models') ? [] : [consumer])));
 
     render(<ConsumersPage />);
 
     expect(await screen.findByText('OIDC')).toBeInTheDocument();
+    expect(screen.getByText('https://identity.example.com / admin-42')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rotate key 1 for proxy-admin' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Rotate key 2 for proxy-admin' })).toBeDisabled();
   });

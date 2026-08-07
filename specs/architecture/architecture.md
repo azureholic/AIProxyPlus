@@ -246,7 +246,7 @@ only when the provider returns a real token or non-token usage signal; the proxy
 | `endpoints` | Reusable backend target and credential configuration | `id`, `name` (unique), `base_url`, `auth_mode`, `secret_ref`, `managed_identity_scope`, `managed_identity_tenant_id?`, `timeout_seconds`, `max_retries` |
 | `api_routes` | Reusable provider API surfaces | `id`, `name` (unique), `provider`, `path_prefix`, `is_built_in`; `(provider, path_prefix)` unique |
 | `model_endpoints` | Model-to-endpoint/API-route assignments | `id`, `model_id`, `endpoint_id`, `api_route_id`, `priority`, `enabled`, `health`; `(model_id, endpoint_id, api_route_id)` unique |
-| `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), `api_key_hash`, `api_key_hash2?`, `enabled`, `created_at`, `revoked_at` |
+| `consumers` | Callers allowed to invoke the proxy | `id`, `name` (unique), mutually exclusive API-key hashes, OIDC `issuer` + `subject`, or managed-identity `tenant_id` + `object_id`, `enabled`, `created_at`, `revoked_at` |
 | `consumer_allowed_models` | Optional per-consumer model allow-list | `consumer_id`, `model_id`; composite primary key, cascades with consumer or model |
 | `usage_records` | Usage log (append-only) | `id`, `timestamp`, `model_name`, `consumer_id`, `consumer_name`, `endpoint_id`, `endpoint_name`, `operation_type`, `prompt_tokens?`, `completion_tokens?`, `total_tokens?`, `usage_metrics` (jsonb), `streaming`, `status_code`, `duration_ms` |
 | `session_affinity` | Responses API affinity map | `session_id`, `model_id`, `model_endpoint_id`, `endpoint_id`, `expires_at` |
@@ -258,6 +258,9 @@ consumer. `consumers.api_key_hash` and `api_key_hash2` store salted one-way hash
 pepper) of two independently rotatable inbound keys — never plaintext keys. Existing rows may have a null second
 slot; newly created API-key consumers receive both. An empty `consumer_allowed_models` set means unrestricted
 access for backward compatibility; any non-empty set restricts that consumer to exactly those models.
+Database constraints enforce exactly one authentication type per Consumer. Unique indexes on OIDC
+`(issuer, subject)` and managed-identity `(tenant_id, object_id)` prevent one external principal from being enrolled
+under multiple local identities.
 `prompt_tokens`/`completion_tokens`/`total_tokens` are nullable — only token-based operations (chat completions,
 completions, embeddings) populate them; other operation types (e.g. image generation) populate the flexible
 `usage_metrics` jsonb column instead, so new modalities can report whatever billing signal they have without a
@@ -316,6 +319,8 @@ enabled state, health, or endpoint credentials.
 | DELETE | `/api/v1/config/api-routes/{id}` | Delete an unassigned API route; returns conflict while assigned |
 | GET | `/api/v1/config/consumers` | List consumers (name, enabled, created/revoked — never the key or its hash) |
 | POST | `/api/v1/config/consumers` | Create a consumer; response includes plaintext `apiKey1` and `apiKey2` exactly once — only hashes are persisted |
+| POST | `/api/v1/config/consumers/oidc` | Pre-enroll a workload OIDC consumer by exact issuer and subject; no API key is created |
+| POST | `/api/v1/config/consumers/managed-identity` | Pre-enroll a managed identity by immutable tenant and object IDs; no API key is created |
 | PUT | `/api/v1/config/consumers/{name}/rotate?slot=1\|2` | Rotate one required key slot; returns only its new plaintext key and leaves the other slot valid |
 | PUT | `/api/v1/config/consumers/{name}/disable` | Reversibly disable inference access without changing credentials, identity, or model access |
 | PUT | `/api/v1/config/consumers/{name}/enable` | Re-enable a disabled consumer; revoked consumers return conflict |
@@ -326,7 +331,7 @@ enabled state, health, or endpoint credentials.
 | GET | `/api/v1/usage` | Query usage records (filter by deployment, consumer, date range) |
 
 Consumer lifecycle terms are intentionally distinct. **Disabled** is a reversible operational pause: authentication
-is rejected while both key slots or the OIDC identity and model allow-list remain configured. **Revoked** is an
+is rejected while both key slots or the federated identity and model allow-list remain configured. **Revoked** is an
 irreversible security action: the consumer can never be re-enabled, but its record and historical usage remain for
 audit and chargeback. **Deleted** permanently removes only an already-revoked consumer record; usage records retain
 their denormalized consumer identity. The UI uses Pause/Play for disable/enable, a security-revoke action for
@@ -599,10 +604,13 @@ shape and fixed token are confined to local development and are not acceptable d
   (must be `https://` except explicit `http://localhost`/loopback allowance for local dev) to avoid accidental
   misconfiguration pointing at internal metadata endpoints.
 - **AuthN/AuthZ**: the configuration API requires an admin key (hashed at rest in Vault, compared with a
-  constant-time comparison). Ingress inference routes require every caller to present an API key that resolves to
-  an enabled `Consumer` (either consumer key hash matches) — this is what lets every
+  constant-time comparison). Ingress inference routes require every caller to authenticate as an enabled
+  `Consumer` using an API key, browser session, or enabled workload bearer scheme — this is what lets every
   `UsageRecord` attribute tokens back to the calling application/team for chargeback, and stops the proxy from
-  being an open relay. Requests with no key, an unknown key, or a revoked consumer are rejected with `401` before
+  being an open relay. Workload JWTs require exact issuer, audience, lifetime, signature algorithm, and either the
+  configured OIDC scope (`aiproxy.invoke` by default) or managed-identity app role (`AiProxy.Invoke` by default).
+  Their immutable identity must also be explicitly pre-enrolled; a valid tenant token alone never creates or
+  authorizes a Consumer. Missing credentials, unknown identities, and disabled or revoked Consumers are rejected before
   any routing/forwarding work happens. The Realtime route additionally accepts the consumer key via an
   `?api_key=` query parameter (Iteration 3, §19) since a browser's native `WebSocket` API cannot set custom
   headers — the header is still checked first and preferred everywhere the caller can set one; query strings
@@ -653,7 +661,7 @@ Every user whom the configured provider permits to complete login is an AI Proxy
 not map provider roles or groups. Deployments in a shared identity domain must therefore restrict client assignment
 or login eligibility at the provider. Config and Usage routes accept the OIDC session; the static Admin API Key is a
 configurable migration/break-glass fallback and is disabled by default after migration. External inference clients
-continue to use Consumer API keys.
+may use Consumer API keys or the separately configured workload bearer schemes in §13.2.
 
 OIDC-backed inference resolves the authenticated identity to a `Consumer`. API-key Consumers have an API-key hash
 and no OIDC identity; OIDC Consumers have an immutable canonical issuer plus exact, case-sensitive, opaque `sub`
@@ -662,6 +670,20 @@ database enforces this exclusive choice and uniqueness of `(issuer, subject)`. T
 required as mutable display/chargeback metadata, not identity. First inference atomically provisions the OIDC
 Consumer. A username collision with another identity is rejected explicitly and never merged or silently suffixed.
 Local disable/revoke remains a kill switch but does not revoke the upstream provider account.
+
+### 13.2 Workload bearer authentication (Iteration 15)
+
+Machine callers may authenticate with a generic OIDC access token or a Microsoft Entra managed-identity access
+token. These are independent named JWT bearer schemes under `Authentication:Workload`; neither reuses the browser
+OIDC client registration or cookie. Each scheme is disabled by default and has its own exact authority, audience,
+required permission, and signing-algorithm allow-list.
+
+Generic OIDC identities resolve by exact `iss` + case-sensitive opaque `sub` and must carry the configured scope.
+Managed identities resolve by immutable `tid` + `oid` GUIDs and must carry the configured application role. An
+administrator pre-enrolls either identity through the Consumers API/UI before first use. Token validation,
+permission, enrollment, enabled/revoked state, and the existing model allow-list are all required; there is no
+workload JIT provisioning. Every accepted protocol, including Realtime bearer headers, converges to the same local
+Consumer context and usage attribution.
 
 The session cookie is `Secure`, `HttpOnly`, host-scoped, and uses the strictest `SameSite` mode compatible with the
 OIDC callback. Its configured lifetime is absolute rather than sliding so an active or stolen administrator session
@@ -853,8 +875,9 @@ frontend development, `npm run dev` runs the Vite dev server with a proxy (`/api
 The frontend uses the same-origin BFF endpoints described in §13.1. It receives minimal session metadata and an
 antiforgery token, never provider tokens or OIDC client configuration. Settings shows the signed-in identity and
 logout action. Config, Usage, Chat, and Images use the encrypted session; external inference clients and explicit
-migration mode retain API-key authentication. The Consumers page continues to manage API-key Consumers and displays
-the authentication type for JIT-provisioned OIDC Consumers, for which key rotation is unavailable.
+migration mode retain API-key authentication. The Consumers page creates API-key, pre-enrolled OIDC, and
+managed-identity Consumers and displays their authentication type. Key reveal and rotation are available only for
+API-key Consumers.
 
 Inference routes can relay an upstream provider's `401`, so the frontend must not treat every consumer request with
 that status as proof that its browser session expired. It verifies the BFF session before initiating login and leaves

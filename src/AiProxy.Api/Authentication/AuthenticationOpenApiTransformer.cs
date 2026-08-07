@@ -19,6 +19,13 @@ public sealed class AuthenticationOpenApiTransformer : IOpenApiDocumentTransform
                 "Optional migration or break-glass administrator key."),
             ["ConsumerApiKey"] = ApiKeyScheme("X-Api-Key", ParameterLocation.Header,
                 "Consumer API key for non-browser inference clients."),
+            ["WorkloadBearer"] = new OpenApiSecurityScheme
+            {
+                Type = SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                Description = "OIDC or Microsoft Entra access token issued for AI Proxy.",
+            },
             ["RealtimeTicket"] = ApiKeyScheme("ticket", ParameterLocation.Query,
                 "Short-lived, single-use ticket issued by POST /api/v1/auth/realtime-ticket."),
             ["LegacyRealtimeApiKey"] = ApiKeyScheme("api_key", ParameterLocation.Query,
@@ -90,7 +97,7 @@ public sealed class AuthenticationOpenApiTransformer : IOpenApiDocumentTransform
         if (path.StartsWith("/openai/", StringComparison.Ordinal) ||
             path.StartsWith("/anthropic/", StringComparison.Ordinal))
         {
-            return ["BrowserSession", "ConsumerApiKey"];
+            return ["BrowserSession", "ConsumerApiKey", "WorkloadBearer"];
         }
 
         if (path == "/api/v1/auth/realtime-ticket" || path == "/api/v1/auth/logout")

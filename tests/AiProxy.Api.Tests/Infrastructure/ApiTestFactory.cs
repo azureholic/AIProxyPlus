@@ -2,9 +2,13 @@ using AiProxy.Application.Abstractions;
 using AiProxy.Domain.Entities;
 using AiProxy.Infrastructure.Secrets;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace AiProxy.Api.Tests.Infrastructure;
 
@@ -19,6 +23,12 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
 
     public const string AdminApiKey = "test-admin-key";
     public const string DefaultConsumerApiKey = "test-consumer-key";
+    public const string WorkloadAudience = "api://ai-proxy-tests";
+    public const string WorkloadOidcIssuer = "https://workload-idp.test";
+    public const string ManagedIdentityIssuer = "https://login.microsoftonline.com/test-tenant/v2.0";
+
+    public static SymmetricSecurityKey WorkloadSigningKey { get; } =
+        new(Convert.FromBase64String("qJfZKpI3GJ6Y9Q04GghV7Jiwm5QFVYC7adB6NfKgk7I=")) { KeyId = "test-workload-key" };
 
     public FakeModelRepository Models { get; } = new();
 
@@ -56,6 +66,18 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Development");
         builder.UseSetting("Authentication:AdminApiKeyFallbackEnabled", "true");
         builder.UseSetting("Database:ApplyMigrations", "false");
+        builder.UseSetting("Authentication:Workload:Oidc:Enabled", "true");
+        builder.UseSetting("Authentication:Workload:Oidc:Authority", WorkloadOidcIssuer);
+        builder.UseSetting("Authentication:Workload:Oidc:Audience", WorkloadAudience);
+        builder.UseSetting("Authentication:Workload:Oidc:RequiredScope", "aiproxy.invoke");
+        builder.UseSetting("Authentication:Workload:Oidc:AllowedSigningAlgorithms:0", SecurityAlgorithms.HmacSha256);
+        builder.UseSetting("Authentication:Workload:ManagedIdentity:Enabled", "true");
+        builder.UseSetting("Authentication:Workload:ManagedIdentity:Authority", ManagedIdentityIssuer);
+        builder.UseSetting("Authentication:Workload:ManagedIdentity:Audience", WorkloadAudience);
+        builder.UseSetting("Authentication:Workload:ManagedIdentity:RequiredRole", "AiProxy.Invoke");
+        builder.UseSetting(
+            "Authentication:Workload:ManagedIdentity:AllowedSigningAlgorithms:0",
+            SecurityAlgorithms.HmacSha256);
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IModelRepository>(Models);
@@ -67,6 +89,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             services.AddSingleton<IConsumerRepository>(Consumers);
             services.AddSingleton<IRealtimeTicketService>(RealtimeTickets);
             services.AddSingleton<ISecretResolver>(Secrets);
+            services.AddSingleton<IPostConfigureOptions<JwtBearerOptions>>(new TestJwtBearerPostConfigure());
         });
     }
 
@@ -78,5 +101,30 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         base.ConfigureClient(client);
         client.DefaultRequestHeaders.Add("X-Api-Key", DefaultConsumerApiKey);
         client.DefaultRequestHeaders.Add("X-Admin-Api-Key", AdminApiKey);
+    }
+
+    private sealed class TestJwtBearerPostConfigure : IPostConfigureOptions<JwtBearerOptions>
+    {
+        public void PostConfigure(string? name, JwtBearerOptions options)
+        {
+            var issuer = name switch
+            {
+                "WorkloadOidc" => WorkloadOidcIssuer,
+                "ManagedIdentity" => ManagedIdentityIssuer,
+                _ => null,
+            };
+            if (issuer is null)
+            {
+                return;
+            }
+
+            options.Configuration = new OpenIdConnectConfiguration
+            {
+                Issuer = issuer,
+                SigningKeys = { WorkloadSigningKey },
+            };
+            options.TokenValidationParameters.ValidIssuer = issuer;
+            options.TokenValidationParameters.IssuerSigningKey = WorkloadSigningKey;
+        }
     }
 }

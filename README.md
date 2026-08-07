@@ -177,7 +177,20 @@ Disabling a Consumer reversibly blocks local inference without changing its keys
 Re-enabling restores access with the same configuration. Revocation is an irreversible security action; deletion is
 available only after revocation and removes the Consumer record while preserving denormalized historical usage.
 Disabling or revoking an OIDC Consumer does not disable the upstream identity. OIDC Consumers have no Consumer API
-key and cannot rotate one. External clients continue to authenticate with Consumer API keys.
+key and cannot rotate one. External clients may authenticate with Consumer API keys or the optional workload
+bearer schemes below.
+
+## Workload OIDC and managed identity
+
+Machine callers can use a generic OIDC access token or a Microsoft Entra managed-identity token. Configure the
+independent `Authentication:Workload:Oidc` or `Authentication:Workload:ManagedIdentity` section in
+`src/AiProxy.Api/appsettings.json` (prefer environment variables for deployment values). Set an exact HTTPS
+authority and audience, then enable the scheme. OIDC tokens require `aiproxy.invoke` in `scope`; managed identities
+require the `AiProxy.Invoke` application role by default. Both values are configurable.
+
+A valid token is not sufficient by itself. Pre-enroll the OIDC `iss` + `sub` pair or managed identity `tid` + `oid`
+pair on the Consumers page or through the configuration API. Local disable/revoke, model allow-lists, and usage
+attribution then work exactly as they do for API-key Consumers. Workload identities are never auto-provisioned.
 
 The static Admin API Key is a disabled-by-default migration/break-glass path. Set
 `Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration. Browser sessions require the
@@ -199,6 +212,19 @@ Create a consumer (admin-only) and use either independently rotatable key for in
 curl -X POST http://localhost:8080/api/v1/config/consumers `
   -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
   -d '{"name":"my-team"}'
+
+# Pre-enroll a generic OIDC workload identity.
+curl -X POST http://localhost:8080/api/v1/config/consumers/oidc `
+  -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
+  -d '{"name":"ci-agent","issuer":"https://identity.example.com","subject":"stable-subject"}'
+
+# Pre-enroll a Microsoft Entra managed identity using token tid and oid claims.
+curl -X POST http://localhost:8080/api/v1/config/consumers/managed-identity `
+  -H "X-Admin-Api-Key: <admin-key>" -H "Content-Type: application/json" `
+  -d '{"name":"batch-worker","tenantId":"00000000-0000-0000-0000-000000000000","objectId":"11111111-1111-1111-1111-111111111111"}'
+
+# Invoke with either configured workload scheme.
+curl http://localhost:8080/openai/v1/models -H "Authorization: Bearer <access-token>"
 
 # Rotate one slot without interrupting callers using the other slot.
 curl -X PUT "http://localhost:8080/api/v1/config/consumers/my-team/rotate?slot=2" `

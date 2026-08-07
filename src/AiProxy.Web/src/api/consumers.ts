@@ -9,6 +9,20 @@ export function createConsumer(name: string): Promise<CreatedConsumer> {
   return adminJson('/api/v1/config/consumers', { method: 'POST', body: JSON.stringify({ name }) });
 }
 
+export function createOidcConsumer(name: string, issuer: string, subject: string): Promise<Consumer> {
+  return adminJson('/api/v1/config/consumers/oidc', {
+    method: 'POST',
+    body: JSON.stringify({ name, issuer, subject }),
+  });
+}
+
+export function createManagedIdentityConsumer(name: string, tenantId: string, objectId: string): Promise<Consumer> {
+  return adminJson('/api/v1/config/consumers/managed-identity', {
+    method: 'POST',
+    body: JSON.stringify({ name, tenantId, objectId }),
+  });
+}
+
 export function rotateConsumerKey(name: string, slot: 1 | 2): Promise<RotatedConsumerKey> {
   return adminJson(`/api/v1/config/consumers/${encodeURIComponent(name)}/rotate?slot=${slot}`, { method: 'PUT' });
 }

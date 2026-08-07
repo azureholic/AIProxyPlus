@@ -24,6 +24,14 @@ public sealed class ConsumerRepository(AiProxyDbContext dbContext) : IConsumerRe
             c => c.OidcIssuer == oidcIssuer && c.OidcSubject == oidcSubject,
             cancellationToken);
 
+    public Task<Consumer?> GetByManagedIdentityAsync(
+        Guid tenantId,
+        Guid objectId,
+        CancellationToken cancellationToken = default) =>
+        Consumers.FirstOrDefaultAsync(
+            c => c.ManagedIdentityTenantId == tenantId && c.ManagedIdentityObjectId == objectId,
+            cancellationToken);
+
     public async Task<IReadOnlyList<Consumer>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await Consumers.OrderBy(c => c.Name).ToListAsync(cancellationToken);
 

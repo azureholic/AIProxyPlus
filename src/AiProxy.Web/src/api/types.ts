@@ -73,12 +73,16 @@ export interface Model {
 export interface Consumer {
   id: string;
   name: string;
-  authenticationType: 'apiKey' | 'oidc';
+  authenticationType: 'apiKey' | 'oidc' | 'managedIdentity';
   enabled: boolean;
   createdAt: string;
   revokedAt: string | null;
   hasApiKey1: boolean;
   hasApiKey2: boolean;
+  oidcIssuer: string | null;
+  oidcSubject: string | null;
+  managedIdentityTenantId: string | null;
+  managedIdentityObjectId: string | null;
   allowedModelIds: string[];
 }
 

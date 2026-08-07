@@ -31,12 +31,17 @@ public sealed class ConsumerConfiguration : IEntityTypeConfiguration<Consumer>
             .IsUnique()
             .HasFilter("\"OidcIssuer\" IS NOT NULL AND \"OidcSubject\" IS NOT NULL");
 
+        builder.HasIndex(c => new { c.ManagedIdentityTenantId, c.ManagedIdentityObjectId })
+            .IsUnique()
+            .HasFilter("\"ManagedIdentityTenantId\" IS NOT NULL AND \"ManagedIdentityObjectId\" IS NOT NULL");
+
         builder.ToTable(
             "consumers",
             table => table.HasCheckConstraint(
                 "CK_consumers_authentication_identity",
-                "(\"ApiKeyHash\" IS NOT NULL AND \"OidcIssuer\" IS NULL AND \"OidcSubject\" IS NULL) OR " +
-                "(\"ApiKeyHash\" IS NULL AND \"OidcIssuer\" IS NOT NULL AND \"OidcSubject\" IS NOT NULL)"));
+                "(\"ApiKeyHash\" IS NOT NULL AND \"OidcIssuer\" IS NULL AND \"OidcSubject\" IS NULL AND \"ManagedIdentityTenantId\" IS NULL AND \"ManagedIdentityObjectId\" IS NULL) OR " +
+                "(\"ApiKeyHash\" IS NULL AND \"OidcIssuer\" IS NOT NULL AND \"OidcSubject\" IS NOT NULL AND \"ManagedIdentityTenantId\" IS NULL AND \"ManagedIdentityObjectId\" IS NULL) OR " +
+                "(\"ApiKeyHash\" IS NULL AND \"OidcIssuer\" IS NULL AND \"OidcSubject\" IS NULL AND \"ManagedIdentityTenantId\" IS NOT NULL AND \"ManagedIdentityObjectId\" IS NOT NULL)"));
 
         builder.ToTable(
             "consumers",

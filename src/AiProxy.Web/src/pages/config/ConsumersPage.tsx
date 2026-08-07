@@ -10,8 +10,10 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
+  Dropdown,
   Field,
   Input,
+  Option,
   Spinner,
   Table,
   TableBody,
@@ -37,6 +39,8 @@ import { SecretRevealDialog } from '../../components/SecretRevealDialog';
 import {
   allowConsumerModel,
   createConsumer,
+  createManagedIdentityConsumer,
+  createOidcConsumer,
   deleteConsumerPermanently,
   disableConsumer,
   enableConsumer,
@@ -48,11 +52,32 @@ import {
 import { listModels } from '../../api/models';
 import type { Consumer, Model } from '../../api/types';
 
+function authenticationLabel(consumer: Consumer) {
+  if (consumer.authenticationType === 'managedIdentity') return 'Managed identity';
+  if (consumer.authenticationType === 'oidc') return 'OIDC';
+  return 'API key';
+}
+
+function authenticationDetails(consumer: Consumer) {
+  if (consumer.authenticationType === 'managedIdentity') {
+    return `${consumer.managedIdentityTenantId} / ${consumer.managedIdentityObjectId}`;
+  }
+  if (consumer.authenticationType === 'oidc') {
+    return `${consumer.oidcIssuer} / ${consumer.oidcSubject}`;
+  }
+  return undefined;
+}
+
 export function ConsumersPage() {
   const [consumers, setConsumers] = useState<Consumer[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
+  const [authenticationType, setAuthenticationType] = useState<'apiKey' | 'oidc' | 'managedIdentity'>('apiKey');
+  const [issuer, setIssuer] = useState('');
+  const [subject, setSubject] = useState('');
+  const [tenantId, setTenantId] = useState('');
+  const [objectId, setObjectId] = useState('');
   const [busy, setBusy] = useState(false);
   const [revealedKeys, setRevealedKeys] = useState<ReadonlyArray<{ label: string; value: string }> | null>(null);
   const [models, setModels] = useState<Model[]>([]);
@@ -86,6 +111,29 @@ export function ConsumersPage() {
                   <Field label="Name">
                     <Input value={newName} onChange={(_, data) => setNewName(data.value)} />
                   </Field>
+                  <Field label="Authentication">
+                    <Dropdown
+                      value={authenticationType === 'apiKey' ? 'API key' : authenticationType === 'oidc' ? 'OIDC' : 'Managed identity'}
+                      selectedOptions={[authenticationType]}
+                      onOptionSelect={(_, data) => setAuthenticationType(data.optionValue as typeof authenticationType)}
+                    >
+                      <Option value="apiKey">API key</Option>
+                      <Option value="oidc">OIDC</Option>
+                      <Option value="managedIdentity">Managed identity</Option>
+                    </Dropdown>
+                  </Field>
+                  {authenticationType === 'oidc' && (
+                    <>
+                      <Field label="Issuer"><Input value={issuer} onChange={(_, data) => setIssuer(data.value)} /></Field>
+                      <Field label="Subject"><Input value={subject} onChange={(_, data) => setSubject(data.value)} /></Field>
+                    </>
+                  )}
+                  {authenticationType === 'managedIdentity' && (
+                    <>
+                      <Field label="Tenant ID"><Input value={tenantId} onChange={(_, data) => setTenantId(data.value)} /></Field>
+                      <Field label="Object ID"><Input value={objectId} onChange={(_, data) => setObjectId(data.value)} /></Field>
+                    </>
+                  )}
                   <ErrorBanner error={error} />
                 </DialogContent>
                 <DialogActions>
@@ -94,19 +142,31 @@ export function ConsumersPage() {
                   </DialogTrigger>
                   <Button
                     appearance="primary"
-                    disabled={busy || !newName.trim()}
+                    disabled={busy || !newName.trim() ||
+                      (authenticationType === 'oidc' && (!issuer.trim() || !subject.trim())) ||
+                      (authenticationType === 'managedIdentity' && (!tenantId.trim() || !objectId.trim()))}
                     icon={busy ? <Spinner size="tiny" /> : undefined}
                     onClick={async () => {
                       setBusy(true);
                       setError(null);
                       try {
-                        const result = await createConsumer(newName.trim());
+                        if (authenticationType === 'oidc') {
+                          await createOidcConsumer(newName.trim(), issuer.trim(), subject.trim());
+                        } else if (authenticationType === 'managedIdentity') {
+                          await createManagedIdentityConsumer(newName.trim(), tenantId.trim(), objectId.trim());
+                        } else {
+                          const result = await createConsumer(newName.trim());
+                          setRevealedKeys([
+                            { label: 'Key 1', value: result.apiKey1 },
+                            { label: 'Key 2', value: result.apiKey2 },
+                          ]);
+                        }
                         setNewName('');
+                        setIssuer('');
+                        setSubject('');
+                        setTenantId('');
+                        setObjectId('');
                         setCreateOpen(false);
-                        setRevealedKeys([
-                          { label: 'Key 1', value: result.apiKey1 },
-                          { label: 'Key 2', value: result.apiKey2 },
-                        ]);
                         reload();
                       } catch (err) {
                         setError(err);
@@ -150,7 +210,11 @@ export function ConsumersPage() {
                 <TableCell>
                   <TableCellLayout>{consumer.name}</TableCellLayout>
                 </TableCell>
-                <TableCell>{consumer.authenticationType === 'oidc' ? 'OIDC' : 'API key'}</TableCell>
+                <TableCell>
+                  <TableCellLayout description={authenticationDetails(consumer)}>
+                    {authenticationLabel(consumer)}
+                  </TableCellLayout>
+                </TableCell>
                 <TableCell>
                   <Badge color={consumer.revokedAt ? 'danger' : consumer.enabled ? 'success' : 'warning'}>
                     {consumer.revokedAt ? 'Revoked' : consumer.enabled ? 'Enabled' : 'Disabled'}
@@ -166,7 +230,7 @@ export function ConsumersPage() {
                       icon={<ArrowRotateClockwiseRegular />}
                       aria-label={`Rotate key ${slot} for ${consumer.name}`}
                       title={`Rotate key ${slot}`}
-                      disabled={consumer.revokedAt !== null || consumer.authenticationType === 'oidc'}
+                      disabled={consumer.revokedAt !== null || consumer.authenticationType !== 'apiKey'}
                       onClick={async () => {
                         try {
                           const result = await rotateConsumerKey(consumer.name, slot);
@@ -214,8 +278,8 @@ export function ConsumersPage() {
                         />
                       }
                       title={`Revoke '${consumer.name}'?`}
-                      message={consumer.authenticationType === 'oidc'
-                        ? "This permanently revokes local access and cannot be undone. The user's identity-provider account is unchanged. Historical usage records are preserved."
+                      message={consumer.authenticationType !== 'apiKey'
+                        ? "This permanently revokes local access and cannot be undone. The external identity is unchanged. Historical usage records are preserved."
                         : "This permanently invalidates both API keys and cannot be undone. Historical usage records are preserved."}
                       confirmLabel="Revoke"
                       onConfirm={async () => {
