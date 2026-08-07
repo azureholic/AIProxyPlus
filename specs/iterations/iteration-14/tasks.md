@@ -65,4 +65,4 @@ defects found during manual testing and keeps each repair independently reproduc
   consumer, model, provider, and endpoint attribution.
 - [x] Prove multiple responses on one connection create separate records with one session id while duplicates and
   invalid events create no records.
-- [ ] Confirm a live Voice Playground response appears in the Usage dashboard.
+- [x] Confirm a live Voice Playground response appears in the Usage dashboard.
