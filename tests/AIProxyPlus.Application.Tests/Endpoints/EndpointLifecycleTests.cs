@@ -72,6 +72,40 @@ public class EndpointLifecycleTests
         await act.Should().ThrowAsync<ValidationException>();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(Endpoint.MaxTimeoutSeconds + 1)]
+    [InlineData(int.MaxValue)]
+    public async Task CreateAsync_WithTimeoutSecondsOutOfRange_ThrowsValidationException(int timeoutSeconds)
+    {
+        var handler = new CreateEndpointHandler(_repository, _secretResolver, new CreateEndpointValidator());
+
+        var act = () => handler.HandleAsync(new CreateEndpointCommand(
+            "OpenAI primary", "https://api.openai.com", AuthMode.ApiKey, "sk-test", TimeoutSeconds: timeoutSeconds));
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _repository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(Endpoint.MaxTimeoutSeconds + 1)]
+    [InlineData(int.MaxValue)]
+    public async Task UpdateAsync_WithTimeoutSecondsOutOfRange_ThrowsValidationException(int timeoutSeconds)
+    {
+        var endpoint = Endpoint.Create(
+            Guid.NewGuid(), "Foundry primary", "https://old.example.com", AuthMode.ManagedIdentity,
+            managedIdentityScope: "https://cognitiveservices.azure.com/.default");
+        _repository.GetByIdAsync(endpoint.Id, Arg.Any<CancellationToken>()).Returns(endpoint);
+        var handler = new UpdateEndpointConfigurationHandler(_repository, new UpdateEndpointConfigurationValidator());
+
+        var act = () => handler.HandleAsync(new UpdateEndpointConfigurationCommand(
+            endpoint.Id, "Foundry shared", "https://new.example.com", "https://ai.azure.com/.default",
+            timeoutSeconds, 4, "72f988bf-86f1-41af-91ab-2d7cd011db47"));
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+    }
     [Fact]
     public async Task UpdateAsync_WithManagedIdentitySettings_UpdatesReusableEndpoint()
     {

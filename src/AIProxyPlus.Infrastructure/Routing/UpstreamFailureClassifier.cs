@@ -28,8 +28,9 @@ public static class UpstreamFailureClassifier
     /// A transport failure that proves the request never reached the upstream. HttpRequestError.ConnectionError alone
     /// is not enough: .NET also reports a connection that was reset after the request was sent as ConnectionError,
     /// so it counts only when the socket error says no connection was made. A connect timeout surfaces as a
-    /// TaskCanceledException wrapping a TimeoutException; routing enforces no response timeout, so that is the only
-    /// timeout there is. A response timeout, if one is ever added, would be ambiguous and must not reuse this check.
+    /// TaskCanceledException wrapping a TimeoutException. The per-attempt response timeout (Endpoint.TimeoutSeconds)
+    /// is enforced by the caller with its own token, so it is never a TimeoutException cause and must be treated as
+    /// ambiguous: the request was sent and may have been processed.
     /// </summary>
     public static bool FailedBeforeRequestWasSent(Exception exception) => exception switch
     {

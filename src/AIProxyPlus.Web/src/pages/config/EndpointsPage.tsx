@@ -53,6 +53,13 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PageContainer, PageHeader } from '../../components/PageLayout';
 
 const authModes: AuthMode[] = ['ApiKey', 'ManagedIdentity'];
+// Mirrors Endpoint.MaxTimeoutSeconds on the server, which rejects values outside 1-3600.
+export const MAX_TIMEOUT_SECONDS = 3600;
+
+function isValidTimeout(seconds: number) {
+  return Number.isInteger(seconds) && seconds >= 1 && seconds <= MAX_TIMEOUT_SECONDS;
+}
+
 const emptyEndpoint: CreateEndpointInput = {
   name: '',
   baseUrl: '',
@@ -294,7 +301,7 @@ export function EndpointsPage() {
               <Button appearance="secondary" onClick={() => setEditing(null)}>Cancel</Button>
               <Button
                 appearance="primary"
-                disabled={busy || !editing?.name.trim() || !editing.baseUrl.trim() || editing.timeoutSeconds < 1 || editing.maxRetries < 0}
+                disabled={busy || !editing?.name.trim() || !editing.baseUrl.trim() || !isValidTimeout(editing.timeoutSeconds) || editing.maxRetries < 0}
                 onClick={() => editing && run(
                   () => updateEndpointConfig(editing.id, {
                     name: editing.name.trim(),
@@ -465,7 +472,14 @@ function EndpointFields<T extends CreateEndpointInput | EndpointConfig>({
           <Field label="Tenant ID"><Input value={value.managedIdentityTenantId ?? ''} onChange={(_, data) => update('managedIdentityTenantId', data.value)} /></Field>
         </>
       )}
-      <Field label="Timeout (seconds)"><Input type="number" value={String(value.timeoutSeconds)} onChange={(_, data) => update('timeoutSeconds', (Number(data.value) || 0) as T['timeoutSeconds'])} /></Field>
+      <Field
+        label="Timeout (seconds)"
+        hint={`1 to ${MAX_TIMEOUT_SECONDS}`}
+        validationState={isValidTimeout(value.timeoutSeconds) ? 'none' : 'error'}
+        validationMessage={isValidTimeout(value.timeoutSeconds) ? undefined : `Enter a whole number from 1 to ${MAX_TIMEOUT_SECONDS}.`}
+      >
+        <Input type="number" min={1} max={MAX_TIMEOUT_SECONDS} value={String(value.timeoutSeconds)} onChange={(_, data) => update('timeoutSeconds', (Number(data.value) || 0) as T['timeoutSeconds'])} />
+      </Field>
       <Field label="Maximum retries"><Input type="number" value={String(value.maxRetries)} onChange={(_, data) => update('maxRetries', (Number(data.value) || 0) as T['maxRetries'])} /></Field>
     </>
   );
@@ -474,7 +488,7 @@ function EndpointFields<T extends CreateEndpointInput | EndpointConfig>({
 function canCreate(endpoint: CreateEndpointInput) {
   return endpoint.name.trim() !== ''
     && endpoint.baseUrl.trim() !== ''
-    && endpoint.timeoutSeconds >= 1
+    && isValidTimeout(endpoint.timeoutSeconds)
     && endpoint.maxRetries >= 0
     && (endpoint.authMode !== 'ApiKey' || Boolean(endpoint.apiKeyPlaintext))
     && (endpoint.authMode !== 'ManagedIdentity' || Boolean(endpoint.managedIdentityScope?.trim()));

@@ -68,6 +68,33 @@ describe('EndpointsPage', () => {
     });
   });
 
+  it('keeps Create disabled for a timeout outside 1-3600 and explains the limit', async () => {
+    const fetchMock = vi.fn(async (url: string) => (
+      url === '/api/v1/auth/antiforgery' ? jsonResponse({ token: 'csrf-token' }) : jsonResponse([])
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<EndpointsPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'New endpoint' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'shared-openai' } });
+    fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://api.openai.com' } });
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'secret-value' } });
+    const timeout = screen.getByLabelText(/Timeout \(seconds\)/);
+    const create = screen.getByRole('button', { name: 'Create', hidden: true });
+
+    fireEvent.change(timeout, { target: { value: '3601' } });
+    expect(create).toBeDisabled();
+    expect(screen.getByText('Enter a whole number from 1 to 3600.')).toBeInTheDocument();
+
+    fireEvent.change(timeout, { target: { value: '0' } });
+    expect(create).toBeDisabled();
+
+    fireEvent.change(timeout, { target: { value: '3600' } });
+    expect(create).toBeEnabled();
+    expect(screen.queryByText('Enter a whole number from 1 to 3600.')).not.toBeInTheDocument();
+  });
   it('sets a Secondary credential without retaining its plaintext in the UI', async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === '/api/v1/auth/antiforgery') return jsonResponse({ token: 'csrf-token' });

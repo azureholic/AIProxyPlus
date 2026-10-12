@@ -138,6 +138,38 @@ public class EndpointTests
         act.Should().Throw<DomainException>().WithMessage("*TimeoutSeconds*");
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(Endpoint.MaxTimeoutSeconds)]
+    public void UpdateTimeoutSeconds_AtTheBounds_Succeeds(int seconds)
+    {
+        var endpoint = CreateValidApiKeyEndpoint();
+
+        endpoint.UpdateTimeoutSeconds(seconds);
+
+        endpoint.TimeoutSeconds.Should().Be(seconds);
+    }
+
+    [Fact]
+    public void UpdateTimeoutSeconds_AboveTheMaximum_Throws()
+    {
+        var endpoint = CreateValidApiKeyEndpoint();
+
+        var act = () => endpoint.UpdateTimeoutSeconds(Endpoint.MaxTimeoutSeconds + 1);
+
+        act.Should().Throw<DomainException>().WithMessage("*TimeoutSeconds*");
+    }
+
+    [Fact]
+    public void Create_WithTimeoutSecondsAboveTheMaximum_Throws()
+    {
+        var act = () => Endpoint.Create(
+            Guid.NewGuid(), "Primary", "https://api.openai.com", AuthMode.ApiKey, secretRef: "x",
+            timeoutSeconds: int.MaxValue);
+
+        act.Should().Throw<DomainException>().WithMessage("*TimeoutSeconds*");
+    }
+
     [Fact]
     public void UpdateMaxRetries_WithValidValue_Succeeds()
     {

@@ -6,6 +6,9 @@ namespace AIProxyPlus.Domain.Entities;
 /// <summary>A reusable backend target and its outbound credential configuration.</summary>
 public sealed class Endpoint
 {
+    /// <summary>Upper bound for <see cref="TimeoutSeconds"/>; also keeps the value within what a timer can represent.</summary>
+    public const int MaxTimeoutSeconds = 3600;
+
     public Guid Id { get; private set; }
     public string Name { get; private set; }
     public string BaseUrl { get; private set; }
@@ -72,9 +75,9 @@ public sealed class Endpoint
             throw new DomainException("Endpoint.BaseUrl must not be empty.");
         }
 
-        if (timeoutSeconds < 1)
+        if (timeoutSeconds is < 1 or > MaxTimeoutSeconds)
         {
-            throw new DomainException("Endpoint.TimeoutSeconds must be at least 1.");
+            throw new DomainException($"Endpoint.TimeoutSeconds must be between 1 and {MaxTimeoutSeconds}.");
         }
 
         if (maxRetries < 0)
@@ -126,9 +129,9 @@ public sealed class Endpoint
 
     public void UpdateTimeoutSeconds(int timeoutSeconds)
     {
-        if (timeoutSeconds < 1)
+        if (timeoutSeconds is < 1 or > MaxTimeoutSeconds)
         {
-            throw new DomainException("Endpoint.TimeoutSeconds must be at least 1.");
+            throw new DomainException($"Endpoint.TimeoutSeconds must be between 1 and {MaxTimeoutSeconds}.");
         }
 
         TimeoutSeconds = timeoutSeconds;

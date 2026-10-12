@@ -305,10 +305,17 @@ public sealed class ProxyRoutingService(
             using var backendCallActivity = AIProxyPlusActivitySource.Instance.StartActivity("backend_call");
             backendCallActivity?.SetTag("endpoint", endpoint.BaseUrl);
             backendCallActivity?.SetTag("attempt", attempt);
+
+            // Endpoint.TimeoutSeconds bounds the wait for response headers. It stops counting once they arrive so a
+            // long streamed response is never cut off.
+            using var responseTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            // Clamped so a value persisted before the upper bound existed cannot exceed what a timer accepts.
+            responseTimeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(endpoint.TimeoutSeconds, 1, Endpoint.MaxTimeoutSeconds)));
             try
             {
                 using var request = DirectHttpProxy.BuildRequest(httpContext, targetUri, bodyBytes, credential);
-                response = await httpClient.SendAsync(request, cancellationToken);
+                response = await httpClient.SendAsync(request, responseTimeout.Token);
+                responseTimeout.CancelAfter(Timeout.InfiniteTimeSpan);
             }
             catch (HttpRequestException exception)
             {
@@ -337,7 +344,9 @@ public sealed class ProxyRoutingService(
             }
             catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
-                if (UpstreamFailureClassifier.FailedBeforeRequestWasSent(exception))
+                // Our own response timeout firing is ambiguous: the request was sent and may have been processed. Only
+                // the handler's connect timeout (a TimeoutException cause) proves nothing was sent.
+                if (!responseTimeout.IsCancellationRequested && UpstreamFailureClassifier.FailedBeforeRequestWasSent(exception))
                 {
                     if (fallbackAttempted && activeCredentialRejection is not null)
                     {

@@ -33,12 +33,12 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl, int priority, int maxRetries = 0)
+    private static ModelEndpoint NewApiKeyEndpoint(Guid modelId, string baseUrl, int priority, int maxRetries = 0, int timeoutSeconds = 100)
     {
         var endpointId = Guid.NewGuid();
         var endpoint = Endpoint.Create(
             endpointId, $"load-balancing-test-endpoint-{endpointId:N}", baseUrl, AuthMode.ApiKey,
-            secretRef: "endpoints/x", maxRetries: maxRetries);
+            secretRef: "endpoints/x", maxRetries: maxRetries, timeoutSeconds: timeoutSeconds);
         var route = ApiRoute.Create(Guid.NewGuid(), "Native OpenAI", Provider.OpenAI, "/openai/v1");
         return ModelEndpoint.Create(Guid.NewGuid(), modelId, endpoint, route, priority, enabled: true);
     }
@@ -274,14 +274,17 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
                 }
 
                 Interlocked.Increment(ref acceptedConnections);
-                using (client)
+                _ = Task.Run(async () =>
                 {
-                    var stream = client.GetStream();
-                    await stream.ReadAsync(new byte[4096]);
-                    await stream.WriteAsync(
-                        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 1000\r\n\r\npartial"u8.ToArray());
-                    await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(10)));
-                }
+                    using (client)
+                    {
+                        var stream = client.GetStream();
+                        await stream.ReadAsync(new byte[4096]);
+                        await stream.WriteAsync(
+                            "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 1000\r\n\r\npartial"u8.ToArray());
+                        await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+                    }
+                });
             }
         });
 
@@ -318,6 +321,118 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
         finally
         {
             release.TrySetResult();
+            listener.Stop();
+            await serverTask;
+        }
+    }
+    [Fact]
+    public async Task UpstreamThatNeverAnswers_TimesOutAtTheEndpointTimeout_WithoutRetryOrFailover()
+    {
+        // The request was sent and then nothing came back. The upstream may still be processing it, so the timeout
+        // is ambiguous: no retry, no failover, and the endpoint is skipped by the next request.
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var acceptedConnections = 0;
+        var release = new TaskCompletionSource();
+        var serverTask = Task.Run(async () =>
+        {
+            while (true)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync();
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+
+                Interlocked.Increment(ref acceptedConnections);
+                // Each connection stalls on its own task so the loop keeps accepting and counting every attempt.
+                _ = Task.Run(async () =>
+                {
+                    using (client)
+                    {
+                        await client.GetStream().ReadAsync(new byte[4096]);
+                        await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+                    }
+                });
+            }
+        });
+
+        try
+        {
+            var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+            var model = Model.Create(Guid.NewGuid(), modelName);
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, $"http://127.0.0.1:{port}", priority: 1, maxRetries: 3, timeoutSeconds: 1));
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+            _factory.Models.Seed(model);
+
+            _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+                .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var first = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+            stopwatch.Stop();
+
+            first.IsSuccessStatusCode.Should().BeFalse();
+            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "the 1 second endpoint timeout must apply");
+            acceptedConnections.Should().Be(1, "the same endpoint must not be retried");
+            _backend2.LogEntries.Should().BeEmpty("the request must not be failed over to another endpoint");
+
+            var second = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+
+            second.StatusCode.Should().Be(HttpStatusCode.OK, "the timed-out endpoint was marked unhealthy");
+            acceptedConnections.Should().Be(1);
+        }
+        finally
+        {
+            release.TrySetResult();
+            listener.Stop();
+            await serverTask;
+        }
+    }
+
+    [Fact]
+    public async Task ResponseBodyArrivingAfterTheEndpointTimeout_IsNotCutOff()
+    {
+        // The timeout bounds the wait for response headers only. Headers arrive at once; the body trickles in later.
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var serverTask = Task.Run(async () =>
+        {
+            try
+            {
+                using var client = await listener.AcceptTcpClientAsync();
+                var stream = client.GetStream();
+                await stream.ReadAsync(new byte[4096]);
+                await stream.WriteAsync(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n"u8.ToArray());
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                await stream.WriteAsync("{\"id\":\"late\"}"u8.ToArray());
+            }
+            catch (Exception)
+            {
+            }
+        });
+
+        try
+        {
+            var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+            var model = Model.Create(Guid.NewGuid(), modelName);
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, $"http://127.0.0.1:{port}", priority: 1, timeoutSeconds: 1));
+            _factory.Models.Seed(model);
+
+            var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadAsStringAsync()).Should().Be("{\"id\":\"late\"}", "the whole body must arrive intact");
+        }
+        finally
+        {
             listener.Stop();
             await serverTask;
         }
