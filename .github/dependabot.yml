@@ -1,4 +1,10 @@
 version: 2
+registries:
+  microsoft-cfs-npm:
+    type: npm-registry
+    url: https://packagefeedproxy.microsoft.io/npm/
+    replaces-base: true
+
 updates:
   - package-ecosystem: "nuget"
     directory: "/"
@@ -11,3 +17,5 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    registries:
+      - microsoft-cfs-npm

@@ -1,6 +1,6 @@
 FROM node:22-alpine AS frontend-build
 WORKDIR /src/AIProxyPlus.Web
-COPY src/AIProxyPlus.Web/package.json src/AIProxyPlus.Web/package-lock.json ./
+COPY src/AIProxyPlus.Web/package.json src/AIProxyPlus.Web/package-lock.json src/AIProxyPlus.Web/.npmrc ./
 RUN npm ci
 COPY src/AIProxyPlus.Web/ ./
 RUN npm run build

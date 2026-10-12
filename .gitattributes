@@ -1,1 +1,2 @@
 src/AIProxyPlus.Infrastructure/Persistence/Migrations/*.cs text eol=lf
+src/AIProxyPlus.Web/.npmrc text eol=lf
