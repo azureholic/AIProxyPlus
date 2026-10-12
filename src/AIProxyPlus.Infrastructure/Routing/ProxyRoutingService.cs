@@ -411,7 +411,19 @@ public sealed class ProxyRoutingService(
                     // The upstream may already have processed the request (state created, tokens billed), so a
                     // replay here, to this endpoint or another, could duplicate the operation. Stop and let the
                     // caller see the upstream's own error.
-                    var ambiguousFailure = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
+                    UpstreamFailureSnapshot ambiguousFailure;
+                    try
+                    {
+                        ambiguousFailure = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        // The caller hung up while the error body was being read. The endpoint's 5xx is already
+                        // known, so it must still be recorded as failed rather than lost to the cancellation.
+                        ambiguousFailure = new UpstreamFailureSnapshot(
+                            statusCode, new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase), string.Empty);
+                    }
+
                     return new ForwardOutcome(false, statusCode, null, null, ambiguousFailure, MayHaveBeenProcessed: true);
                 }
 

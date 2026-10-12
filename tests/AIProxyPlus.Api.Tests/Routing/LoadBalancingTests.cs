@@ -250,6 +250,79 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task CallerHangsUpWhileReadingAnAmbiguousErrorBody_StillMarksTheEndpointUnhealthy()
+    {
+        // The upstream answers 500 and then stalls mid-body. The caller gives up while the proxy is reading it. The
+        // endpoint's 5xx is already known, so the cancellation must not erase it: the next request skips the endpoint.
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var acceptedConnections = 0;
+        var release = new TaskCompletionSource();
+        var serverTask = Task.Run(async () =>
+        {
+            while (true)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync();
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+
+                Interlocked.Increment(ref acceptedConnections);
+                using (client)
+                {
+                    var stream = client.GetStream();
+                    await stream.ReadAsync(new byte[4096]);
+                    await stream.WriteAsync(
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 1000\r\n\r\npartial"u8.ToArray());
+                    await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+                }
+            }
+        });
+
+        try
+        {
+            var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+            var model = Model.Create(Guid.NewGuid(), modelName);
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, $"http://127.0.0.1:{port}", priority: 1));
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+            _factory.Models.Seed(model);
+
+            _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+                .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
+
+            using var client = _factory.CreateClient();
+            using var cancellation = new CancellationTokenSource();
+            var firstRequest = client.PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName), cancellation.Token);
+            for (var attempt = 0; attempt < 100 && Volatile.Read(ref acceptedConnections) == 0; attempt++)
+            {
+                await Task.Delay(20);
+            }
+
+            await Task.Delay(300);
+            cancellation.Cancel();
+            await Task.WhenAny(firstRequest);
+            release.TrySetResult();
+            await Task.Delay(500);
+
+            var second = await client.PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+
+            second.StatusCode.Should().Be(HttpStatusCode.OK, "the failed endpoint was marked unhealthy despite the caller hanging up");
+            acceptedConnections.Should().Be(1, "the unhealthy endpoint must not be contacted again");
+        }
+        finally
+        {
+            release.TrySetResult();
+            listener.Stop();
+            await serverTask;
+        }
+    }
+    [Fact]
     public async Task TransportFailureAfterConnecting_IsNotRetriedOrFailedOver()
     {
         // The server accepts the connection and reads the request, then closes without answering. The request may
