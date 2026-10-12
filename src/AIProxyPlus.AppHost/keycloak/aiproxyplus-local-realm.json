@@ -1,0 +1,60 @@
+{
+  "realm": "aiproxyplus-local",
+  "enabled": true,
+  "displayName": "AIProxyPlus Local Development",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 28800,
+  "clients": [
+    {
+      "clientId": "aiproxyplus-web",
+      "name": "AIProxyPlus Web",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${AIPROXYPLUS_OIDC_CLIENT_SECRET}",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/signin-oidc",
+        "http://localhost:5205/signin-oidc",
+        "https://localhost:7194/signin-oidc"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:5205",
+        "https://localhost:7194"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/signout-callback-oidc##http://localhost:5205/signout-callback-oidc##https://localhost:7194/signout-callback-oidc"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"]
+    }
+  ],
+  "users": [
+    {
+      "id": "6c1b7227-3af9-445d-bc8f-613c723e9c49",
+      "username": "proxy-admin",
+      "enabled": true,
+      "email": "proxy-admin@local.invalid",
+      "emailVerified": true,
+      "firstName": "Proxy",
+      "lastName": "Administrator",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${AIPROXYPLUS_ADMIN_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

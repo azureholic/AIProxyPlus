@@ -19,7 +19,7 @@ provider SDK or provider-specific branch in the application.
 Every user allowed to log into the frontend is an administrator in Iteration 4. This deliberately avoids portable
 role/group mapping, which OIDC does not standardize, but moves the authorization boundary to **who the provider
 allows to sign in to this OIDC client**. If the provider allows every user to access the client, every one of those
-users becomes an AI Proxy administrator. Deployment documentation and tests must make that consequence explicit;
+users becomes an AIProxyPlus administrator. Deployment documentation and tests must make that consequence explicit;
 restricting login eligibility at the provider is not optional in a shared identity domain.
 
 OIDC users still need to become Consumers because every inference usage record requires a real Consumer ID. The
@@ -102,7 +102,7 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
 - [x] Define a provider-neutral configuration contract using OIDC terms (`authority`, `issuer`, `clientId`,
   `clientSecretRef`, `scopes`, `usernameClaim`, `getClaimsFromUserInfo`, callback/logout paths, cookie settings, and
   validated additional authorization parameters). Do not add provider product concepts to Domain or Application.
-- [x] Make `AiProxy.AppHost` the single owner of deploy-time configuration. API and frontend projects must not
+- [x] Make `AIProxyPlus.AppHost` the single owner of deploy-time configuration. API and frontend projects must not
   duplicate provider settings in their own `appsettings*.json` files; AppHost reads configuration, resolves secret
   parameters, and supplies each child resource only the values it needs through environment variables. Document
   the environment-variable names as the contract between AppHost and each resource.
@@ -133,7 +133,7 @@ opaque access-token behavior are irrelevant to the BFF session and remain outsid
 
 ## Phase 1 — API authentication and authorization foundation
 
-- [x] Add ASP.NET Core OpenID Connect and cookie authentication in `AiProxy.Api` using standards-based
+- [x] Add ASP.NET Core OpenID Connect and cookie authentication in `AIProxyPlus.Api` using standards-based
   discovery/JWKS metadata; bind and validate options at startup, resolve the client secret through the existing
   secret boundary, fail fast on incomplete or unsafe production configuration, and keep all protocol wiring in Api.
 - [x] Add an `AdminAccess` authorization policy for Config and Usage routes. A valid token from the configured
@@ -227,7 +227,7 @@ inference, or the complete provider conformance matrix.
   Chat/Images inference, Realtime ticket inference, username attribution, logout, and unauthenticated redirect.
 - [ ] Publish and exercise a provider-onboarding conformance checklist that operators can run against their chosen
   provider without source changes. Keep CI deterministic with Keycloak; do not make CI depend on a cloud tenant.
-- [x] Run the focused test projects first, then `dotnet test AiProxy.sln`, `npm test`, and `npm run build`; include
+- [x] Run the focused test projects first, then `dotnet test AIProxyPlus.sln`, `npm test`, and `npm run build`; include
   architecture tests because authentication responsibilities and dependencies cross Api/Application/Infrastructure.
 - [ ] Perform a security review before enabling session authentication by default, including dependency audit and
   inspection of application, reverse-proxy, and browser logs for credential leakage, CSRF, cookie scope, session
@@ -235,15 +235,15 @@ inference, or the complete provider conformance matrix.
 
 ## Phase 5 — Deployment and documentation
 
-- [x] Add a vendor-neutral provider example to `src/AiProxy.AppHost/appsettings.json` using this intended shape
+- [x] Add a vendor-neutral provider example to `src/AIProxyPlus.AppHost/appsettings.json` using this intended shape
   (illustrative values only; the task implementation may refine names once the options type is finalized):
 
   ```json
   {
     "Authentication": {
       "Oidc": {
-        "Authority": "https://identity.example.com/realms/ai-proxy",
-        "ClientId": "ai-proxy-web",
+        "Authority": "https://identity.example.com/realms/aiproxyplus",
+        "ClientId": "aiproxyplus-web",
         "ClientSecretParameter": "oidc-client-secret",
         "Scopes": ["openid", "profile"],
         "UsernameClaim": "preferred_username",
@@ -267,17 +267,17 @@ inference, or the complete provider conformance matrix.
   secret, scopes, claim mapping, and callback settings. The frontend receives no provider configuration or secret;
   under the BFF design it calls same-origin login/session/antiforgery endpoints. If future frontend runtime settings
   are needed, AppHost must supply them through its resource environment and an explicit runtime-config mechanism,
-  not through duplicated `AiProxy.Web` configuration files or Vite build-time constants.
-- [x] Add a pinned Keycloak container to `AiProxy.AppHost` for local OIDC testing. Run it in development/import
+  not through duplicated `AIProxyPlus.Web` configuration files or Vite build-time constants.
+- [x] Add a pinned Keycloak container to `AIProxyPlus.AppHost` for local OIDC testing. Run it in development/import
   mode, expose a stable HTTP endpoint, persist its data in a named volume, use
   `WithLifetime(ContainerLifetime.Persistent)`, and make the API wait for Keycloak readiness. Pass Keycloak's
   issuer/authority, client ID, and server-side client-secret reference to the API from the same source so
   AppHost-assigned endpoints do not drift from OIDC configuration.
-- [x] Add an importable `ai-proxy-local` development realm configuration containing:
-  - a confidential `ai-proxy-web` client using Authorization Code flow + PKCE (`S256`), with direct-access grants,
+- [x] Add an importable `aiproxyplus-local` development realm configuration containing:
+  - a confidential `aiproxyplus-web` client using Authorization Code flow + PKCE (`S256`), with direct-access grants,
     implicit flow, and service accounts disabled and client authentication enabled;
   - exact local callback and post-logout redirect URIs for both the Vite proxy development path and the SPA served
-    by `AiProxy.Api`, with no wildcard origins or redirects;
+    by `AIProxyPlus.Api`, with no wildcard origins or redirects;
   - ID-token claims `iss`, `aud`, `sub`, and `preferred_username` satisfying the generic validation contract; and
   - short development ID-token and application-session lifetimes suitable for exercising expiry behavior.
 - [x] Supply the local Keycloak client credential through an Aspire secret parameter/user secret or idempotent
@@ -297,7 +297,7 @@ inference, or the complete provider conformance matrix.
   session, call Config and Usage APIs with antiforgery protection, list/select all enabled models, run Chat/Images inference without
   a Consumer API Key, receive usage attribution as `proxy-admin`, obtain and consume a Realtime ticket, log out,
   and log back in after the AppHost has been stopped and restarted.
-- [ ] Update `AiProxy.AppHost` so the Postgres and Vault container resources use Aspire's persistent container
+- [ ] Update `AIProxyPlus.AppHost` so the Postgres and Vault container resources use Aspire's persistent container
   lifetime (`WithLifetime(ContainerLifetime.Persistent)`) and stable named volumes. Verify that stopping or closing
   the AppHost leaves both containers running, restarting the AppHost reuses them, and existing database rows and
   Vault secrets remain available. Postgres already uses `WithDataVolume`; do not mistake Vault's current

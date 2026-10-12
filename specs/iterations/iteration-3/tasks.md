@@ -42,9 +42,9 @@ container as the API (no separate frontend host/deployment) — covering:
   `POST /api/v1/config/consumers`. Added as a minimal page (list/create/rotate/revoke) purely as the supporting
   infrastructure the Playground needs, not as a first-class requested feature — kept intentionally small.
 - **Single-container serving pattern**: Vite's build output (`npm run build`) is written *directly* into
-  `src/AiProxy.Api/wwwroot` (via `build.outDir`), exactly like copying static files into the ASP.NET project
+  `src/AIProxyPlus.Api/wwwroot` (via `build.outDir`), exactly like copying static files into the ASP.NET project
   per the requested pattern. `wwwroot/` is gitignored (contents only, like `logs/`/`test-results/`) since it's
-  a build artifact, not source. `AiProxy.Api` serves it via `UseDefaultFiles`/`UseStaticFiles` +
+  a build artifact, not source. `AIProxyPlus.Api` serves it via `UseDefaultFiles`/`UseStaticFiles` +
   `MapFallbackToFile("index.html")` for client-side routing, registered so it never shadows the existing
   `/openai/*`, `/anthropic/*`, `/api/*`, `/health/*`, `/openapi/*`/`/scalar` routes (those are all more
   specific than the fallback and win regardless of registration order under endpoint routing — verified, not
@@ -74,7 +74,7 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 1 — Frontend scaffold: project, shell, routing, API client
 
-- [x] `src/AiProxy.Web/`: Vite + React + TypeScript project (`npm create vite@latest`), FluentUI v9 installed
+- [x] `src/AIProxyPlus.Web/`: Vite + React + TypeScript project (`npm create vite@latest`), FluentUI v9 installed
   (`@fluentui/react-components`, `@fluentui/react-icons`), `react-router-dom`.
 - [x] App shell (`layout/AppShell.tsx`): `FluentProvider` (light theme), left `NavDrawer` sidebar with the
   top-level sections — Config (Models, Consumers), Playground (Chat, Images, Voice), Dashboard
@@ -97,13 +97,13 @@ container as the API (no separate frontend host/deployment) — covering:
 
 ## Phase 2 — Single-container serving pattern
 
-- [x] `src/AiProxy.Web/vite.config.ts`: `build.outDir` → `../AiProxy.Api/wwwroot`, `build.emptyOutDir: true`;
+- [x] `src/AIProxyPlus.Web/vite.config.ts`: `build.outDir` → `../AIProxyPlus.Api/wwwroot`, `build.emptyOutDir: true`;
   dev-server `proxy` for `/api`, `/openai` (`ws: true` — the Realtime route is a WebSocket upgrade),
   `/anthropic`, `/health` → the API's `launchSettings.json` dev port.
-- [x] `.gitignore`: added `src/AiProxy.Api/wwwroot/*` + `!src/AiProxy.Api/wwwroot/.gitkeep` (same pattern as
-  `logs/`/`test-results/`); `.gitkeep` placeholder added. (`src/AiProxy.Web/node_modules`/`dist` were already
-  covered by the Vite-scaffolded `src/AiProxy.Web/.gitignore`.)
-- [x] `AiProxy.Api/Program.cs`: `UseDefaultFiles()`/`UseStaticFiles()` added to the pipeline; the old
+- [x] `.gitignore`: added `src/AIProxyPlus.Api/wwwroot/*` + `!src/AIProxyPlus.Api/wwwroot/.gitkeep` (same pattern as
+  `logs/`/`test-results/`); `.gitkeep` placeholder added. (`src/AIProxyPlus.Web/node_modules`/`dist` were already
+  covered by the Vite-scaffolded `src/AIProxyPlus.Web/.gitignore`.)
+- [x] `AIProxyPlus.Api/Program.cs`: `UseDefaultFiles()`/`UseStaticFiles()` added to the pipeline; the old
   placeholder `MapGet("/", ...)` removed (the frontend now owns `/`); `MapFallbackToFile("index.html")`
   registered last, falling back to a plain-text `MapFallback` hint when `wwwroot/index.html` doesn't exist yet.
   New `FrontendFallbackTests.cs` (3 tests) confirms `/` and an arbitrary client-side route both 200, **and**
@@ -111,15 +111,15 @@ container as the API (no separate frontend host/deployment) — covering:
   or unauthenticated `/api/v1/config/models` (still 401) — verified, not assumed.
 - [x] `Dockerfile`: added a `frontend-build` (`node:22-alpine`) stage running `npm ci && npm run build`.
   **The "publish picks wwwroot up automatically" assumption did not hold** — each Docker stage is an isolated
-  filesystem, so the `build` stage needs an explicit `COPY --from=frontend-build /src/AiProxy.Api/wwwroot
-  src/AiProxy.Api/wwwroot` before `dotnet publish` (added). `.dockerignore` updated to exclude
-  `src/AiProxy.Web/node_modules/` and `src/AiProxy.Api/wwwroot/` from the build context. Verified end-to-end:
+  filesystem, so the `build` stage needs an explicit `COPY --from=frontend-build /src/AIProxyPlus.Api/wwwroot
+  src/AIProxyPlus.Api/wwwroot` before `dotnet publish` (added). `.dockerignore` updated to exclude
+  `src/AIProxyPlus.Web/node_modules/` and `src/AIProxyPlus.Api/wwwroot/` from the build context. Verified end-to-end:
   full `docker build`, then `docker run` + `curl /` returned the built `index.html` (200); image/container
   cleaned up afterward.
 - [x] `docker-compose.yml`: confirmed no changes needed (same single `api` image/service/build context).
-- [x] `AiProxy.Api.csproj`: confirmed `wwwroot` isn't excluded — proven by the Docker smoke test above (no
+- [x] `AIProxyPlus.Api.csproj`: confirmed `wwwroot` isn't excluded — proven by the Docker smoke test above (no
   explicit `<Content Include="wwwroot/**" />` needed; default SDK web-project globs already include it).
-- [x] README.md: new "Frontend (`src/AiProxy.Web`)" section documenting both workflows (build-for-production
+- [x] README.md: new "Frontend (`src/AIProxyPlus.Web`)" section documenting both workflows (build-for-production
   vs. `npm run dev` hot reload against a locally-running API).
 
 ## Phase 3 — Config pages
@@ -170,7 +170,7 @@ container as the API (no separate frontend host/deployment) — covering:
   real**: browser `WebSocket` cannot set custom headers, so `ConsumerAuthEndpointFilter` (Infrastructure) was
   extended to accept the Consumer key via an `?api_key=` query parameter as a fallback when `X-Api-Key` is
   absent — header still takes precedence everywhere else. This is the one Iteration 3 change outside
-  `src/AiProxy.Web` (Decisions said "frontend-only... [plus SPA fallback]"; this is the second necessary
+  `src/AIProxyPlus.Web` (Decisions said "frontend-only... [plus SPA fallback]"; this is the second necessary
   exception, called out here rather than silently expanding scope). New backend test
   (`RealtimeProxyTests.SuccessfulHandshake_AuthenticatesViaApiKeyQueryParam_WhenNoHeaderIsSet`) covers it;
   270/270 backend tests passing.

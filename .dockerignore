@@ -9,5 +9,5 @@ logs/
 test-results/
 
 # Frontend — installed/build artifacts, never sent as build context (see Dockerfile's frontend-build stage)
-src/AiProxy.Web/node_modules/
-src/AiProxy.Api/wwwroot/
+src/AIProxyPlus.Web/node_modules/
+src/AIProxyPlus.Api/wwwroot/

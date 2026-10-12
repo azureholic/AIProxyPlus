@@ -15,8 +15,8 @@ and usage attribution. Browser OIDC sessions and workload tokens remain independ
   object ID. Database constraints and unique indexes enforce exclusivity and external identity uniqueness.
 - Workload schemes are independently configurable and disabled by default. Validation requires exact issuer,
   audience, lifetime, signature, and signing algorithm.
-- Generic OIDC requires the configured scope (`aiproxy.invoke` by default). Managed identity requires the configured
-  app role (`AiProxy.Invoke` by default).
+- Generic OIDC requires the configured scope (`aiproxyplus.invoke` by default). Managed identity requires the configured
+  app role (`AIProxyPlus.Invoke` by default).
 - Every workload identity must be pre-enrolled by an administrator. A valid token never auto-provisions access.
 - All accepted credentials resolve to the same local Consumer context before routing, model authorization, and usage
   capture. Realtime accepts bearer authentication through the header; its existing browser ticket remains separate.

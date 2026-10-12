@@ -1,4 +1,4 @@
-# AI Proxy Repository Instructions
+# AIProxyPlus Repository Instructions
 
 ## Architecture Is The Source Of Truth
 
@@ -24,12 +24,12 @@
 
 Dependencies point inward and must remain consistent with architecture section 4:
 
-- `AiProxy.Domain`: entities, value objects, domain invariants, and pure domain services. It must not depend on ASP.NET Core, EF Core, Infrastructure, or Api.
-- `AiProxy.Application`: use cases, ports, DTOs, and validation. It may depend on Domain, but not Infrastructure or Api.
-- `AiProxy.Infrastructure`: adapters for persistence, Vault, credentials, forwarding, routing, usage extraction, and observability. Implement inward-facing abstractions here.
-- `AiProxy.Api`: Minimal API routes, middleware, DI composition, OpenAPI, static frontend hosting, and other host concerns. Do not place domain rules here.
-- `AiProxy.ServiceDefaults` and `AiProxy.AppHost`: shared Aspire defaults and local orchestration only.
-- `AiProxy.Web`: an independently buildable React client that communicates with Api over HTTP/WebSocket. Do not couple it to .NET projects or move backend rules into the client.
+- `AIProxyPlus.Domain`: entities, value objects, domain invariants, and pure domain services. It must not depend on ASP.NET Core, EF Core, Infrastructure, or Api.
+- `AIProxyPlus.Application`: use cases, ports, DTOs, and validation. It may depend on Domain, but not Infrastructure or Api.
+- `AIProxyPlus.Infrastructure`: adapters for persistence, Vault, credentials, forwarding, routing, usage extraction, and observability. Implement inward-facing abstractions here.
+- `AIProxyPlus.Api`: Minimal API routes, middleware, DI composition, OpenAPI, static frontend hosting, and other host concerns. Do not place domain rules here.
+- `AIProxyPlus.ServiceDefaults` and `AIProxyPlus.AppHost`: shared Aspire defaults and local orchestration only.
+- `AIProxyPlus.Web`: an independently buildable React client that communicates with Api over HTTP/WebSocket. Do not couple it to .NET projects or move backend rules into the client.
 
 Put business invariants in Domain, orchestration and ports in Application, external integrations in Infrastructure, and transport/composition concerns in Api. Introduce abstractions at the inward boundary and implement them outward; never reference an outer project to save wiring effort.
 
@@ -48,8 +48,8 @@ Put business invariants in Domain, orchestration and ports in Application, exter
 
 ## Validation
 
-- For dependency or project-structure changes, run `dotnet test tests/AiProxy.ArchitectureTests/AiProxy.ArchitectureTests.csproj`.
-- For backend changes, run the affected test project(s); run `dotnet test AiProxy.sln` when shared contracts or multiple layers are affected.
-- For frontend changes, run `npm test` and `npm run build` from `src/AiProxy.Web`.
+- For dependency or project-structure changes, run `dotnet test tests/AIProxyPlus.ArchitectureTests/AIProxyPlus.ArchitectureTests.csproj`.
+- For backend changes, run the affected test project(s); run `dotnet test AIProxyPlus.sln` when shared contracts or multiple layers are affected.
+- For frontend changes, run `npm test` and `npm run build` from `src/AIProxyPlus.Web`.
 - For container or orchestration changes, validate the affected Docker/Aspire configuration and verify the application topology still matches the deployment architecture.
 - A passing build is not enough when behavior changed. Validate the relevant domain, application, integration, API, or UI behavior at the closest practical level.

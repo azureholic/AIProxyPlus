@@ -1,8 +1,8 @@
-# AI Proxy - Evaluation as a Service Architecture
+# AIProxyPlus - Evaluation as a Service Architecture
 
 ## 1. Status and intent
 
-This document proposes **Evaluation as a Service (EaaS)** as a future AI Proxy capability. It is an architecture
+This document proposes **Evaluation as a Service (EaaS)** as a future AIProxyPlus capability. It is an architecture
 specification, not an implementation plan, and does not change the behavior described in
 [architecture.md](architecture.md).
 
@@ -21,7 +21,7 @@ definitions and normalized result format.
 - Allow evaluation to be turned off globally or scoped by model, API route, consumer, and operation.
 - Support deterministic checks, statistical metrics, LLM-as-a-judge, RAG, safety, agent/conversation, human feedback,
   operational, cost, and business metrics.
-- Reuse AI Proxy's authenticated consumer identity, model/endpoint attribution, usage capture, PostgreSQL, and
+- Reuse AIProxyPlus's authenticated consumer identity, model/endpoint attribution, usage capture, PostgreSQL, and
   OpenTelemetry foundations.
 - Support self-hosted open-source evaluators by default and managed services, including Microsoft Foundry, through
   adapters.
@@ -60,7 +60,7 @@ outputs, a broken dashboard, or an unavailable managed service must not alter th
 - **Trace correlation:** W3C Trace Context.
 - **GenAI attributes:** the OpenTelemetry GenAI semantic conventions, with an explicit schema version.
 - **RAG/agent enrichment:** accept OpenInference attributes and span kinds when application instrumentation emits them.
-- **Evaluator execution:** an AI Proxy-owned evaluator contract, not a vendor SDK type.
+- **Evaluator execution:** an AIProxyPlus-owned evaluator contract, not a vendor SDK type.
 - **Storage:** repository and object-store ports; PostgreSQL and an S3-compatible API are possible adapters.
 
 OTLP is stable for traces, metrics, and logs. The OpenTelemetry GenAI semantic conventions are still marked
@@ -93,7 +93,7 @@ historical results remain attached to their original versions.
 
 ```mermaid
 flowchart LR
-    Client --> Proxy[AI Proxy inference plane]
+    Client --> Proxy[AIProxyPlus inference plane]
     Proxy --> Model[Selected model endpoint]
     Model --> Proxy
     Proxy --> Client
@@ -125,7 +125,7 @@ The existing proxy already has useful integration points:
 - `UsageRecordChannel` demonstrates asynchronous handoff, but its process-local drop-on-full semantics are not durable
   enough for evaluation payloads.
 - PostgreSQL is already the system of record for configuration and usage.
-- `AiProxyMetrics`, `AiProxyActivitySource`, and `AiProxy.ServiceDefaults` already export through OTLP.
+- `AIProxyPlusMetrics`, `AIProxyPlusActivitySource`, and `AIProxyPlus.ServiceDefaults` already export through OTLP.
 - The React admin console can later add evaluation policy, run, result, dataset, and feedback views.
 
 Evaluation capture should be a new port invoked by routing/relay code, not evaluation logic embedded in those classes.
@@ -192,7 +192,7 @@ Online and offline evaluation share evaluator definitions and normalized results
 
 - **Golden datasets:** versioned examples containing input, optional expected output, context, tags, and provenance.
 - **Experiment runs:** evaluate a dataset against one or more proxy model names, model endpoints, prompts, or recorded
-  outputs. Calling models through AI Proxy preserves routing, credentials, and usage attribution.
+  outputs. Calling models through AIProxyPlus preserves routing, credentials, and usage attribution.
 - **CI gates:** compare a candidate run to an approved baseline using metric-specific thresholds, minimum sample
   sizes, confidence intervals where appropriate, and an explicit policy for evaluator errors.
 - **Replay:** re-evaluate immutable captures with a newer evaluator version without calling the production model again.
@@ -213,7 +213,7 @@ The canonical capture is provider-neutral:
 
 ```json
 {
-  "schemaVersion": "aiproxy.eval.capture/1",
+  "schemaVersion": "aiproxyplus.eval.capture/1",
   "captureId": "01J...",
   "occurredAt": "2026-08-07T12:00:00Z",
   "traceId": "...",
@@ -256,13 +256,13 @@ Unknown fields are preserved only in the protected native representation, never 
 
 ### 8.2 CloudEvents envelope
 
-- `type`: `io.aiproxy.evaluation.capture.v1`, `io.aiproxy.evaluation.request.v1`, or
-  `io.aiproxy.evaluation.result.v1`
+- `type`: `io.aiproxyplus.evaluation.capture.v1`, `io.aiproxyplus.evaluation.request.v1`, or
+  `io.aiproxyplus.evaluation.result.v1`
 - `source`: stable deployment URI
 - `subject`: capture or run ID
 - `id`: globally unique event ID used for deduplication
 - `time`: event creation time
-- `dataschema`: URI for the exact AI Proxy schema
+- `dataschema`: URI for the exact AIProxyPlus schema
 - extension attributes: environment and classification only; never prompt content or secrets
 
 ### 8.3 Evaluation result
@@ -306,13 +306,13 @@ Adapters may execute:
 - in-process deterministic .NET checks;
 - isolated Python/Node evaluator containers;
 - Ragas, DeepEval, MLflow, or promptfoo;
-- a generic LLM judge through AI Proxy;
+- a generic LLM judge through AIProxyPlus;
 - Microsoft Foundry local SDK or cloud evaluation;
 - a customer-owned HTTPS evaluator that implements the contract.
 
 ### 9.1 Judge-model routing and recursion prevention
 
-The preferred generic LLM judge uses a dedicated AI Proxy Consumer and logical judge model, retaining normal secret
+The preferred generic LLM judge uses a dedicated AIProxyPlus Consumer and logical judge model, retaining normal secret
 management, failover, token capture, and chargeback. Every judge call is marked as evaluator-originated in trusted
 server context. Evaluation policy resolution hard-excludes those calls, so an evaluated response cannot recursively
 spawn another judge evaluation.
@@ -389,18 +389,18 @@ integration.
 
 The adapter must preserve provider independence:
 
-- AI Proxy owns policy, capture, normalized schema, IDs, result storage, and dashboards.
-- Foundry evaluator names and output shapes map to versioned AI Proxy metric definitions.
+- AIProxyPlus owns policy, capture, normalized schema, IDs, result storage, and dashboards.
+- Foundry evaluator names and output shapes map to versioned AIProxyPlus metric definitions.
 - Foundry job IDs and native output are retained as adapter metadata, not exposed as the only API contract.
 - The deployment chooses local SDK execution or a cloud/batch job per evaluator.
 - Export requires an allowed Azure region, explicit data classification, redaction profile, and budget.
 - Private networking and customer-controlled storage are deployment options, not assumptions.
-- Results return to the AI Proxy store even when also sent to Azure Monitor/Application Insights.
+- Results return to the AIProxyPlus store even when also sent to Azure Monitor/Application Insights.
 - Preview evaluators remain `Shadow` until explicitly approved; Microsoft documents preview features as having no SLA
   and not being recommended for production workloads.
 
 Foundry's documented continuous evaluation of sampled production traffic validates the overall continuous model, but
-AI Proxy should not depend on Foundry's sampling, storage, or dashboard. Otherwise disabling Foundry would disable the
+AIProxyPlus should not depend on Foundry's sampling, storage, or dashboard. Otherwise disabling Foundry would disable the
 product capability rather than one adapter.
 
 Operational constraints must be checked at deployment time, not hard-coded: evaluator region availability differs by
@@ -424,7 +424,7 @@ License claims must be revalidated before adoption or redistribution.
 
 Recommended default posture:
 
-1. Build only the stable AI Proxy contracts, outbox, policy engine, normalized store, and evaluator worker boundary.
+1. Build only the stable AIProxyPlus contracts, outbox, policy engine, normalized store, and evaluator worker boundary.
 2. Start deterministic evaluators in a project-owned worker.
 3. Use DeepEval/Ragas/promptfoo adapters where they add value rather than reimplementing mature metrics.
 4. Offer Langfuse core or MLflow as optional self-hosted integrations, not required dependencies.
@@ -480,7 +480,7 @@ not render untrusted model output as raw HTML.
 ### Phase 2 - Protected content evaluation
 
 - Bounded JSON/SSE capture, normalization, redaction profiles, payload storage, and retention.
-- Generic judge-model adapter routed through AI Proxy with recursion prevention.
+- Generic judge-model adapter routed through AIProxyPlus with recursion prevention.
 - Golden datasets, experiments, replay, feedback, and initial admin views.
 - DeepEval/Ragas/promptfoo adapters where justified.
 
@@ -500,7 +500,7 @@ not render untrusted model output as raw HTML.
 
 ## 18. Open questions requiring product decisions
 
-- Is AI Proxy distributed only for customer self-hosting, or could it be offered as a hosted service? This affects
+- Is AIProxyPlus distributed only for customer self-hosting, or could it be offered as a hosted service? This affects
   Phoenix and other source-available license choices.
 - Which content classifications may be evaluated by external managed services, and in which regions?
 - Is loss before the asynchronous outbox acceptable for sampled production evaluation, or does a deployment need a

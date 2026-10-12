@@ -50,7 +50,7 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 - [x] Domain unit tests: round-robin distributes evenly across an equal-priority tier and is stable per
   counter value; priority still strictly orders across tiers; excluded/unhealthy endpoints are skipped
   correctly in both single- and multi-endpoint-per-priority cases.
-- [x] Integration tests (`AiProxy.Api.Tests`): two same-priority endpoints split traffic across repeated
+- [x] Integration tests (`AIProxyPlus.Api.Tests`): two same-priority endpoints split traffic across repeated
   calls (round-robin, not always-first); a 429 triggers failover to the next endpoint exactly like a 500 does.
 
 ## Phase 2 — Remove generic sticky-session config; Responses API affinity becomes unconditional
@@ -90,7 +90,7 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 - [x] Test infrastructure: a minimal in-process fake WebSocket backend (a second `WebApplication`/Kestrel test
   host with `UseWebSockets()` + an echo/scripted endpoint) since WireMock.Net doesn't support WebSocket —
   reused across the new realtime tests the same way `WireMockServer` is reused for HTTP fakes.
-- [x] Integration tests (`AiProxy.Api.Tests`): successful connect + bidirectional echo round-trip; unknown
+- [x] Integration tests (`AIProxyPlus.Api.Tests`): successful connect + bidirectional echo round-trip; unknown
   deployment / missing `model` query param rejected before any upgrade attempt; handshake failure on the
   priority-1 endpoint fails over to priority-2; missing/invalid `X-Api-Key` rejected with 401 before upgrade.
 
@@ -115,9 +115,9 @@ Phase 1/2/3 to describe these changes as they land (not left as a stale Iteratio
 
 Two questions raised after Phase 4 review:
 
-1. **"With multiple AI Proxy instances behind an ingress controller, do sessions still stick to the correct
+1. **"With multiple AIProxyPlus instances behind an ingress controller, do sessions still stick to the correct
    instance?"** Answer: yes, and no ingress-level sticky routing to a specific replica is needed — analyzed and
-   written up in architecture.md §9 ("Multiple AI Proxy replicas..."). Responses API affinity lives in Postgres
+   written up in architecture.md §9 ("Multiple AIProxyPlus replicas..."). Responses API affinity lives in Postgres
    (shared), and Realtime affinity is the WebSocket TCP connection itself (inherently pinned to one replica by
    the transport, not the application). The one caveat: `IEndpointRoundRobinCounter`/`IEndpointHealthTracker`
    are per-replica in-memory state, which is an accepted trade-off (round-robin only needs to be fair in
@@ -139,7 +139,7 @@ Two questions raised after Phase 4 review:
   generic fail-fast error (architecture.md §9).
 - [x] `Program.cs`'s `WriteRoutingFailureAsync`: when `UpstreamFailure` is present, replays it (status/headers/
   body) instead of the generic JSON error envelope.
-- [x] Tests updated/added (`AiProxy.Api.Tests`): `ChatCompletionRoutingTests.AllEndpointsUnhealthy_ReturnsFirstEndpointsOriginalError`
+- [x] Tests updated/added (`AIProxyPlus.Api.Tests`): `ChatCompletionRoutingTests.AllEndpointsUnhealthy_ReturnsFirstEndpointsOriginalError`
   (renamed/rewritten — now expects the priority-1 endpoint's real 500, not a synthetic 503, even though
   priority-2 failed differently with 503); `LoadBalancingTests.AllEndpointsReturn429_ReturnsFirstEndpointsOriginal429WithRetryAfterHeader`
   (renamed/rewritten — asserts the original 429 + `Retry-After` header round-trips to the client);

@@ -17,8 +17,8 @@
       <mxGeometry x="40" y="430" width="160" height="50" as="geometry" />
     </mxCell>
 
-    <!-- AI Proxy container -->
-    <mxCell id="box" value="AI Proxy (.NET 10)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+    <!-- AIProxyPlus container -->
+    <mxCell id="box" value="AIProxyPlus (.NET 10)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontStyle=1;fontSize=14;" vertex="1" parent="1">
       <mxGeometry x="280" y="40" width="620" height="500" as="geometry" />
     </mxCell>
 

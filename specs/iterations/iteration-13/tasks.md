@@ -6,7 +6,7 @@ work. Spec-first, per repo convention: no implementation until Phase 1 is agreed
 
 ## Background
 
-Today (architecture.md §8/§13, `src/AiProxy.Domain/Entities/Consumer.cs`):
+Today (architecture.md §8/§13, `src/AIProxyPlus.Domain/Entities/Consumer.cs`):
 
 1. An API-key `Consumer` has exactly one `ApiKeyHash`. `RotateConsumerKeyHandler` overwrites it in place via
    `Consumer.RotateKey(string)`. Rotating a key is therefore a **breaking** operation for that consumer: the
@@ -112,10 +112,10 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
 
 ## Phase 2 — Domain: dual API keys
 
-- [x] Add `ApiKeySlot` enum (`Primary`, `Secondary`) under `AiProxy.Domain.Enums`.
+- [x] Add `ApiKeySlot` enum (`Primary`, `Secondary`) under `AIProxyPlus.Domain.Enums`.
 - [x] Add `Consumer.ApiKeyHash2`; update `CreateApiKey` to require both hashes; replace `RotateKey(string)` with
   `RotateKey(ApiKeySlot slot, string newApiKeyHash)`.
-- [x] Update `AiProxy.Domain.Tests/Entities/ConsumerTests.cs` for the new creation/rotation signatures (create
+- [x] Update `AIProxyPlus.Domain.Tests/Entities/ConsumerTests.cs` for the new creation/rotation signatures (create
   with both hashes; rotate each slot independently; verify the untouched slot's hash is unchanged after
   rotating the other; validation errors for empty hashes in either slot; OIDC consumers still reject any key
   operation).
@@ -140,8 +140,8 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
 - [x] Update the `PUT /consumers/{name}/rotate` route to require `?slot=1|2` (400 on missing/invalid), and the
   `POST /consumers` response to include both plaintext keys.
 - [x] Update `ConsumerResponse` with whatever slot-presence indicator Phase 1 settled on.
-- [ ] Update `AiProxy.Application.Tests` (`CreateConsumerTests`, `RotateConsumerKeyTests`) and
-  `AiProxy.Api.Tests/Config/ConsumerConfigTests.cs` for the new command/response shapes, including a test proving
+- [ ] Update `AIProxyPlus.Application.Tests` (`CreateConsumerTests`, `RotateConsumerKeyTests`) and
+  `AIProxyPlus.Api.Tests/Config/ConsumerConfigTests.cs` for the new command/response shapes, including a test proving
   a consumer authenticates successfully with the OLD key in the untouched slot immediately after rotating the
   OTHER slot (the actual zero-downtime guarantee, exercised end-to-end through `ConsumerAuthenticator`).
 
@@ -169,7 +169,7 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
   an unknown consumer or model name/id, idempotent success otherwise).
 - [x] Add the `PUT`/`DELETE /consumers/{name}/allowed-models/{modelName}` routes; extend `ConsumerResponse`
   with the current allow-list.
-- [x] Add `AiProxy.Application.Tests` and `AiProxy.Api.Tests` coverage for the new handlers/routes, including the
+- [x] Add `AIProxyPlus.Application.Tests` and `AIProxyPlus.Api.Tests` coverage for the new handlers/routes, including the
   transition back to unrestricted access when the last allowed model is removed.
 
 ## Phase 8 — Routing enforcement
@@ -180,7 +180,7 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
   `ProxyRoutingService.RouteAsync`/`RealtimeProxyService`'s equivalent entry point as a new optional parameter.
 - [x] Add `RoutingFailureReason.ModelAccessDenied`; enforce it in `RouteAsync` immediately after model
   resolution, before any endpoint/affinity/round-robin/usage work; map it to 403 in `Program.cs`.
-- [ ] Add `AiProxy.Api.Tests` coverage: a restricted consumer is denied (403) for a disallowed model but
+- [ ] Add `AIProxyPlus.Api.Tests` coverage: a restricted consumer is denied (403) for a disallowed model but
   succeeds for an allowed one; an unrestricted consumer (the default/today's behavior) is unaffected; a denied
   request does not touch the round-robin counter, session affinity, or the endpoint health tracker, and does
   not produce a `UsageRecord` (it never reaches an endpoint).
@@ -193,8 +193,8 @@ The user asked for two things, explicitly modeled on Azure's storage-account-key
 
 ## Phase 10 — Validation
 
-- [x] Run the complete backend test suite (`dotnet test AiProxy.sln`).
-- [x] Run the frontend test suite and build (`npm test`, `npm run build` from `src/AiProxy.Web`).
+- [x] Run the complete backend test suite (`dotnet test AIProxyPlus.sln`).
+- [x] Run the frontend test suite and build (`npm test`, `npm run build` from `src/AIProxyPlus.Web`).
 - [ ] Live-validate zero-downtime key rotation: create a consumer, call the proxy successfully with Key1,
   rotate Key2, confirm Key1 still authenticates; rotate Key1, confirm the (still-unrotated-since-last-step) Key2
   authenticates and the old Key1 no longer does.

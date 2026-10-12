@@ -12,12 +12,12 @@
 logs/*
 !logs/.gitkeep
 # Serilog writes relative to the process's content root, which varies by how the Api is launched
-src/AiProxy.Api/logs/
+src/AIProxyPlus.Api/logs/
 
 # dotnet test TRX/coverage output — keep the folder, ignore contents
 test-results/*
 !test-results/.gitkeep
 
 # Frontend build output (Vite writes straight into wwwroot — a build artifact, not source)
-src/AiProxy.Api/wwwroot/*
-!src/AiProxy.Api/wwwroot/.gitkeep
+src/AIProxyPlus.Api/wwwroot/*
+!src/AIProxyPlus.Api/wwwroot/.gitkeep

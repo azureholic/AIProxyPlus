@@ -21,7 +21,7 @@ This iteration mitigates each of those four risks with actual code changes, not 
    that same endpoint again from scratch, every time.
 3. **No dependency hygiene tooling** (architecture.md §13): no `.github/dependabot.yml`, no CI workflows
    (`.github/workflows/` doesn't exist), no scheduled `dotnet outdated`/`npm audit` job.
-4. **Postgres least privilege not implemented** (architecture.md §13): `AiProxyDbContext` — one connection
+4. **Postgres least privilege not implemented** (architecture.md §13): `AIProxyPlusDbContext` — one connection
    string, one role — runs both the startup `Database.MigrateAsync()` (DDL) and every runtime query. There is no
    narrower, DDL-less role for the running app.
 
@@ -70,23 +70,23 @@ This iteration mitigates each of those four risks with actual code changes, not 
 
 ### 3. Dependency hygiene — add Dependabot
 
-- Add `.github/dependabot.yml` covering both ecosystems actually present: `nuget` (root — one `AiProxy.sln`
-  covers every `.csproj`) and `npm` (`/src/AiProxy.Web`). Weekly schedule, a sane open-PR cap per ecosystem.
+- Add `.github/dependabot.yml` covering both ecosystems actually present: `nuget` (root — one `AIProxyPlus.sln`
+  covers every `.csproj`) and `npm` (`/src/AIProxyPlus.Web`). Weekly schedule, a sane open-PR cap per ecosystem.
   This is the lowest-effort option already named in the architecture doc's own risk callout.
 
 ### 4. Postgres least privilege — separate migration and runtime connections
 
-- Add an optional `ConnectionStrings:aiproxydb-migrations` config key. When set, the startup
-  `Database.MigrateAsync()` step uses a dedicated `AiProxyDbContext` built from that connection string; the
-  regular DI-registered `AiProxyDbContext` (used by every repository/runtime query) keeps using
-  `ConnectionStrings:aiproxydb` unchanged. When the migrations key is **not** set, behavior is byte-for-byte
+- Add an optional `ConnectionStrings:aiproxyplusdb-migrations` config key. When set, the startup
+  `Database.MigrateAsync()` step uses a dedicated `AIProxyPlusDbContext` built from that connection string; the
+  regular DI-registered `AIProxyPlusDbContext` (used by every repository/runtime query) keeps using
+  `ConnectionStrings:aiproxyplusdb` unchanged. When the migrations key is **not** set, behavior is byte-for-byte
   identical to today (same single connection string for both) — this is additive, not a breaking change to the
   existing single-role local Aspire/docker-compose setup.
 - Document (README + architecture.md, not a forced docker-compose.yml change) a runbook for creating the two
   Postgres roles in a real deployment: a privileged/owner role for migrations, and a narrower application role
   granted only `SELECT`/`INSERT`/`UPDATE`/`DELETE` on the app's own tables (no `CREATE`/`ALTER`/`DROP`, no
-  superuser) — pointing `ConnectionStrings:aiproxydb` at the narrower role and
-  `ConnectionStrings:aiproxydb-migrations` at the privileged one. Local Aspire/docker-compose dev intentionally
+  superuser) — pointing `ConnectionStrings:aiproxyplusdb` at the narrower role and
+  `ConnectionStrings:aiproxyplusdb-migrations` at the privileged one. Local Aspire/docker-compose dev intentionally
   keeps the single-role simplification (called out explicitly, the same way dev-mode Vault already is) since
   forcing two roles into the disposable local dev topology isn't worth the added complexity there.
 
@@ -102,12 +102,12 @@ This iteration mitigates each of those four risks with actual code changes, not 
   exists, and replace the Postgres least-privilege "Risk" callout with the migration-vs-runtime connection
   string split and a pointer to the new role-creation runbook.
 - [x] Finalize the exact configuration key names (`Routing:SessionAffinityTtl`, `Routing:UnhealthyCooldown`,
-  `ConnectionStrings:aiproxydb-migrations`) here first so later phases don't invent divergent names.
+  `ConnectionStrings:aiproxyplusdb-migrations`) here first so later phases don't invent divergent names.
 
 ## Phase 2 — Session affinity TTL configuration
 
 - [x] Bind `Routing:SessionAffinityTtl` in `Program.cs` and pass it explicitly to `ProxyRoutingService`.
-- [x] Add a test proving a configured non-default TTL is actually threaded through (e.g. an `AiProxy.Api.Tests`
+- [x] Add a test proving a configured non-default TTL is actually threaded through (e.g. an `AIProxyPlus.Api.Tests`
   case constructing the test host with a short configured TTL and observing the affinity row's `ExpiresAt`).
 - [x] Update `README.md`'s configuration reference if it documents other `Routing:*`/connection-string keys.
 
@@ -119,7 +119,7 @@ This iteration mitigates each of those four risks with actual code changes, not 
   endpoints before the existing retry loop begins; apply the same treatment in `RealtimeProxyService`'s
   handshake-failover path.
 - [x] Add unit tests for the tracker's cooldown expiry (unhealthy immediately after marking, healthy/unknown
-  again after the cooldown elapses) and an `AiProxy.Api.Tests` case proving a *separate, subsequent* request
+  again after the cooldown elapses) and an `AIProxyPlus.Api.Tests` case proving a *separate, subsequent* request
   skips a same-tier endpoint that failed on a prior request within the cooldown window, then succeeds against it
   again once the cooldown has elapsed.
 - [x] Do **not** wire automatic updates to persisted `ModelEndpoint.Health` in this iteration — leave its
@@ -127,15 +127,15 @@ This iteration mitigates each of those four risks with actual code changes, not 
 
 ## Phase 4 — Dependency hygiene tooling
 
-- [x] Add `.github/dependabot.yml` with `nuget` (root directory) and `npm` (`/src/AiProxy.Web`) update
+- [x] Add `.github/dependabot.yml` with `nuget` (root directory) and `npm` (`/src/AIProxyPlus.Web`) update
   configurations, weekly schedule, reasonable open-PR limits.
 - [x] Validate the file is well-formed YAML matching Dependabot's schema (structural check only — actual PR
   generation can't be validated locally).
 
 ## Phase 5 — Postgres least privilege
 
-- [x] Add optional `ConnectionStrings:aiproxydb-migrations` support in `Program.cs`: use it for the startup
-  `Database.MigrateAsync()` step when present, falling back to `ConnectionStrings:aiproxydb` when absent so
+- [x] Add optional `ConnectionStrings:aiproxyplusdb-migrations` support in `Program.cs`: use it for the startup
+  `Database.MigrateAsync()` step when present, falling back to `ConnectionStrings:aiproxyplusdb` when absent so
   today's single-connection-string setups (Aspire local dev, docker-compose) are unaffected.
 - [x] Write the Postgres role-creation runbook (README and/or architecture.md): owner/migration role vs.
   `SELECT`/`INSERT`/`UPDATE`/`DELETE`-only application role, and which connection string key each maps to.
@@ -145,7 +145,7 @@ This iteration mitigates each of those four risks with actual code changes, not 
 
 ## Phase 6 — Validation
 
-- [x] Run the complete backend test suite (`dotnet test AiProxy.sln`) — 358/358 passing. (One new test,
+- [x] Run the complete backend test suite (`dotnet test AIProxyPlus.sln`) — 358/358 passing. (One new test,
   `EndpointHealthCircuitBreakerTests.FailedEndpoint_IsSkippedOnSubsequentRequest_ThenEligibleAgainAfterCooldown`,
   was flaky under full-suite parallel load because its two endpoints shared the same priority tier, making
   round-robin's "which one goes first" effectively random per run — fixed by giving them different priorities
@@ -163,5 +163,5 @@ This iteration mitigates each of those four risks with actual code changes, not 
   `ExpiresAt` reflects it; the pre-existing expiry-fallback tests in the same file cover the non-sticky fallback
   path.
 - [x] Confirm the frontend/README/architecture docs are consistent with the final config key names actually
-  shipped — `Routing:SessionAffinityTtl`, `Routing:UnhealthyCooldown`, and `ConnectionStrings:aiproxydb-migrations`
+  shipped — `Routing:SessionAffinityTtl`, `Routing:UnhealthyCooldown`, and `ConnectionStrings:aiproxyplusdb-migrations`
   all appear consistently across `README.md` and `specs/architecture/architecture.md`.

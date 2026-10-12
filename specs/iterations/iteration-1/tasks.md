@@ -12,7 +12,7 @@ Definition of Done for this iteration:
 - All tasks below checked off.
 - `dotnet test` passes for all test projects, results written to `test-results/`.
 - Architecture tests pass (no illegal dependencies between layers).
-- `AiProxy.AppHost` starts the API, Postgres, Vault, and the Aspire dashboard, and traces/metrics/logs for a
+- `AIProxyPlus.AppHost` starts the API, Postgres, Vault, and the Aspire dashboard, and traces/metrics/logs for a
   sample request are visible in the dashboard.
 - A README documents how to run locally (Aspire) and via `docker compose`.
 - A git commit is made after each phase (Phase 0 through Phase 10) once its tasks are checked off and
@@ -27,11 +27,11 @@ Definition of Done for this iteration:
 
 ## Phase 0 — Solution scaffolding
 
-- [x] Create solution `AiProxy.sln` and empty projects per [architecture §4](../../architecture/architecture.md#4-solution-structure-clean-architecture):
-  `AiProxy.Domain`, `AiProxy.Application`, `AiProxy.Infrastructure`, `AiProxy.Api`, `AiProxy.ServiceDefaults`,
-  `AiProxy.AppHost`.
-- [x] Create test projects: `AiProxy.Domain.Tests`, `AiProxy.Application.Tests`, `AiProxy.Infrastructure.Tests`,
-  `AiProxy.Api.Tests`, `AiProxy.ArchitectureTests`.
+- [x] Create solution `AIProxyPlus.sln` and empty projects per [architecture §4](../../architecture/architecture.md#4-solution-structure-clean-architecture):
+  `AIProxyPlus.Domain`, `AIProxyPlus.Application`, `AIProxyPlus.Infrastructure`, `AIProxyPlus.Api`, `AIProxyPlus.ServiceDefaults`,
+  `AIProxyPlus.AppHost`.
+- [x] Create test projects: `AIProxyPlus.Domain.Tests`, `AIProxyPlus.Application.Tests`, `AIProxyPlus.Infrastructure.Tests`,
+  `AIProxyPlus.Api.Tests`, `AIProxyPlus.ArchitectureTests`.
 - [x] Wire project references so the dependency direction matches Clean Architecture (Domain has zero project
   references; Application → Domain; Infrastructure → Application, Domain; Api → Infrastructure, Application,
   Domain, ServiceDefaults; AppHost → Api).
@@ -39,7 +39,7 @@ Definition of Done for this iteration:
   versions.
 - [x] Create `logs/` and `test-results/` folders with `.gitkeep`; add both to `.gitignore` (contents, not the
   folders themselves).
-- [x] Add `AiProxy.ArchitectureTests` with NetArchTest rules asserting: `Domain` does not depend on
+- [x] Add `AIProxyPlus.ArchitectureTests` with NetArchTest rules asserting: `Domain` does not depend on
   `Infrastructure`/`Api`/ASP.NET Core/EF Core; `Application` does not depend on `Infrastructure`/`Api`.
 - [x] Verify `dotnet build` succeeds and `dotnet test` runs (even with zero real tests) with TRX output redirected
   to `test-results/`.
@@ -57,7 +57,7 @@ Definition of Done for this iteration:
   `UsageMetrics`).
 - [x] Implement pure endpoint-selection logic (given a set of endpoints + health states + sticky affinity, return
   the endpoint to use) as a testable domain service — no I/O.
-- [x] Unit tests (`AiProxy.Domain.Tests`) for all invariants and selection logic, including edge cases (all
+- [x] Unit tests (`AIProxyPlus.Domain.Tests`) for all invariants and selection logic, including edge cases (all
   endpoints unhealthy, single endpoint, sticky endpoint unhealthy).
 
 ## Phase 2 — Application layer
@@ -73,19 +73,19 @@ Definition of Done for this iteration:
   `Consumer` key, revoke `Consumer`.
 - [x] Implement usage query use case (filter by deployment name, consumer name, operation type, and date range,
   paged). Add FluentValidation validators for all commands (unique name, valid URL, valid priority, enum values).
-- [x] Unit tests (`AiProxy.Application.Tests`) for every use case with mocked ports (NSubstitute), including
+- [x] Unit tests (`AIProxyPlus.Application.Tests`) for every use case with mocked ports (NSubstitute), including
   validation failure paths, consumer create/rotate/revoke/authenticate behavior, and extractor-resolver dispatch
   (right extractor chosen per `ApiFamily`+`OperationType`, sensible failure when none registered).
 
 ## Phase 3 — Infrastructure: PostgreSQL
 
-- [x] Add EF Core + Npgsql, `AiProxyDbContext`, entity configurations for all five tables
+- [x] Add EF Core + Npgsql, `AIProxyPlusDbContext`, entity configurations for all five tables
   (architecture §7.1, incl. `consumers`), initial migration. `usage_records.prompt_tokens`/`completion_tokens`/
   `total_tokens` are nullable; add `operation_type` and a `usage_metrics` jsonb column.
 - [x] Implement `IModelRepository`, `IUsageRecordRepository`, `ISessionAffinityStore`,
-  `IConsumerRepository` (incl. `GetByApiKeyHashAsync`) against `AiProxyDbContext`.
+  `IConsumerRepository` (incl. `GetByApiKeyHashAsync`) against `AIProxyPlusDbContext`.
 - [x] Implement a bounded-channel background writer for usage records so writes never block the response path.
-- [x] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Postgres module: migrations apply
+- [x] Integration tests (`AIProxyPlus.Infrastructure.Tests`) using Testcontainers' Postgres module: migrations apply
   cleanly, repository CRUD round-trips, uniqueness constraints enforced (`models.name`,
   `consumers.name`/`api_key_hash`, `endpoints.(model_id, priority)`), usage-record writer persists
   under load (channel → background service → DB, 50 concurrent records), consumer create/rotate/revoke
@@ -94,17 +94,17 @@ Definition of Done for this iteration:
 ## Phase 4 — Infrastructure: Secrets (Vault)
 
 - [x] Add VaultSharp client, `VaultSecretResolver : ISecretResolver` writing/reading KV v2 secrets at
-  `secret/ai-proxy/endpoints/{endpointId}`.
+  `secret/aiproxyplus/endpoints/{endpointId}`.
 - [x] Implement `ApiKeyCredentialProvider` (resolves secret via `ISecretResolver`, caches with TTL, attaches
   `Authorization`/`api-key` header per `ApiFamily` convention) and `ManagedIdentityCredentialProvider` (uses
   `Azure.Identity` token credential, attaches bearer token) behind `ICredentialProvider`.
 - [x] Implement `IApiKeyHasher` as HMAC-SHA256 with a pepper resolved once at startup via `ISecretResolver`
-  from `secret/ai-proxy/consumer-key-pepper` (architecture.md §8) and a constant-time comparison; implement
+  from `secret/aiproxyplus/consumer-key-pepper` (architecture.md §8) and a constant-time comparison; implement
   `IApiKeyGenerator` (cryptographically random plaintext key).
 - [x] Ensure no secret value is ever written to logs (`VaultSecretResolver` only ever logs the secret *path*;
   a unit test with a capturing logger asserts the log output never contains an injected secret value —
   Serilog-specific sink/redaction wiring is layered on top in Phase 8).
-- [x] Integration tests (`AiProxy.Infrastructure.Tests`) using Testcontainers' Vault (or a dev-mode Vault
+- [x] Integration tests (`AIProxyPlus.Infrastructure.Tests`) using Testcontainers' Vault (or a dev-mode Vault
   container) module: write/read/rotate a secret, cache TTL expiry behavior, resolver failure handling
   (missing path), and `ConsumerAuthenticator` end-to-end against a real hasher+pepper (accepts a valid key,
   rejects an unknown or revoked one).
@@ -136,7 +136,7 @@ Definition of Done for this iteration:
   affinity row (skip entirely when the request set `store: false`).
 - [x] Implement bounded per-endpoint retry with jittered backoff before failover to next priority
   (`DirectHttpProxy` + manual retry loop in `ProxyRoutingService`).
-- [x] Integration tests (`AiProxy.Api.Tests`) against WireMock.Net fake backends: priority selection, failover on
+- [x] Integration tests (`AIProxyPlus.Api.Tests`) against WireMock.Net fake backends: priority selection, failover on
   5xx/connection-refused, all-endpoints-unhealthy → 503, unknown deployment/missing model → 404, disabled
   endpoint never selected, sticky session pins to the same fake backend across calls, sticky session with
   unhealthy endpoint returns the documented error (no silent reroute), different sessions may land on different
@@ -174,7 +174,7 @@ Definition of Done for this iteration:
 - [x] Wire usage capture to `IUsageRecordRepository` via the existing `UsageRecordChannel` (async,
   non-blocking), attaching `ConsumerId`/`ConsumerName` (see note above) and the resolved `OperationType` to
   every `UsageRecord`.
-- [x] Integration tests (`AiProxy.Api.Tests`): non-streaming chat completion captures token usage,
+- [x] Integration tests (`AIProxyPlus.Api.Tests`): non-streaming chat completion captures token usage,
   non-streaming image generation captures `UsageMetrics` with null token fields, streaming with
   client-requested usage forwards the usage chunk and still captures usage, streaming without
   client-requested usage suppresses the usage chunk from the client stream but still captures usage
@@ -203,7 +203,7 @@ Definition of Done for this iteration:
   `IModelRepository` if registered, reports `"not configured"` until Phase 9 wires Postgres/Vault for
   real — forward-compatible with no further code changes needed then), and OpenAPI (`/openapi/v1.json`) +
   Scalar UI in dev.
-- [x] Integration tests (`AiProxy.Api.Tests`): full config CRUD lifecycle (create/get/list/update/delete
+- [x] Integration tests (`AIProxyPlus.Api.Tests`): full config CRUD lifecycle (create/get/list/update/delete
   deployment, add/update/remove endpoint, set/rotate endpoint secret never echoed back, duplicate-name conflict,
   empty-name validation error, unknown-deployment 404), consumer lifecycle (create returns plaintext key exactly
   once, list never exposes the key or hash, rotate invalidates the old key, revoke disables ingress auth for
@@ -213,23 +213,23 @@ Definition of Done for this iteration:
 
 ## Phase 8 — Observability
 
-- [x] Configure `AiProxy.ServiceDefaults` with OpenTelemetry traces/metrics/logs + OTLP exporter, ASP.NET
-  Core/HttpClient/Npgsql auto-instrumentation, per architecture §11 (`AddMeter("AiProxy")`/`AddSource("AiProxy")`/
+- [x] Configure `AIProxyPlus.ServiceDefaults` with OpenTelemetry traces/metrics/logs + OTLP exporter, ASP.NET
+  Core/HttpClient/Npgsql auto-instrumentation, per architecture §11 (`AddMeter("AIProxyPlus")`/`AddSource("AIProxyPlus")`/
   `AddSource("Npgsql")` added alongside the existing ASP.NET Core/HttpClient/runtime instrumentation); wired into
-  `AiProxy.Api` via `builder.AddServiceDefaults()`.
-- [x] Add custom `Meter("AiProxy")` instruments (`AiProxyMetrics`): `ai_proxy.requests.count`,
-  `ai_proxy.tokens.prompt`/`.completion`/`.total`, `ai_proxy.request.duration` (histogram), `ai_proxy.failover.count`.
-- [x] Add custom spans (`AiProxyActivitySource`) for deployment resolution, secret resolution, backend call
-  (tagged with endpoint/attempt/status), and usage extraction, nested under one root `ai_proxy.request` activity
+  `AIProxyPlus.Api` via `builder.AddServiceDefaults()`.
+- [x] Add custom `Meter("AIProxyPlus")` instruments (`AIProxyPlusMetrics`): `aiproxyplus.requests.count`,
+  `aiproxyplus.tokens.prompt`/`.completion`/`.total`, `aiproxyplus.request.duration` (histogram), `aiproxyplus.failover.count`.
+- [x] Add custom spans (`AIProxyPlusActivitySource`) for deployment resolution, secret resolution, backend call
+  (tagged with endpoint/attempt/status), and usage extraction, nested under one root `aiproxyplus.request` activity
   per ingress request (tagged with operation_type/deployment) in `ProxyRoutingService`.
 - [x] Configure Serilog (`UseSerilog(..., writeToProviders: true)` so events still reach the OTel logging
-  provider for OTLP export) with a rolling-file sink (`logs/ai-proxy-.log`), `Enrich.WithSpan()` for trace/span-id
+  provider for OTLP export) with a rolling-file sink (`logs/aiproxyplus-.log`), `Enrich.WithSpan()` for trace/span-id
   enrichment, and a `Destructure.ByTransforming<EndpointCredential>` policy that redacts the credential header
   value if one is ever logged.
 - [x] Automated stand-in for the "run via Aspire, confirm traces/metrics appear" manual verification step:
-  `TelemetryTests` (`AiProxy.Api.Tests`) attaches an `ActivityListener` + `MeterListener` directly to the
-  `AiProxy` sources during a real routed WireMock-backed request and asserts all five spans and five metric
-  instruments (incl. `ai_proxy.failover.count` on a forced 5xx failover) actually fire. Full Aspire-dashboard
+  `TelemetryTests` (`AIProxyPlus.Api.Tests`) attaches an `ActivityListener` + `MeterListener` directly to the
+  `AIProxyPlus` sources during a real routed WireMock-backed request and asserts all five spans and five metric
+  instruments (incl. `aiproxyplus.failover.count` on a forced 5xx failover) actually fire. Full Aspire-dashboard
   visual confirmation is still a Phase 9 manual step once Postgres/Vault containers make `dotnet run` viable
   standalone (currently blocked by the same DI-registration gap noted in Phases 5–7 — confirmed via a real
   `dotnet run` attempt, which fails **only** on the expected missing repository/secret-store registrations, not
@@ -237,30 +237,30 @@ Definition of Done for this iteration:
 
 ## Phase 9 — Aspire AppHost & containers
 
-- [x] Implement `AiProxy.AppHost` wiring: Postgres resource (`AddPostgres("postgres").WithDataVolume().AddDatabase("aiproxydb")`),
+- [x] Implement `AIProxyPlus.AppHost` wiring: Postgres resource (`AddPostgres("postgres").WithDataVolume().AddDatabase("aiproxyplusdb")`),
   a dev-mode Vault resource (generic `AddContainer("vault", "hashicorp/vault")` — no official Aspire hosting
   package exists for Vault — with `VAULT_DEV_ROOT_TOKEN_ID`/`VAULT_DISABLE_MLOCK` for a local, throwaway dev
   instance), the Api project resource wired via `WithReference(postgres)` + `Vault__Address`/`Vault__Token`
   environment variables + `WaitFor(...)` on both. Also closes the long-standing DI-registration gap from
-  Phases 5–8: `Program.cs` now registers the real `AiProxyDbContext` (via `Aspire.Npgsql.EntityFrameworkCore.PostgreSQL`'s
+  Phases 5–8: `Program.cs` now registers the real `AIProxyPlusDbContext` (via `Aspire.Npgsql.EntityFrameworkCore.PostgreSQL`'s
   `AddNpgsqlDbContext`), `ModelRepository`/`ConsumerRepository`/`SessionAffinityStore`/`UsageRecordRepository`,
   `VaultSecretResolver` (+ `VaultClientFactory`/`VaultOptions`), and `CredentialProvider`
   (`ApiKeyCredentialProvider`/`ManagedIdentityCredentialProvider` via `IMemoryCache`/`DefaultAzureCredential`).
-- [x] Add Dockerfile for `AiProxy.Api` (multi-stage restore/publish/runtime, repo-root build context) + a
+- [x] Add Dockerfile for `AIProxyPlus.Api` (multi-stage restore/publish/runtime, repo-root build context) + a
   `.dockerignore` (excluding `bin/`/`obj/` — without it, host-machine build artifacts with Windows-specific
   NuGet fallback paths baked in get copied into the Linux build stage and break `dotnet publish`, confirmed by
   hitting exactly that failure on the first build attempt).
 - [x] Add `docker-compose.yml` (Postgres + Vault + Api) for non-Aspire container runs, with `OTEL_EXPORTER_OTLP_ENDPOINT`
   left blank/configurable via env var for an external collector.
 - [x] Verified end-to-end via **both** paths:
-  - `dotnet run --project src/AiProxy.AppHost`: Postgres/Vault containers came up, `AiProxyDbContextFactory`
-    (design-time-only) updated to honor a `ConnectionStrings__aiproxydb` env var override so `dotnet ef database
+  - `dotnet run --project src/AIProxyPlus.AppHost`: Postgres/Vault containers came up, `AIProxyPlusDbContextFactory`
+    (design-time-only) updated to honor a `ConnectionStrings__aiproxyplusdb` env var override so `dotnet ef database
     update` could target the Aspire-managed container; `GET /health/ready` initially reported `postgres`
     unhealthy (`relation "models" does not exist` — migrations aren't auto-applied at startup, by
     design, since that would break `WebApplicationFactory`-based tests which never point at a real database),
     then reported `{"vault":"healthy","postgres":"healthy"}` once the migration was applied. Directly queried
     Vault's HTTP API with the dev root token and confirmed `admin-api-key-hash` was auto-provisioned at
-    `secret/ai-proxy/admin-api-key-hash` as designed.
+    `secret/aiproxyplus/admin-api-key-hash` as designed.
   - `docker compose up -d`: hit the same Postgres 18 image behavior change (data directory must now be mounted
     at `/var/lib/postgresql`, not `/var/lib/postgresql/data` — fixed in `docker-compose.yml`), then confirmed
     the identical healthy/unhealthy → healthy health-check transition through the containerized Api on
@@ -268,21 +268,21 @@ Definition of Done for this iteration:
   - Also fixed a related bug this exposed: `/health/ready` originally threw a 500 instead of a graceful 503
     when `services.GetRequiredService<T>()` itself failed to *construct* a dependency (e.g. Vault client
     construction throwing because no token was configured) — the probe now wraps resolution *and* the call in
-    the same try/catch. Added `HealthCheckTests` (`AiProxy.Api.Tests`) covering the fake-backed healthy path.
+    the same try/catch. Added `HealthCheckTests` (`AIProxyPlus.Api.Tests`) covering the fake-backed healthy path.
   - All test/temporary containers, volumes, and images from this verification were torn down afterward
     (`docker compose down -v`, `docker rm -f`, `docker rmi`, `docker volume rm`) — nothing left running.
   - A full proxied ingress request against the live stack (vs. the WireMock-backed one already covered by
-    ~30 `AiProxy.Api.Tests`) was not additionally exercised manually — the automated suite already covers that
+    ~30 `AIProxyPlus.Api.Tests`) was not additionally exercised manually — the automated suite already covers that
     path more rigorously and repeatably than a one-off manual curl would.
   - 201/201 tests passing solution-wide throughout.
 
 
 ## Phase 10 — Test hardening & documentation
 
-- [x] Added dedicated unit tests for the `IUsageExtractor` family (`AiProxy.Infrastructure.Tests/Usage`) —
+- [x] Added dedicated unit tests for the `IUsageExtractor` family (`AIProxyPlus.Infrastructure.Tests/Usage`) —
   `OpenAiStyleTokenUsageExtractorTests`, `AnthropicChatUsageExtractorTests`, `ImageUsageExtractorTests`,
   `ResponsesUsageExtractorTests` — plus `AdminApiKeyAuthenticatorTests` (auto-provision-on-first-run and
-  reuse-existing-hash branches). Added `AdditionalCoverageTests` (`AiProxy.Api.Tests`) covering the remaining
+  reuse-existing-hash branches). Added `AdditionalCoverageTests` (`AIProxyPlus.Api.Tests`) covering the remaining
   fixture gaps: non-streaming Images API edit/variation, streaming Responses API `previous_response_id`
   chaining, and a caller-cancellation test proving the retry/failover loop does **not** spuriously retry when
   the caller (not the backend) gives up — this last one exercises a genuinely previously-untested branch in
@@ -290,7 +290,7 @@ Definition of Done for this iteration:
 - [x] Verified `dotnet test --results-directory test-results/<timestamp> --logger trx --collect:"XPlat Code
   Coverage"` writes a TRX + `coverage.cobertura.xml` per test project into a single timestamped subfolder
   (all 5 test projects ran; verification folder deleted afterward — `test-results/` stays git-ignored except
-  `.gitkeep`), and confirmed the API's Serilog rolling-file sink writes to `logs/ai-proxy-.log` during a real
+  `.gitkeep`), and confirmed the API's Serilog rolling-file sink writes to `logs/aiproxyplus-.log` during a real
   run (already exercised manually in Phase 9).
 - [x] Reviewed coverage on `Domain`/`Application` (both already consistently ≥92.9% on every file with any
   gaps — nothing egregious) and on the highest-risk routing/failover/usage files specifically: after the new

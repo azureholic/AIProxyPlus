@@ -1,6 +1,6 @@
-# AI Proxy
+# AIProxyPlus
 
-AI Proxy is a self-hosted reverse proxy that sits in front of one or more LLM inference backends and gives a
+AIProxyPlus is a self-hosted reverse proxy that sits in front of one or more LLM inference backends and gives a
 team one stable, internally-governed endpoint to call instead of many provider-specific ones. It centralizes
 authentication and secrets, tracks token usage per caller for chargeback, and adds resiliency — priority-tiered
 routing with round-robin distribution and automatic failover — without getting in the way of streaming or
@@ -36,7 +36,7 @@ optional, per-endpoint authentication mode.
   ID, Okta, Auth0, ...); machine callers can authenticate with Consumer API keys, a generic OIDC access token, or
   a Microsoft Entra managed identity.
 - **Is observable by default**: OpenTelemetry traces, metrics, and logs for every request, wired through a
-  shared `AiProxy.ServiceDefaults` project.
+  shared `AIProxyPlus.ServiceDefaults` project.
 - **Ships a small ops UI**: a React/FluentUI frontend for managing models, endpoints, routes, and consumers, plus
   a chat/image/voice/speech playground and a usage dashboard — served from the same container as the API.
 
@@ -45,9 +45,9 @@ the phase-by-phase build history for every iteration is under [specs/iterations/
 
 ## Architecture at a glance
 
-- **Clean Architecture**: `AiProxy.Domain` (zero dependencies) → `AiProxy.Application` (ports + use cases) →
-  `AiProxy.Infrastructure` (EF Core/Npgsql, Vault, routing, usage capture) → `AiProxy.Api` (composition root) →
-  `AiProxy.AppHost` (.NET Aspire orchestration).
+- **Clean Architecture**: `AIProxyPlus.Domain` (zero dependencies) → `AIProxyPlus.Application` (ports + use cases) →
+  `AIProxyPlus.Infrastructure` (EF Core/Npgsql, Vault, routing, usage capture) → `AIProxyPlus.Api` (composition root) →
+  `AIProxyPlus.AppHost` (.NET Aspire orchestration).
 - **Routing/failover** is a custom `DirectHttpProxy`/`ProxyRoutingService`, not YARP's `IHttpForwarder` — YARP
   commits the response to the client as soon as headers arrive from upstream, which makes "inspect the
   response, then decide whether to retry the next endpoint" impossible. See architecture.md §9 for the full
@@ -58,28 +58,28 @@ the phase-by-phase build history for every iteration is under [specs/iterations/
   never asked for it.
 - **Secrets**: HashiCorp Vault (KV v2) holds outbound endpoint credentials, the admin API key hash, and the
   Consumer API key pepper — never the Consumer keys themselves (those are one-way hashed in Postgres).
-- **Observability**: OpenTelemetry traces/metrics (custom `Meter("AiProxy")` + `ActivitySource("AiProxy")`,
+- **Observability**: OpenTelemetry traces/metrics (custom `Meter("AIProxyPlus")` + `ActivitySource("AIProxyPlus")`,
   auto-instrumented ASP.NET Core/HttpClient/Npgsql) and Serilog (rolling file + OTLP), all wired through
-  `AiProxy.ServiceDefaults`.
+  `AIProxyPlus.ServiceDefaults`.
 
 ## Running locally
 
 ### Option A — .NET Aspire (recommended for local dev)
 
 ```powershell
-dotnet run --project src/AiProxy.AppHost
+dotnet run --project src/AIProxyPlus.AppHost
 ```
 
 This starts persistent Postgres, local file-backed Vault, and Keycloak containers, then the API, and prints an Aspire
 dashboard URL (traces/metrics/logs for every service). Before the first run, set the local OIDC secrets:
 
 ```powershell
-dotnet user-secrets set "Parameters:oidc-client-secret" "<random-development-secret>" --project src/AiProxy.AppHost
-dotnet user-secrets set "Parameters:keycloak-admin-password" "<local-keycloak-admin-password>" --project src/AiProxy.AppHost
-dotnet user-secrets set "Parameters:proxy-admin-password" "<local-proxy-admin-password>" --project src/AiProxy.AppHost
+dotnet user-secrets set "Parameters:oidc-client-secret" "<random-development-secret>" --project src/AIProxyPlus.AppHost
+dotnet user-secrets set "Parameters:keycloak-admin-password" "<local-keycloak-admin-password>" --project src/AIProxyPlus.AppHost
+dotnet user-secrets set "Parameters:proxy-admin-password" "<local-proxy-admin-password>" --project src/AIProxyPlus.AppHost
 ```
 
-Open the API or Vite URL and sign in to the `ai-proxy-local` realm as the development-only user `proxy-admin`.
+Open the API or Vite URL and sign in to the `aiproxyplus-local` realm as the development-only user `proxy-admin`.
 Keycloak imports the realm only into a fresh `keycloak-data` volume; later starts reuse it without overwriting
 changed credentials. To reset only local identity data, stop the AppHost, remove its Keycloak container, run
 `docker volume rm keycloak-data`, and restart the AppHost. Postgres and Vault are unaffected. Never reuse these
@@ -90,9 +90,9 @@ On first run:
 
 - The database schema is **not** auto-migrated — apply it once with:
   ```powershell
-  dotnet ef database update --project src/AiProxy.Infrastructure --startup-project src/AiProxy.Infrastructure
+  dotnet ef database update --project src/AIProxyPlus.Infrastructure --startup-project src/AIProxyPlus.Infrastructure
   ```
-  (point `ConnectionStrings__aiproxydb` at whatever port Aspire assigned Postgres, visible in the dashboard).
+  (point `ConnectionStrings__aiproxyplusdb` at whatever port Aspire assigned Postgres, visible in the dashboard).
 - The admin API key is auto-generated on first read and logged **once** by the API process
   (`No admin API key existed in the secret store; generated a new one...`) — save it, it can't be retrieved
   again (only its hash is stored).
@@ -110,7 +110,7 @@ have their secrets set again.
 docker compose up -d
 ```
 
-Brings up Postgres, local file-backed Vault, and the API (built from `src/AiProxy.Api/Dockerfile`) on `localhost:8080`.
+Brings up Postgres, local file-backed Vault, and the API (built from `src/AIProxyPlus.Api/Dockerfile`) on `localhost:8080`.
 Apply migrations the same way as above, pointing at `localhost:5432`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` in
 `docker-compose.yml` if you have an external OTLP collector; leave it blank to disable OTLP export.
 
@@ -154,27 +154,27 @@ but immutable references prevent it from becoming active again.
 
 Local Aspire/docker-compose dev intentionally uses one Postgres role for both migrations and runtime queries —
 the same trade-off already made for dev-mode Vault. A real deployment should instead create two roles and set
-`ConnectionStrings:aiproxydb-migrations` to the privileged one:
+`ConnectionStrings:aiproxyplusdb-migrations` to the privileged one:
 
 ```sql
 -- Privileged role: runs EF Core migrations (DDL) at startup/deploy time only.
-CREATE ROLE aiproxy_migrator WITH LOGIN PASSWORD '...';
-GRANT ALL PRIVILEGES ON DATABASE aiproxydb TO aiproxy_migrator;
+CREATE ROLE aiproxyplus_migrator WITH LOGIN PASSWORD '...';
+GRANT ALL PRIVILEGES ON DATABASE aiproxyplusdb TO aiproxyplus_migrator;
 
 -- Narrow role: what the running API actually connects as.
-CREATE ROLE aiproxy_app WITH LOGIN PASSWORD '...';
-GRANT CONNECT ON DATABASE aiproxydb TO aiproxy_app;
-GRANT USAGE ON SCHEMA public TO aiproxy_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO aiproxy_app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO aiproxy_app;
+CREATE ROLE aiproxyplus_app WITH LOGIN PASSWORD '...';
+GRANT CONNECT ON DATABASE aiproxyplusdb TO aiproxyplus_app;
+GRANT USAGE ON SCHEMA public TO aiproxyplus_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO aiproxyplus_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO aiproxyplus_app;
 ```
 
-Point `ConnectionStrings:aiproxydb-migrations` at `aiproxy_migrator` and `ConnectionStrings:aiproxydb` at the
-narrower `aiproxy_app` — the API applies migrations through the first connection at startup only, then serves
-every runtime request through the second. Omitting `ConnectionStrings:aiproxydb-migrations` keeps the
+Point `ConnectionStrings:aiproxyplusdb-migrations` at `aiproxyplus_migrator` and `ConnectionStrings:aiproxyplusdb` at the
+narrower `aiproxyplus_app` — the API applies migrations through the first connection at startup only, then serves
+every runtime request through the second. Omitting `ConnectionStrings:aiproxyplusdb-migrations` keeps the
 single-connection-string behavior unchanged.
 
-## Frontend (`src/AiProxy.Web`)
+## Frontend (`src/AIProxyPlus.Web`)
 
 A React + TypeScript + FluentUI admin/ops UI, served by the **same** container as the API — there is no separate
 frontend host or deployment.
@@ -184,15 +184,15 @@ frontend host or deployment.
   raw Realtime event diagnostics), and Speech (file/microphone transcription plus text-to-speech playback and
   download); Dashboard → Usage (filters, table, token/request charts).
 - **Production / container path**: `npm run build` (or just `docker build`/`docker compose up`, which run it for
-  you) writes the compiled static files straight into `src/AiProxy.Api/wwwroot`, which `AiProxy.Api` then serves
+  you) writes the compiled static files straight into `src/AIProxyPlus.Api/wwwroot`, which `AIProxyPlus.Api` then serves
   at `/` (with a client-side-routing fallback to `index.html`) alongside its existing `/api/*`, `/openai/*`,
   `/anthropic/*` routes. `wwwroot`'s contents are git-ignored — they're a build artifact, not source.
 - **Local frontend development** (hot reload, no rebuild loop):
   ```powershell
   # Terminal 1 — the API (Aspire or plain `dotnet run`)
-  dotnet run --project src/AiProxy.Api
+  dotnet run --project src/AIProxyPlus.Api
   # Terminal 2 — Vite dev server; proxies /api, /openai, /anthropic, /health to the API above
-  cd src/AiProxy.Web
+  cd src/AIProxyPlus.Web
   npm install
   npm run dev
   ```
@@ -209,17 +209,17 @@ frontend host or deployment.
   values are discovery metadata; provider and operation compatibility are still enforced by routing.
 - Speech is separate from Realtime Voice. Speech-to-text sends a selected audio file or an ephemeral microphone
   recording to `/openai/v1/audio/transcriptions`; text-to-speech sends text and a voice to
-  `/openai/v1/audio/speech`, then offers browser playback and download. Audio is not persisted by AI Proxy.
-- Frontend tests: `cd src/AiProxy.Web && npm test` (Vitest + React Testing Library).
+  `/openai/v1/audio/speech`, then offers browser playback and download. Audio is not persisted by AIProxyPlus.
+- Frontend tests: `cd src/AIProxyPlus.Web && npm test` (Vitest + React Testing Library).
 
 ## OIDC provider setup
 
-AI Proxy uses generic OIDC discovery and a server-side Authorization Code + PKCE flow. Register one confidential
+AIProxyPlus uses generic OIDC discovery and a server-side Authorization Code + PKCE flow. Register one confidential
 web client per deployment with exact callback and post-logout URIs. The provider must supply stable `iss` + `sub`,
 the configured client ID in `aud`, and the configured username claim in the ID token or UserInfo response. Restrict
-who may sign in to this client at the provider: every admitted browser user is an AI Proxy administrator.
+who may sign in to this client at the provider: every admitted browser user is an AIProxyPlus administrator.
 
-Configure the provider only in `src/AiProxy.AppHost/appsettings.json`. AppHost resolves
+Configure the provider only in `src/AIProxyPlus.AppHost/appsettings.json`. AppHost resolves
 `ClientSecretParameter` from an Aspire secret parameter and passes `Authentication__Oidc__*` values only to the
 API. Set `DisplayName` to the user-facing provider name, such as `Keycloak`, `Microsoft Entra ID`, `Okta`, or
 `Auth0`; this non-secret label is the only provider setting exposed to the frontend. `Authority` must be HTTPS
@@ -237,9 +237,9 @@ OIDC Consumers have no Consumer API key and cannot rotate one.
 
 Machine callers can use a generic OIDC access token or a Microsoft Entra managed-identity token. Configure the
 independent `Authentication:Workload:Oidc` or `Authentication:Workload:ManagedIdentity` section in
-`src/AiProxy.Api/appsettings.json` (prefer environment variables for deployment values). Set an exact HTTPS
-authority and audience, then enable the scheme. OIDC tokens require `aiproxy.invoke` in `scope`; managed identities
-require the `AiProxy.Invoke` application role by default. Both values are configurable.
+`src/AIProxyPlus.Api/appsettings.json` (prefer environment variables for deployment values). Set an exact HTTPS
+authority and audience, then enable the scheme. OIDC tokens require `aiproxyplus.invoke` in `scope`; managed identities
+require the `AIProxyPlus.Invoke` application role by default. Both values are configurable.
 
 A valid token is not sufficient by itself. Pre-enroll the OIDC `iss` + `sub` pair or managed identity `tid` + `oid`
 pair on the Consumers page or through the configuration API. Local disable/revoke, model allow-lists, and usage
@@ -356,10 +356,10 @@ dotnet test --results-directory "test-results/$(Get-Date -Format yyyyMMdd-HHmmss
 
 - TRX results + Cobertura coverage land in `test-results/<timestamp>/` (git-ignored except a `.gitkeep`
   placeholder — this folder is for manual/CI runs, not committed output).
-- The running API writes rolling logs to `logs/ai-proxy-.log` (also git-ignored beyond `.gitkeep`).
-- `AiProxy.Domain.Tests`/`AiProxy.Application.Tests` are pure unit tests. `AiProxy.Infrastructure.Tests` uses
-  Testcontainers for Postgres/Vault (requires Docker running). `AiProxy.Api.Tests` uses `WebApplicationFactory`
+- The running API writes rolling logs to `logs/aiproxyplus-.log` (also git-ignored beyond `.gitkeep`).
+- `AIProxyPlus.Domain.Tests`/`AIProxyPlus.Application.Tests` are pure unit tests. `AIProxyPlus.Infrastructure.Tests` uses
+  Testcontainers for Postgres/Vault (requires Docker running). `AIProxyPlus.Api.Tests` uses `WebApplicationFactory`
   + WireMock.Net fake backends (no Docker required) to exercise the full HTTP pipeline — priority/round-robin
   routing and failover, Responses API affinity, the Realtime WebSocket proxy, streaming usage capture, the
   config REST API, and authz enforcement.
-- `AiProxy.ArchitectureTests` (NetArchTest) enforces the Clean Architecture dependency direction.
+- `AIProxyPlus.ArchitectureTests` (NetArchTest) enforces the Clean Architecture dependency direction.

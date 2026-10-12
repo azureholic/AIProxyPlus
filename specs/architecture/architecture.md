@@ -1,4 +1,4 @@
-# AI Proxy — Architecture (Iteration 1)
+# AIProxyPlus — Architecture (Iteration 1)
 
 ## 1. Purpose
 
@@ -64,23 +64,23 @@ Dependencies point **inward**. Nothing in `Domain` or `Application` references A
 OpenTelemetry — those are all `Infrastructure` concerns wired up in `Api` (composition root) and `AppHost`.
 
 ```
-ai-proxy/
+aiproxyplus/
 ├── src/
-│   ├── AiProxy.Domain/            # Entities, value objects, domain events, repository interfaces (ports)
-│   ├── AiProxy.Application/       # Use cases (CQRS-ish handlers), DTOs, validation, application-level interfaces
-│   ├── AiProxy.Infrastructure/    # EF Core + Npgsql, Vault client, direct-HTTP routing/forwarding,
+│   ├── AIProxyPlus.Domain/            # Entities, value objects, domain events, repository interfaces (ports)
+│   ├── AIProxyPlus.Application/       # Use cases (CQRS-ish handlers), DTOs, validation, application-level interfaces
+│   ├── AIProxyPlus.Infrastructure/    # EF Core + Npgsql, Vault client, direct-HTTP routing/forwarding,
 │   │                              # HTTP forwarding, OpenTelemetry instrumentation, background jobs
-│   ├── AiProxy.Api/                # ASP.NET Core minimal API host, endpoint mapping, middleware, composition root
+│   ├── AIProxyPlus.Api/                # ASP.NET Core minimal API host, endpoint mapping, middleware, composition root
 │   │                                # (wwwroot/ — Iteration 3 frontend build output, gitignored, see §19)
-│   ├── AiProxy.Web/                 # React + TypeScript + FluentUI admin/ops frontend (Iteration 3, §19)
-│   ├── AiProxy.ServiceDefaults/    # Aspire shared service defaults (OTel, health checks, resilience defaults)
-│   └── AiProxy.AppHost/            # .NET Aspire AppHost — orchestrates Api, Postgres, Vault, Aspire Dashboard
+│   ├── AIProxyPlus.Web/                 # React + TypeScript + FluentUI admin/ops frontend (Iteration 3, §19)
+│   ├── AIProxyPlus.ServiceDefaults/    # Aspire shared service defaults (OTel, health checks, resilience defaults)
+│   └── AIProxyPlus.AppHost/            # .NET Aspire AppHost — orchestrates Api, Postgres, Vault, Aspire Dashboard
 ├── tests/
-│   ├── AiProxy.Domain.Tests/               # Unit tests, no I/O
-│   ├── AiProxy.Application.Tests/          # Unit tests w/ mocked ports
-│   ├── AiProxy.Infrastructure.Tests/       # Integration tests — Testcontainers (Postgres, Vault)
-│   ├── AiProxy.Api.Tests/                  # Integration tests — WebApplicationFactory + WireMock.Net fake backends
-│   └── AiProxy.ArchitectureTests/          # NetArchTest rules enforcing the dependency graph above
+│   ├── AIProxyPlus.Domain.Tests/               # Unit tests, no I/O
+│   ├── AIProxyPlus.Application.Tests/          # Unit tests w/ mocked ports
+│   ├── AIProxyPlus.Infrastructure.Tests/       # Integration tests — Testcontainers (Postgres, Vault)
+│   ├── AIProxyPlus.Api.Tests/                  # Integration tests — WebApplicationFactory + WireMock.Net fake backends
+│   └── AIProxyPlus.ArchitectureTests/          # NetArchTest rules enforcing the dependency graph above
 ├── logs/                # Runtime debug logs (Serilog file sink) — gitignored, kept via .gitkeep
 ├── test-results/         # dotnet test TRX/coverage output — gitignored, kept via .gitkeep
 ├── docker-compose.yml    # Postgres + Vault + Api for non-Aspire container runs
@@ -117,13 +117,13 @@ ai-proxy/
   `IConsumerAuthenticator`, `IEndpointHealthTracker`, `IEndpointRoundRobinCounter` (Iteration 2), `IUsageExtractor`
   (one implementation per `Provider` + `OperationType` combination, resolved via `IUsageExtractorResolver`);
   command/query handlers for configuration CRUD and usage queries; validation (FluentValidation).
-- **Infrastructure** — implements all ports: `AiProxyDbContext` (EF Core/Npgsql), `VaultSecretResolver`
+- **Infrastructure** — implements all ports: `AIProxyPlusDbContext` (EF Core/Npgsql), `VaultSecretResolver`
   (VaultSharp), `ApiKeyCredentialProvider` / `ManagedIdentityCredentialProvider`, `ProxyRoutingService` +
   `DirectHttpProxy` + `SseStreamRelay` (routing/forwarding/streaming — see §9 for why this isn't built on YARP),
   `RealtimeProxyService` (WebSocket proxy for the Realtime API, Iteration 2, §6.5/§9),
   `EndpointRoundRobinCounter` (Iteration 2), per-`(Provider, OperationType)` `IUsageExtractor` implementations
   (`OpenAiStyleTokenUsageExtractor`, `AnthropicChatUsageExtractor`, `ImageUsageExtractor`,
-  `ResponsesUsageExtractor`), `AiProxyMetrics`/`AiProxyActivitySource` (OpenTelemetry).
+  `ResponsesUsageExtractor`), `AIProxyPlusMetrics`/`AIProxyPlusActivitySource` (OpenTelemetry).
 - **Api** — maps ingress routes (`/openai/v1/*`, `/anthropic/v1/messages`, `/openai/v1/realtime` WebSocket —
   Iteration 2, and `/openai/v1/audio/*` — Iteration 9), configuration routes (`/api/v1/config/*`), health
   endpoints (`/health/live`, `/health/ready`),
@@ -151,8 +151,8 @@ Existing models are backfilled with Chat, ImageGeneration, and Realtime to prese
 visibility; speech capabilities always require explicit administrator selection.
 
 The diagram also depicts `RealtimeTicket` (§13.1's single-use WebSocket authentication ticket) for a complete
-entity-relationship view of what's persisted, but it is intentionally an `AiProxy.Infrastructure`-owned
-persistence type (`Infrastructure/Persistence/RealtimeTicket.cs`), not an `AiProxy.Domain` entity — it models a
+entity-relationship view of what's persisted, but it is intentionally an `AIProxyPlus.Infrastructure`-owned
+persistence type (`Infrastructure/Persistence/RealtimeTicket.cs`), not an `AIProxyPlus.Domain` entity — it models a
 security mechanism (a hashed, expiring, single-consumption credential), not a business concept, so it doesn't
 belong to the Domain layer's dependency-free core alongside `Model`/`Endpoint`/`Consumer`/etc.
 
@@ -374,10 +374,10 @@ plaintext or either Vault reference. Consumer responses likewise omit stored key
 
 **HashiCorp Vault (OSS)** runs as a container alongside the proxy (a local-only bootstrapped `file` backend via
 Aspire/Compose; operator-managed `file` or `raft` storage in real deployments). API keys are stored under a **KV v2** engine at
-immutable references such as `secret/ai-proxy/endpoints/{endpointId}/primary/{credentialVersionId}`. The proxy
+immutable references such as `secret/aiproxyplus/endpoints/{endpointId}/primary/{credentialVersionId}`. The proxy
 authenticates to Vault using **AppRole** (role id + wrapped
 secret id supplied via environment/orchestrator secret, never committed). Local runs use a fixed development-only
-token restricted to `secret/ai-proxy/*`; the bootstrap persists its single local unseal key beside Vault's file
+token restricted to `secret/aiproxyplus/*`; the bootstrap persists its single local unseal key beside Vault's file
 backend in the `vault-data` volume so Docker restarts do not orphan endpoint credentials. This automatic unseal
 shape and fixed token are confined to local development and are not acceptable deployment defaults.
 
@@ -407,7 +407,7 @@ shape and fixed token are confined to local development and are not acceptable d
   one-way hashes directly in `consumers.api_key_hash` / `api_key_hash2` (Postgres), avoiding a Vault round trip on every single
   ingress request. The **pepper** (a server-wide secret mixed into that hash to resist offline cracking if the
   `consumers` table ever leaks) is itself a real secret the app must retrieve, so it lives in Vault at
-  `secret/ai-proxy/consumer-key-pepper`, read once at startup and cached in memory — not the individual consumer
+  `secret/aiproxyplus/consumer-key-pepper`, read once at startup and cached in memory — not the individual consumer
   keys, just this single shared value.
 
 ## 9. Routing & Failover
@@ -420,7 +420,7 @@ shape and fixed token are confined to local development and are not acceptable d
 > route table; (2) YARP's `IHttpForwarder` commits response status/headers to the client as soon as they
 > arrive from upstream, which makes "inspect the response, then decide whether to retry on the next endpoint"
 > impossible when reusing the same `HttpContext` across attempts. Routing/failover/affinity/retry are
-> therefore all handled directly in `AiProxy.Infrastructure.Routing`, issuing each attempt via a raw
+> therefore all handled directly in `AIProxyPlus.Infrastructure.Routing`, issuing each attempt via a raw
 > `HttpMessageInvoker` and only copying the accepted response onto `HttpContext.Response` once a winning
 > attempt is chosen (or retries are exhausted).
 
@@ -516,9 +516,9 @@ shape and fixed token are confined to local development and are not acceptable d
   stateful-session failure" policy.) A request that fails before any endpoint is even attempted (e.g. the
   deployment has zero enabled endpoints) has no upstream response to replay and still gets the generic
   `RoutingFailureReason`-mapped error.
-- **Multiple AI Proxy replicas behind a load balancer / ingress controller**: correctness does not depend on which
+- **Multiple AIProxyPlus replicas behind a load balancer / ingress controller**: correctness does not depend on which
   replica handles a call, so horizontal scaling needs no
-  special ingress-level session affinity/sticky routing to the *same AI Proxy instance*:
+  special ingress-level session affinity/sticky routing to the *same AIProxyPlus instance*:
   - **Responses API affinity** is keyed by `previous_response_id` and persisted in `session_affinity`
     (Postgres, shared across replicas) — whichever replica receives the follow-up call looks up the same row
     and pins to the same backend endpoint. This is exactly why it's a database table and not an in-process
@@ -603,22 +603,22 @@ shape and fixed token are confined to local development and are not acceptable d
 
 ## 11. Observability (OpenTelemetry)
 
-- **Traces**: one root `Activity` per ingress request (`ai_proxy.request`), child spans for deployment
+- **Traces**: one root `Activity` per ingress request (`aiproxyplus.request`), child spans for deployment
   resolution, secret resolution, backend call, and usage extraction. Standard `http.client`/`http.server`
   auto-instrumentation via `OpenTelemetry.Instrumentation.AspNetCore`/`.Http`.
-- **Metrics**: custom `Meter("AiProxy")` with instruments:
-  - `ai_proxy.requests.count` (tags: deployment, api_family, endpoint, status)
-  - `ai_proxy.tokens.prompt` / `ai_proxy.tokens.completion` / `ai_proxy.tokens.total` (tags: deployment, endpoint)
-  - `ai_proxy.request.duration` (histogram, tags as above)
-  - `ai_proxy.failover.count` (tags: deployment, from_endpoint, to_endpoint)
-  - `ai_proxy.credential_fallback.count` (tags: provider, endpoint id/name, outcome)
-  - `ai_proxy.credential_invalidation_notification.count` (tags: operation, outcome)
-  - `ai_proxy.credential_retirement.count` (tags: reason, outcome)
+- **Metrics**: custom `Meter("AIProxyPlus")` with instruments:
+  - `aiproxyplus.requests.count` (tags: deployment, api_family, endpoint, status)
+  - `aiproxyplus.tokens.prompt` / `aiproxyplus.tokens.completion` / `aiproxyplus.tokens.total` (tags: deployment, endpoint)
+  - `aiproxyplus.request.duration` (histogram, tags as above)
+  - `aiproxyplus.failover.count` (tags: deployment, from_endpoint, to_endpoint)
+  - `aiproxyplus.credential_fallback.count` (tags: provider, endpoint id/name, outcome)
+  - `aiproxyplus.credential_invalidation_notification.count` (tags: operation, outcome)
+  - `aiproxyplus.credential_retirement.count` (tags: reason, outcome)
   - Standard ASP.NET Core / HttpClient / Npgsql instrumentation metrics.
 - **Logs**: Serilog configured as the ILogger provider, enriched with trace/span ids, exported via OTLP **and**
-  written to `logs/ai-proxy-.log` (rolling file) for local debugging — see §14.
+  written to `logs/aiproxyplus-.log` (rolling file) for local debugging — see §14.
 - **Local dev**: everything exports via **OTLP** to the **.NET Aspire dashboard**, started by
-  `AiProxy.AppHost`. The `AiProxy.ServiceDefaults` project centralizes this wiring (the standard Aspire pattern)
+  `AIProxyPlus.AppHost`. The `AIProxyPlus.ServiceDefaults` project centralizes this wiring (the standard Aspire pattern)
   so the same code exports to any OTLP collector in non-Aspire/production deployments (configured purely via
   `OTEL_EXPORTER_OTLP_ENDPOINT`).
 
@@ -652,7 +652,7 @@ shape and fixed token are confined to local development and are not acceptable d
   `Consumer` using an API key, browser session, or enabled workload bearer scheme — this is what lets every
   `UsageRecord` attribute tokens back to the calling application/team for chargeback, and stops the proxy from
   being an open relay. Workload JWTs require exact issuer, audience, lifetime, signature algorithm, and either the
-  configured OIDC scope (`aiproxy.invoke` by default) or managed-identity app role (`AiProxy.Invoke` by default).
+  configured OIDC scope (`aiproxyplus.invoke` by default) or managed-identity app role (`AIProxyPlus.Invoke` by default).
   Their immutable identity must also be explicitly pre-enrolled; a valid tenant token alone never creates or
   authorizes a Consumer. Missing credentials, unknown identities, and disabled or revoked Consumers are rejected before
   any routing/forwarding work happens. The Realtime route additionally accepts the consumer key via an
@@ -669,26 +669,26 @@ shape and fixed token are confined to local development and are not acceptable d
   does not attempt to fully validate arbitrary upstream API schemas.
 - **Transport security**: TLS to all backends; HSTS + TLS termination in front of the proxy in real deployments.
 - **Dependency hygiene**: `.github/dependabot.yml` (Iteration 12) covers both ecosystems in this repository —
-  `nuget` (root, covering every `.csproj` via `AiProxy.sln`) and `npm` (`src/AiProxy.Web`) — on a weekly
+  `nuget` (root, covering every `.csproj` via `AIProxyPlus.sln`) and `npm` (`src/AIProxyPlus.Web`) — on a weekly
   schedule. There is still no CI workflow that runs tests/builds automatically; that remains a separate gap
   from dependency update hygiene specifically.
-- **Least privilege (Postgres)**: `Program.cs` supports an optional `ConnectionStrings:aiproxydb-migrations`
+- **Least privilege (Postgres)**: `Program.cs` supports an optional `ConnectionStrings:aiproxyplusdb-migrations`
   connection string (Iteration 12) — when configured, only the startup `Database.MigrateAsync()` step uses it,
-  while every runtime query keeps using the regular, narrower-scoped `ConnectionStrings:aiproxydb`. Local
+  while every runtime query keeps using the regular, narrower-scoped `ConnectionStrings:aiproxyplusdb`. Local
   Aspire/docker-compose dev intentionally keeps a single role/connection string for both (the same trade-off
   already made for dev-mode Vault, below); a real deployment should create the two Postgres roles described in
   README.md's "Least-privilege Postgres role" section and set both connection strings accordingly. This
   repository does not create those roles itself — it only supports pointing at them once an operator has.
 - **Least privilege (Vault)**: the AppRole *mechanism* is implemented (`VaultClientFactory` supports
   `AppRoleAuthMethodInfo`, §8), but the specific least-privilege policy (e.g. scoped only to
-  `secret/data/ai-proxy/*`) is deployment/operator-owned Vault configuration, not something this repository
+  `secret/data/aiproxyplus/*`) is deployment/operator-owned Vault configuration, not something this repository
   defines or ships (no `.hcl` policy file exists here) — local dev deliberately uses a dev-mode root token
   instead (§8/§14). A real deployment must author and attach that scoped policy itself; this repo does not
   verify or enforce it.
 
 ### 13.1 OIDC browser authentication (Iteration 4)
 
-The browser uses a Backend-for-Frontend session rather than handling provider tokens. `AiProxy.Api` is a
+The browser uses a Backend-for-Frontend session rather than handling provider tokens. `AIProxyPlus.Api` is a
 confidential OIDC client using Authorization Code flow with PKCE. It validates the authorization response through
 the provider's discovery document and JWKS, then creates an encrypted ASP.NET Core cookie session. Provider tokens,
 authorization codes, PKCE verifiers, and the client secret never enter frontend JavaScript or browser storage.
@@ -701,7 +701,7 @@ partial, alias, and trailing-slash repair is forbidden. RP-Initiated Logout is o
 by compatible discovery metadata. Providers requiring proprietary browser SDKs, opaque identity tokens, SAML, or
 OAuth without OIDC are outside this iteration.
 
-Every user whom the configured provider permits to complete login is an AI Proxy administrator. Iteration 4 does
+Every user whom the configured provider permits to complete login is an AIProxyPlus administrator. Iteration 4 does
 not map provider roles or groups. Deployments in a shared identity domain must therefore restrict client assignment
 or login eligibility at the provider. Config and Usage routes accept the OIDC session; the static Admin API Key is a
 configurable migration/break-glass fallback and is disabled by default after migration. External inference clients
@@ -744,7 +744,7 @@ query string; its hash, Consumer identity, route binding, expiry, and consumptio
 consumed atomically before upgrade. Browser handshakes with an `Origin` must match the request origin; an absent
 `Origin` remains valid for non-browser clients. Existing Consumer API-key header/query behavior remains for them.
 
-`AiProxy.AppHost` is the only deploy-time configuration owner. It binds provider-neutral `Authentication:Oidc`
+`AIProxyPlus.AppHost` is the only deploy-time configuration owner. It binds provider-neutral `Authentication:Oidc`
 settings, resolves the client credential from an Aspire secret parameter, and forwards only required values to the
 API through `Authentication__Oidc__*` environment variables. Child projects do not duplicate provider settings.
 The frontend receives only the configured, non-secret provider display name through the anonymous
@@ -754,15 +754,15 @@ session, antiforgery, and logout endpoints. One authority/issuer and client are 
 
 ## 14. Deployment Topology & Local Development
 
-- **Local development**: `AiProxy.AppHost` (.NET Aspire) starts:
+- **Local development**: `AIProxyPlus.AppHost` (.NET Aspire) starts:
   - `api` (the .NET 10 API project resource)
   - `postgres` (official `postgres` image, with a named volume)
   - `vault` (official `hashicorp/vault` image, dev mode for local, config-file mode for anything shared)
-  - `keycloak` (pinned Keycloak 26.3.1 image with the development-only `ai-proxy-local` realm and `proxy-admin`;
+  - `keycloak` (pinned Keycloak 26.3.1 image with the development-only `aiproxyplus-local` realm and `proxy-admin`;
     the seeded user's explicit stable ID preserves its OIDC `sub` across realm reimports)
   - the **Aspire dashboard**, which receives OTLP traces/metrics/logs from the API via service-discovery-injected
     `OTEL_EXPORTER_OTLP_ENDPOINT`.
-  - `AiProxy.ServiceDefaults` wires health checks, resilience, and OpenTelemetry consistently for the API project.
+  - `AIProxyPlus.ServiceDefaults` wires health checks, resilience, and OpenTelemetry consistently for the API project.
   Postgres, Vault, and Keycloak use Aspire persistent container lifetimes and named data volumes. Local Vault uses
   its `file` backend and an idempotent local bootstrap, so endpoint secrets survive AppHost, container, and Docker
   restarts. Deleting `vault-data` intentionally resets both encrypted Vault data and its local unseal key.
@@ -772,7 +772,7 @@ session, antiforgery, and logout endpoints. One authority/issuer and client are 
 - Model endpoints themselves are **never** part of this topology — they are just URLs in configuration, which may
   point at `http://localhost:11434` (Ollama), `https://api.openai.com`, `https://api.anthropic.com`, or an Azure
   AI Foundry endpoint.
-- **Frontend build (Iteration 3)**: `src/AiProxy.Api/Dockerfile` has a `frontend-build` (`node:22-alpine`) stage
+- **Frontend build (Iteration 3)**: `src/AIProxyPlus.Api/Dockerfile` has a `frontend-build` (`node:22-alpine`) stage
   that runs `npm ci && npm run build` before the .NET publish stage, and its output is explicitly copied into
   the .NET build stage's `wwwroot` before `dotnet publish` (each Docker stage is an isolated filesystem, so
   this copy can't be skipped) — the runtime image ships one artifact, frontend and API together, per the
@@ -788,11 +788,11 @@ Clean Architecture is enforced and verified, not just aspirational:
 
 | Test project | Type | Tooling | What it covers |
 |---|---|---|---|
-| `AiProxy.Domain.Tests` | Unit | xUnit, FluentAssertions | Entity invariants, value objects, routing/failover selection logic |
-| `AiProxy.Application.Tests` | Unit | xUnit, FluentAssertions, NSubstitute | Use case handlers with mocked ports, validation rules |
-| `AiProxy.Infrastructure.Tests` | Integration | xUnit, Testcontainers (Postgres + Vault), VaultSharp, EF Core | Repository behavior, migrations, VaultSecretResolver against a real Vault container |
-| `AiProxy.Api.Tests` | Integration | xUnit, `WebApplicationFactory`, WireMock.Net (fake OpenAI/Anthropic backends) | End-to-end ingress routing, failover, sticky sessions, streaming usage capture/suppression, config CRUD API, authz |
-| `AiProxy.ArchitectureTests` | Architecture | NetArchTest.Rules | Domain has no dependency on Infrastructure/Api/ASP.NET Core/EF Core; Application has no dependency on Infrastructure |
+| `AIProxyPlus.Domain.Tests` | Unit | xUnit, FluentAssertions | Entity invariants, value objects, routing/failover selection logic |
+| `AIProxyPlus.Application.Tests` | Unit | xUnit, FluentAssertions, NSubstitute | Use case handlers with mocked ports, validation rules |
+| `AIProxyPlus.Infrastructure.Tests` | Integration | xUnit, Testcontainers (Postgres + Vault), VaultSharp, EF Core | Repository behavior, migrations, VaultSecretResolver against a real Vault container |
+| `AIProxyPlus.Api.Tests` | Integration | xUnit, `WebApplicationFactory`, WireMock.Net (fake OpenAI/Anthropic backends) | End-to-end ingress routing, failover, sticky sessions, streaming usage capture/suppression, config CRUD API, authz |
+| `AIProxyPlus.ArchitectureTests` | Architecture | NetArchTest.Rules | Domain has no dependency on Infrastructure/Api/ASP.NET Core/EF Core; Application has no dependency on Infrastructure |
 
 - Fake upstream OpenAI/Anthropic servers (WireMock.Net or minimal test-only ASP.NET apps) simulate success,
   latency, 5xx, timeouts, and both streaming/non-streaming responses with and without usage, including Images
@@ -801,7 +801,7 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Target coverage: meaningful line/branch coverage on `Domain`/`Application` (business logic) is prioritized over
   a raw percentage; `coverlet.collector` + a coverage summary is produced per run.
 - **All debug and test output is written under the workspace**, not to a temp directory or the console only:
-  - `logs/` — Serilog rolling file sink for the running API (`logs/ai-proxy-.log`), both when run locally and
+  - `logs/` — Serilog rolling file sink for the running API (`logs/aiproxyplus-.log`), both when run locally and
     when run by integration tests that boot the API in-process.
   - `test-results/` — `dotnet test --logger "trx" --results-directory test-results` output (TRX + coverage
     Cobertura files), one subfolder per test run/project.
@@ -857,7 +857,7 @@ Clean Architecture is enforced and verified, not just aspirational:
   the provider's actual retention) can configure it explicitly; an unrecognized/expired affinity key still
   falls back to normal (non-sticky) routing rather than erroring (§9).
 - OIDC provider logout is best-effort because `end_session_endpoint` is optional. Local session termination is
-  always authoritative for AI Proxy access even when the upstream provider session remains active.
+  always authoritative for AIProxyPlus access even when the upstream provider session remains active.
 
 ## 18. Non-Goals / Future Iterations
 
@@ -887,7 +887,7 @@ URLs, authentication mode, credentials, timeouts, or retry settings.
 
 ### 19.1 Stack
 
-`src/AiProxy.Web`: Vite + React 19 + TypeScript, FluentUI v9 (`@fluentui/react-components`/`react-icons`) per
+`src/AIProxyPlus.Web`: Vite + React 19 + TypeScript, FluentUI v9 (`@fluentui/react-components`/`react-icons`) per
 the request, `react-router-dom` (browser-history routing — see §19.2 for why that needs a backend fallback
 route), a hand-written `fetch` wrapper (`api/client.ts`) rather than TanStack Query/Redux (the admin surface's
 data volume/interaction complexity doesn't justify it yet), and `recharts` for the two Usage-dashboard charts.
@@ -898,7 +898,7 @@ raw percentage" philosophy (§15) applied to a UI codebase.
 
 ### 19.2 Single-container serving pattern
 
-`AiProxy.Web`'s `vite.config.ts` sets `build.outDir` to `../AiProxy.Api/wwwroot` directly — `npm run build`
+`AIProxyPlus.Web`'s `vite.config.ts` sets `build.outDir` to `../AIProxyPlus.Api/wwwroot` directly — `npm run build`
 (or the Dockerfile's build stage) writes the compiled static files straight into the ASP.NET project, which
 then serves them via `UseDefaultFiles`/`UseStaticFiles` plus `MapFallbackToFile("index.html")` registered
 after every other route, so React Router's client-side routes resolve correctly on a hard refresh without
@@ -979,4 +979,4 @@ and displays the returned transcription. Text-to-speech accepts text and a voice
 native playback and download. Microphone permission is requested only when recording starts. Media tracks,
 in-flight requests, and object URLs are released on replacement, mode change, navigation, failure, and unmount.
 Audio remains browser-local except while it is sent through the authenticated speech ingress and is never stored by
-AI Proxy.
+AIProxyPlus.

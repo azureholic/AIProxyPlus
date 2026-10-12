@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:18
     environment:
-      POSTGRES_USER: aiproxy
-      POSTGRES_PASSWORD: aiproxy-dev-only
-      POSTGRES_DB: aiproxydb
+      POSTGRES_USER: aiproxyplus
+      POSTGRES_PASSWORD: aiproxyplus-dev-only
+      POSTGRES_DB: aiproxyplusdb
     volumes:
       - postgres-data:/var/lib/postgresql
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aiproxy -d aiproxydb"]
+      test: ["CMD-SHELL", "pg_isready -U aiproxyplus -d aiproxyplusdb"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -21,7 +21,7 @@ services:
     entrypoint: ["/bin/sh", "/vault/config/bootstrap.sh"]
     volumes:
       - vault-data:/vault/file
-      - ./src/AiProxy.AppHost/vault:/vault/config:ro
+      - ./src/AIProxyPlus.AppHost/vault:/vault/config:ro
     ports:
       - "8200:8200"
     healthcheck:
@@ -33,10 +33,10 @@ services:
   api:
     build:
       context: .
-      dockerfile: src/AiProxy.Api/Dockerfile
+      dockerfile: src/AIProxyPlus.Api/Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__aiproxydb: "Host=postgres;Database=aiproxydb;Username=aiproxy;Password=aiproxy-dev-only"
+      ConnectionStrings__aiproxyplusdb: "Host=postgres;Database=aiproxyplusdb;Username=aiproxyplus;Password=aiproxyplus-dev-only"
       Vault__Address: "http://vault:8200"
       Vault__Token: "dev-only-root-token"
       # Point at an external OTLP collector if you have one; leave unset to disable OTLP export.

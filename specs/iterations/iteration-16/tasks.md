@@ -9,7 +9,7 @@ Add two independently managed outbound API-key slots to each `ApiKey` endpoint s
 backend credential without interrupting traffic when that provider supports overlapping keys. Slot 1 remains
 required; Slot 2 is optional because not every backend supports multiple active credentials.
 
-During an explicitly enabled, time-bounded cutover window, AI Proxy may retry one request with the previous slot
+During an explicitly enabled, time-bounded cutover window, AIProxyPlus may retry one request with the previous slot
 when the newly active credential receives an unambiguous upstream authentication rejection. This is a rotation
 safety mechanism, not a permanent "try every key" policy.
 
@@ -95,10 +95,10 @@ release, then is removed deliberately in a later versioned change.
 ## Rotation workflow
 
 1. Create/enable the standby credential at the external provider.
-2. Store it in the inactive AI Proxy slot.
+2. Store it in the inactive AIProxyPlus slot.
 3. Activate that slot with a short fallback expiry.
 4. Observe fallback-attempt telemetry. Successful fallback indicates the new provider credential is not accepted
-   consistently and requires investigation; AI Proxy does not auto-promote or auto-revert either slot.
+   consistently and requires investigation; AIProxyPlus does not auto-promote or auto-revert either slot.
 5. Once the new slot succeeds across replicas, end fallback and revoke the old key at the provider.
 6. Keep or replace the inactive slot for the next rotation. Providers supporting only one key use Slot 1 and an
    immediate cutover, retaining today's bounded interruption risk.
@@ -202,7 +202,7 @@ release, then is removed deliberately in a later versioned change.
   backend suite plus frontend test/build checks.
 - [ ] Live-test OpenAI-compatible and Anthropic endpoints with two provider keys: active success, bounded fallback,
   explicit cutover, fallback disable, and old-key revocation.
-- [ ] Run at least two AI Proxy replicas against shared PostgreSQL/Vault and prove cache convergence without TTL wait.
+- [ ] Run at least two AIProxyPlus replicas against shared PostgreSQL/Vault and prove cache convergence without TTL wait.
 - [x] Verify a Slot 1-only backend retains current behavior.
 - [x] Update README, architecture diagrams, API documentation, operator rotation runbook, and this task file only
   after implementation and validation are complete.

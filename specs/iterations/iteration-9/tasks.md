@@ -100,7 +100,7 @@ request/response speech-to-text and text-to-speech workflows alongside the exist
 - [x] Request microphone permission only when recording starts; expose recording state and elapsed time; stop every
   media track on stop, replacement, navigation, failure, and unmount.
 - [x] Validate supported file types and the architecture-defined size limit before upload, while treating the selected
-  or recorded file as ephemeral browser state that is never persisted by AI Proxy.
+  or recorded file as ephemeral browser state that is never persisted by AIProxyPlus.
 - [x] In text-to-speech mode, filter models by `TextToSpeech`, accept text and the required voice setting, request audio,
   and provide native playback plus a download action using the upstream response content type.
 - [x] Revoke replaced and unmounted object URLs, cancel in-flight requests on mode changes/navigation, and surface
@@ -113,7 +113,7 @@ request/response speech-to-text and text-to-speech workflows alongside the exist
 - [x] Update README model configuration and Playground guidance with capability examples, Speech workflows, supported
   browser APIs, upload limits, and the distinction between Speech and Realtime Voice.
 - [x] Run focused domain, application, infrastructure, API, architecture, and frontend tests after each phase.
-- [x] Run `dotnet test AiProxy.sln`, then `npm test` and `npm run build` from `src/AiProxy.Web`.
+- [x] Run `dotnet test AIProxyPlus.sln`, then `npm test` and `npm run build` from `src/AIProxyPlus.Web`.
 - [ ] Validate live model filtering for Chat, Images, Voice, speech-to-text, and text-to-speech in Chromium.
 - [ ] Validate microphone transcription, local-file transcription, synthesized playback, and synthesized download
   against configured speech models without exposing audio or credentials in logs or telemetry.

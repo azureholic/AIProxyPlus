@@ -7,7 +7,7 @@ token-less. DALL-E is deprecated and is out of scope for live validation — see
 
 ## Background
 
-- `ImageUsageExtractor` (`src/AiProxy.Infrastructure/Usage/ImageUsageExtractor.cs`) currently only reads
+- `ImageUsageExtractor` (`src/AIProxyPlus.Infrastructure/Usage/ImageUsageExtractor.cs`) currently only reads
   `data` (image count), `size`, and `quality` into `UsageRecord.UsageMetrics`; `PromptTokens`/`CompletionTokens`/
   `TotalTokens` are always `null` for `ImageGeneration`/`ImageEdit`/`ImageVariation`, and
   `TryExtractFromStreamingEvent` always returns `null`. Architecture §6.3 documents this as "most Images API
@@ -98,7 +98,7 @@ token-less. DALL-E is deprecated and is out of scope for live validation — see
 
 ## Phase 3 — Validation
 
-- [x] Run the complete backend test suite (`dotnet test AiProxy.sln`) — 348 tests passed.
+- [x] Run the complete backend test suite (`dotnet test AIProxyPlus.sln`) — 348 tests passed.
 - [x] Manually validate live against `gpt-image-2` (`Provider.OpenAI`, Azure AI Foundry-hosted) with one
   non-streaming and one streaming request: `usage_records` captured `PromptTokens`/`CompletionTokens`/
   `TotalTokens` (e.g. 13/229/242 non-streaming, 14/186/200 streaming from the `image_generation.completed`
@@ -129,7 +129,7 @@ than branching on `Provider`.
   `Provider.MicrosoftAI`/`/mai/v1` endpoint proving end-to-end capture.
 - [x] Update architecture §6.3/§10 to document both recognized `usage` shapes and that the extractor tries
   OpenAI's shape first, falling back to Microsoft AI's, independent of `Provider`.
-- [x] Run the complete backend test suite (`dotnet test AiProxy.sln`) — 350 tests passed.
+- [x] Run the complete backend test suite (`dotnet test AIProxyPlus.sln`) — 350 tests passed.
 - [x] Re-validate live against `MAI-Image-2.5-Flash` with the fix in place and confirm `usage_records` now
   captures `PromptTokens`/`CompletionTokens`/`TotalTokens` (12/1024/1036) and the Usage Dashboard's "Tokens"
   column shows the value instead of `—`.
