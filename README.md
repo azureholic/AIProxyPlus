@@ -277,7 +277,10 @@ attribution then work exactly as they do for API-key Consumers. Workload identit
 
 The static Admin API Key is a disabled-by-default migration/break-glass path. Set
 `Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration, and supply the key yourself
-through `Authentication__AdminApiKey` (use a secret store or secret-aware parameter, never a committed file). The
+through `Authentication__AdminApiKey` (use a secret store or secret-aware parameter, never a committed file). It must
+be at least 32 characters and the proxy refuses to start with a shorter value; generate one with a CSPRNG, for
+example `openssl rand -hex 32` or
+`[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()` in PowerShell. The
 application stores only its SHA-256 hash in Vault, never generates a key, and never logs one. Changing
 `Authentication__AdminApiKey` replaces the stored hash, which is how you rotate it; if an earlier version of the
 proxy logged a generated key, rotate it this way and treat the old value as compromised. With no key configured and

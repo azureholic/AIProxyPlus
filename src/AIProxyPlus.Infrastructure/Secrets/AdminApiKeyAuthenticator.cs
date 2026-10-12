@@ -13,6 +13,9 @@ namespace AIProxyPlus.Infrastructure.Secrets;
 /// </summary>
 public sealed class AdminApiKeyAuthenticator(string adminApiKeyHash)
 {
+    /// <summary>Operator-supplied keys must carry at least 128 bits of entropy as 32 hexadecimal characters.</summary>
+    public const int MinimumConfiguredKeyLength = 32;
+
     private const string SecretRef = "admin-api-key-hash";
 
     public bool Validate(string? plaintextApiKey)
@@ -43,6 +46,14 @@ public sealed class AdminApiKeyAuthenticator(string adminApiKeyHash)
 
         if (!string.IsNullOrWhiteSpace(bootstrapApiKey))
         {
+            if (bootstrapApiKey.Length < MinimumConfiguredKeyLength)
+            {
+                // The message deliberately omits the value so a rejected key is not leaked to logs.
+                throw new InvalidOperationException(
+                    $"Authentication:AdminApiKey must be at least {MinimumConfiguredKeyLength} characters. " +
+                    "Generate one with a CSPRNG, for example: openssl rand -hex 32");
+            }
+
             var configuredHash = Hash(bootstrapApiKey);
             if (!string.Equals(storedHash, configuredHash, StringComparison.Ordinal))
             {

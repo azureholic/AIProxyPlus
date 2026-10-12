@@ -10,6 +10,7 @@ namespace AIProxyPlus.Infrastructure.Tests.Secrets;
 public class AdminApiKeyAuthenticatorTests
 {
     private const string SecretRef = "admin-api-key-hash";
+    private const string RotatedKey = "rotated-admin-key-0123456789abcdef0123456789";
 
     [Fact]
     public async Task CreateAsync_WhenNoHashAndNoConfiguredKey_GeneratesNothingAndLogsNoKeyMaterial()
@@ -30,7 +31,7 @@ public class AdminApiKeyAuthenticatorTests
     [Fact]
     public async Task CreateAsync_WithConfiguredKey_StoresOnlyItsHash_AndNeverLogsTheKey()
     {
-        const string configuredKey = "operator-supplied-admin-key";
+        const string configuredKey = "operator-supplied-admin-key-0123456789abcdef";
         var secretResolver = Substitute.For<ISecretResolver>();
         secretResolver.TryResolveAsync(SecretRef, Arg.Any<CancellationToken>()).Returns((string?)null);
         var logger = new CapturingLogger();
@@ -52,11 +53,11 @@ public class AdminApiKeyAuthenticatorTests
             .Returns(AdminApiKeyAuthenticator.Hash("previously-leaked-key"));
 
         var authenticator = await AdminApiKeyAuthenticator.CreateAsync(
-            secretResolver, NullLogger.Instance, "rotated-admin-key");
+            secretResolver, NullLogger.Instance, RotatedKey);
 
         await secretResolver.Received(1).StoreAsync(
-            SecretRef, AdminApiKeyAuthenticator.Hash("rotated-admin-key"), Arg.Any<CancellationToken>());
-        authenticator.Validate("rotated-admin-key").Should().BeTrue();
+            SecretRef, AdminApiKeyAuthenticator.Hash(RotatedKey), Arg.Any<CancellationToken>());
+        authenticator.Validate(RotatedKey).Should().BeTrue();
         authenticator.Validate("previously-leaked-key").Should().BeFalse();
     }
 
@@ -65,12 +66,41 @@ public class AdminApiKeyAuthenticatorTests
     {
         var secretResolver = Substitute.For<ISecretResolver>();
         secretResolver.TryResolveAsync(SecretRef, Arg.Any<CancellationToken>())
-            .Returns(AdminApiKeyAuthenticator.Hash("same-key"));
+            .Returns(AdminApiKeyAuthenticator.Hash(RotatedKey));
 
-        var authenticator = await AdminApiKeyAuthenticator.CreateAsync(secretResolver, NullLogger.Instance, "same-key");
+        var authenticator = await AdminApiKeyAuthenticator.CreateAsync(secretResolver, NullLogger.Instance, RotatedKey);
 
-        authenticator.Validate("same-key").Should().BeTrue();
+        authenticator.Validate(RotatedKey).Should().BeTrue();
         await secretResolver.DidNotReceive().StoreAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("abc123")]
+    [InlineData("test-admin-key")]
+    [InlineData("0123456789abcdef0123456789abcde")]
+    public async Task CreateAsync_WithConfiguredKeyShorterThanTheMinimum_FailsWithoutStoringOrEchoingIt(string weakKey)
+    {
+        var secretResolver = Substitute.For<ISecretResolver>();
+        secretResolver.TryResolveAsync(SecretRef, Arg.Any<CancellationToken>()).Returns((string?)null);
+
+        var act = async () => await AdminApiKeyAuthenticator.CreateAsync(secretResolver, NullLogger.Instance, weakKey);
+
+        var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        exception.Message.Should().Contain("Authentication:AdminApiKey").And.Contain("32");
+        exception.Message.Should().NotContain(weakKey);
+        await secretResolver.DidNotReceive().StoreAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithConfiguredKeyAtTheMinimumLength_IsAccepted()
+    {
+        var key = new string('a', AdminApiKeyAuthenticator.MinimumConfiguredKeyLength);
+        var secretResolver = Substitute.For<ISecretResolver>();
+        secretResolver.TryResolveAsync(SecretRef, Arg.Any<CancellationToken>()).Returns((string?)null);
+
+        var authenticator = await AdminApiKeyAuthenticator.CreateAsync(secretResolver, NullLogger.Instance, key);
+
+        authenticator.Validate(key).Should().BeTrue();
     }
 
     [Fact]
