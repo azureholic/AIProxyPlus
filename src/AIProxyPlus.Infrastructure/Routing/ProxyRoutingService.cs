@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Net.Http;
-using System.Net.Sockets;
 using System.Text.Json;
 using AIProxyPlus.Application.Abstractions;
 using AIProxyPlus.Application.Exceptions;
@@ -320,7 +319,7 @@ public sealed class ProxyRoutingService(
                     return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
                 }
 
-                if (FailedBeforeRequestWasSent(exception))
+                if (UpstreamFailureClassifier.FailedBeforeRequestWasSent(exception))
                 {
                     // Refused, DNS, or TLS failure: nothing reached the upstream, so trying again is safe.
                     continue;
@@ -329,7 +328,7 @@ public sealed class ProxyRoutingService(
                 // The connection was established, so the upstream may have received and acted on the request.
                 return new ForwardOutcome(false, 0, null, null, MayHaveBeenProcessed: true);
             }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
                 if (fallbackAttempted && activeCredentialRejection is not null)
                 {
@@ -338,7 +337,12 @@ public sealed class ProxyRoutingService(
                     return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
                 }
 
-                // Upstream timeout (distinct from the caller cancelling): it may still have processed the request.
+                if (UpstreamFailureClassifier.FailedBeforeRequestWasSent(exception))
+                {
+                    // The connect timeout fired before anything was sent, so trying again is safe.
+                    continue;
+                }
+
                 return new ForwardOutcome(false, 0, null, null, MayHaveBeenProcessed: true);
             }
 
@@ -380,7 +384,7 @@ public sealed class ProxyRoutingService(
                 {
                     metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "succeeded");
                 }
-                if (IsSafeToReplay(provider, statusCode))
+                if (UpstreamFailureClassifier.IsSafeToReplay(provider, statusCode))
                 {
                     lastFailureSnapshot = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
                     continue;
@@ -484,33 +488,6 @@ public sealed class ProxyRoutingService(
             return null;
         }
     }
-
-    // Only failures that happen while establishing the connection prove the request never reached the upstream.
-    // HttpRequestError.ConnectionError alone is not enough: .NET also reports a connection that was reset after the
-    // request was sent as ConnectionError, so it counts only when the socket error says no connection was made.
-    private static bool FailedBeforeRequestWasSent(HttpRequestException exception) =>
-        exception.HttpRequestError is HttpRequestError.NameResolutionError
-            or HttpRequestError.SecureConnectionError
-            or HttpRequestError.ProxyTunnelError
-        || (exception.HttpRequestError == HttpRequestError.ConnectionError
-            && exception.InnerException is SocketException
-            {
-                SocketErrorCode: SocketError.ConnectionRefused
-                    or SocketError.HostUnreachable
-                    or SocketError.NetworkUnreachable
-                    or SocketError.AddressNotAvailable
-                    or SocketError.HostNotFound
-            });
-
-    // Every proxied operation is a POST. Only a response that says the upstream did not process the request may be
-    // replayed to the same or another endpoint: 429 (rate limited) and 503 (temporarily unavailable) for every
-    // provider, plus 529, which only Anthropic documents as an "overloaded" rejection. 529 is not a standard status,
-    // so another provider could use it after accepting work and it must not be trusted there.
-    private static bool IsSafeToReplay(Provider provider, int statusCode) =>
-        statusCode is StatusCodes.Status429TooManyRequests or StatusCodes.Status503ServiceUnavailable
-        || (provider == Provider.Anthropic && statusCode == AnthropicOverloaded);
-
-    private const int AnthropicOverloaded = 529;
 
     private static TimeSpan JitteredBackoff(int attempt)
     {

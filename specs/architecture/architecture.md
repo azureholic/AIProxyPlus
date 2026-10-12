@@ -462,7 +462,8 @@ shape and fixed token are confined to local development and are not acceptable d
   Two endpoints sharing a priority is intentional configuration (ties round-robin together), not an error.
 - **Failover triggers**: a backend response of `429` (rate limited) or `503` (temporarily unavailable) from any
   provider, or `529` (Anthropic's documented "overloaded" rejection) from an Anthropic route only, or a failure
-  while establishing the connection (connection refused, DNS, TLS), marks the endpoint unhealthy for this request
+  while establishing the connection (connection refused, DNS, TLS, connect timeout), marks the endpoint unhealthy
+  for this request
   (`IEndpointHealthTracker`) and the next candidate in the round-robin tier — or the next priority tier if the
   current one is exhausted — is tried, bounded by the deployment's total endpoint count. `429` was added in
   Iteration 2: it's the single most common real-world reason to want failover, and treating it as a failover
@@ -472,17 +473,20 @@ shape and fixed token are confined to local development and are not acceptable d
   operation is a non-idempotent `POST`, and replaying one can duplicate billable work or stateful objects (image
   generation, stored Responses API objects). The proxy therefore replays a request, to the same endpoint or
   another, only when it can show the upstream did not process it: a `429`, `503`, or Anthropic `529` response, or a
-  failure while establishing the connection, where nothing was sent. The status codes are the documented "rejected
-  before processing" signals of the supported providers (OpenAI, Microsoft AI, Anthropic), which is the contract
-  this rule relies on; a status code alone cannot prove it for an arbitrary upstream, and the proxy does not attempt
-  to. `529` is not a standard status, so it is trusted only on Anthropic routes; on any other provider it is treated
-  like every other ambiguous `5xx`. Everything else is ambiguous and is never retried or failed over: any other
-  `5xx` (`500`, `502`, `504`, ...), and any transport failure after the connection was established (a response that
-  ended early, a connection reset after the request was sent, an upstream timeout), because the upstream may have
-  accepted and acted on the request. For an ambiguous outcome the endpoint is still marked unhealthy so *subsequent*
-  requests skip it (cross-request circuit breaker, below), and the caller receives that endpoint's own error
-  verbatim, or a generic error when there was no response; an earlier endpoint's replay-safe snapshot is not
-  substituted, because a stale `429`/`Retry-After` would invite a confident retry of work that may already be done.
+  failure while establishing the connection (refused, DNS, TLS, connect timeout), where nothing was sent. The status
+  codes are the documented "rejected before processing" signals of the supported providers (OpenAI, Microsoft AI,
+  Anthropic), which is the contract this rule relies on; a status code alone cannot prove it for an arbitrary
+  upstream, and the proxy does not attempt to. `529` is not a standard status, so it is trusted only on Anthropic
+  routes; on any other provider it is treated like every other ambiguous `5xx`. Everything else is ambiguous and is
+  never retried or failed over: any other `5xx` (`500`, `502`, `504`, ...), and any transport failure after the
+  connection was established (a response that ended early, or a connection reset after the request was sent),
+  because the upstream may have accepted and acted on the request. (Routing enforces no response timeout today; if
+  one is ever added it would be ambiguous too and must not be classified as a connect failure. The classification
+  lives in `UpstreamFailureClassifier`.) For an ambiguous outcome the endpoint is still marked unhealthy so
+  *subsequent* requests skip it (cross-request circuit breaker, below), and the caller receives that endpoint's own
+  error verbatim (an error body cut off mid-stream is returned empty), or a generic error when there was no response;
+  an earlier endpoint's replay-safe snapshot is not substituted, because a stale `429`/`Retry-After` would invite a
+  confident retry of work that may already be done.
   Operations that are safe to repeat are not distinguished, so this is deliberately conservative; widening it would
   need an explicit per-operation or per-endpoint opt-in, and narrowing it further (for example, an idempotency key
   before any status-based replay) would be a separate design decision.

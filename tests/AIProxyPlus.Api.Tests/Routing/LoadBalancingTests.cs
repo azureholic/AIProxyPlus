@@ -187,6 +187,69 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task ErrorResponseCutOffMidBody_IsStillHandledAsAPossiblyProcessedFailure()
+    {
+        // The server announces a 500 with a 100-byte body, sends 7 bytes, then closes. Reading that body fails, but
+        // the failure must still be handled (not replayed, endpoint marked unhealthy) instead of escaping as a crash.
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var acceptedConnections = 0;
+        var serverTask = Task.Run(async () =>
+        {
+            while (true)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync();
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+
+                Interlocked.Increment(ref acceptedConnections);
+                using (client)
+                {
+                    var stream = client.GetStream();
+                    await stream.ReadAsync(new byte[4096]);
+                    await stream.WriteAsync(
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 100\r\n\r\npartial"u8.ToArray());
+                }
+            }
+        });
+
+        try
+        {
+            var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+            var model = Model.Create(Guid.NewGuid(), modelName);
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, $"http://127.0.0.1:{port}", priority: 1, maxRetries: 3));
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+            _factory.Models.Seed(model);
+
+            _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+                .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
+
+            var first = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+
+            first.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            acceptedConnections.Should().Be(1, "the same endpoint must not be retried");
+            _backend2.LogEntries.Should().BeEmpty("the request must not be failed over to another endpoint");
+
+            var second = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+
+            second.StatusCode.Should().Be(HttpStatusCode.OK, "the failed endpoint was marked unhealthy, so the next request skips it");
+            acceptedConnections.Should().Be(1);
+        }
+        finally
+        {
+            listener.Stop();
+            await serverTask;
+        }
+    }
+
+    [Fact]
     public async Task TransportFailureAfterConnecting_IsNotRetriedOrFailedOver()
     {
         // The server accepts the connection and reads the request, then closes without answering. The request may

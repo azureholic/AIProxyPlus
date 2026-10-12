@@ -133,7 +133,18 @@ internal static class DirectHttpProxy
             }
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        // The error body is best-effort: a response cut off mid-body must not escape before the failure is handled
+        // (marking the endpoint unhealthy, deciding about replay), so a truncated body becomes an empty one.
+        string body;
+        try
+        {
+            body = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException)
+        {
+            body = string.Empty;
+        }
+
         return new UpstreamFailureSnapshot((int)response.StatusCode, headers, body);
     }
 
