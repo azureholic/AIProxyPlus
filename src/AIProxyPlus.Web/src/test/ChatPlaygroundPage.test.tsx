@@ -230,4 +230,39 @@ describe('ChatPlaygroundPage', () => {
     expect(await screen.findByText('Hello')).toBeInTheDocument();
     expect(await screen.findByText(/total: 4/)).toBeInTheDocument();
   });
+
+  it('streams a Chat Completions reply, requests the usage chunk, and shows token usage', async () => {
+    const model = {
+      id: '6',
+      name: 'gpt-chat-stream',
+      strategy: 'Priority',
+      capabilities: ['Chat'],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      endpoints: [],
+    };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return sseResponse([
+          JSON.stringify({ choices: [{ delta: { content: 'Hi!' } }] }),
+          JSON.stringify({ choices: [], usage: { prompt_tokens: 7, completion_tokens: 13, total_tokens: 20 } }),
+          '[DONE]',
+        ]);
+      }
+      return jsonResponse(url.includes('models') ? [model] : []);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<ChatPlaygroundPage />);
+    await user.click(screen.getByPlaceholderText('Select a model…'));
+    await user.click(await screen.findByRole('option', { name: 'gpt-chat-stream' }));
+
+    fireEvent.change(screen.getByPlaceholderText('Type a message…'), { target: { value: 'hi' } });
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText(/total: 20/)).toBeInTheDocument();
+    const postCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')!;
+    expect(JSON.parse(postCall[1]!.body as string)).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+  });
 });

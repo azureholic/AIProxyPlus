@@ -214,6 +214,8 @@ export function ChatPlaygroundPage() {
             model,
             stream: streaming,
             ...(isAnthropic ? { max_tokens: 1024 } : {}),
+            // OpenAI only streams a usage chunk when asked; the proxy hides it from clients that don't.
+            ...(!isAnthropic && streaming ? { stream_options: { include_usage: true } } : {}),
             messages: history.map((m) => ({ role: m.role, content: m.content })),
           };
 
