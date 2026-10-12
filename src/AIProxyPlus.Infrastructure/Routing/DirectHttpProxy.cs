@@ -9,7 +9,8 @@ namespace AIProxyPlus.Infrastructure.Routing;
 /// Builds outbound requests to a selected <see cref="Endpoint"/> and copies the winning response back to the
 /// client. Deliberately NOT built on YARP's <c>IHttpForwarder</c>: that API commits headers/status to the
 /// client response as soon as it receives them from upstream, which makes it impossible to inspect a response
-/// (to decide "retry on this backend's 5xx") before it has already been forwarded. Since our bounded
+/// (to decide "retry on this backend's 429/503" or to return its other 5xx as final) before it has already been
+/// forwarded. Since our bounded
 /// per-endpoint retry with failover (architecture.md §9) requires exactly that inspect-before-commit
 /// capability, requests are issued directly via <see cref="HttpMessageInvoker"/> and only the response for
 /// the attempt that is ultimately accepted is copied onto <see cref="HttpContext.Response"/>.
@@ -132,7 +133,18 @@ internal static class DirectHttpProxy
             }
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        // The error body is best-effort: a response cut off mid-body must not escape before the failure is handled
+        // (marking the endpoint unhealthy, deciding about replay), so a truncated body becomes an empty one.
+        string body;
+        try
+        {
+            body = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException)
+        {
+            body = string.Empty;
+        }
+
         return new UpstreamFailureSnapshot((int)response.StatusCode, headers, body);
     }
 

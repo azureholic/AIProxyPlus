@@ -30,7 +30,7 @@ it is not tied to Azure:
 | 5 | OpenTelemetry (traces, logs, metrics) | OTLP exporter → Aspire dashboard locally, OTLP collector in prod |
 | 6 | Configuration | see §7 |
 | 6.1 | Model name | `Model.Name` (routing key) |
-| 6.2 | 1+ endpoints, priority + failover | `ModelEndpoint.Priority`, `EndpointSelector` (Domain): lowest-priority tier first, round-robin across assignments that share a priority, failover on `429`/`5xx` (Iteration 2) |
+| 6.2 | 1+ endpoints, priority + failover | `ModelEndpoint.Priority`, `EndpointSelector` (Domain): lowest-priority tier first, round-robin across assignments that share a priority, failover on `429`/`503` (and Anthropic's `529`) plus connect-phase failures (Iteration 2; narrowed so a possibly-processed `POST` is never replayed, see §9) |
 | 6.3 | Sticky sessions for stateful calls | **Automatic, protocol-inherent affinity only** — no config flag (Iteration 2). Responses API: `previous_response_id`-keyed affinity (`ISessionAffinityStore`, persisted in Postgres). Realtime API: the WebSocket connection itself is the affinity (§6.5/§9) |
 | 6.4 | API key vs Managed Identity per endpoint | `Endpoint.AuthMode` + `ICredentialProvider` strategy |
 | 6.5 | Configuration REST API | `/api/v1/config/*` CRUD endpoints, incl. `Consumer` (API key) management |
@@ -237,8 +237,8 @@ request-body limit fail locally before endpoint or credential resolution.
 
 `POST /openai/v1/audio/speech` uses the existing JSON `model` peek and forwards the request unchanged. Successful
 synthesis responses are arbitrary binary audio, so the winning response is streamed directly with its upstream
-status and end-to-end content headers rather than decoded as UTF-8 or inspected as JSON. Failed retriable responses
-are still buffered for retry/failover and first-error replay. OpenAI and Microsoft AI routes use
+status and end-to-end content headers rather than decoded as UTF-8 or inspected as JSON. Failed replay-safe responses
+(`429`/`503`, and Anthropic's `529`) are still buffered for retry/failover and first-error replay. OpenAI and Microsoft AI routes use
 `/audio/transcriptions` and `/audio/speech`; unsupported provider/operation pairs fail locally. Usage is captured
 only when the provider returns a real token or non-token usage signal; the proxy does not invent billing values.
 
@@ -463,19 +463,46 @@ shape and fixed token are confined to local development and are not acceptable d
   endpoint, or a deployment where every endpoint has a distinct priority, behaves exactly like strict
   priority-order failover — round-robin only has a visible effect when two or more endpoints share a priority.
   Two endpoints sharing a priority is intentional configuration (ties round-robin together), not an error.
-- **Failover triggers**: a backend response of `429` (rate limited) or any `5xx`, or a transport-level failure
-  (timeout, connection refused), marks the endpoint unhealthy for this request (`IEndpointHealthTracker`) and
-  the next candidate in the round-robin tier — or the next priority tier if the current one is exhausted — is
-  tried, bounded by the deployment's total endpoint count. `429` was added in Iteration 2: it's the single most
-  common real-world reason to want failover, and treating it identically to `5xx` means a rate-limited primary
-  endpoint no longer fails every in-flight request while a secondary endpoint sits idle.
+- **Failover triggers**: a backend response of `429` (rate limited) or `503` (temporarily unavailable) from any
+  provider, or `529` (Anthropic's documented "overloaded" rejection) from an Anthropic route only, or a failure
+  while establishing the connection (connection refused, DNS, TLS, connect timeout), marks the endpoint unhealthy
+  for this request
+  (`IEndpointHealthTracker`) and the next candidate in the round-robin tier — or the next priority tier if the
+  current one is exhausted — is tried, bounded by the deployment's total endpoint count. `429` was added in
+  Iteration 2: it's the single most common real-world reason to want failover, and treating it as a failover
+  trigger means a rate-limited primary endpoint no longer fails every in-flight request while a secondary endpoint
+  sits idle.
+- **Replay safety — no automatic replay after a possibly-processed request (security review)**: every proxied
+  operation is a non-idempotent `POST`, and replaying one can duplicate billable work or stateful objects (image
+  generation, stored Responses API objects). The proxy therefore replays a request, to the same endpoint or
+  another, only when it can show the upstream did not process it: a `429`, `503`, or Anthropic `529` response, or a
+  failure while establishing the connection (refused, DNS, TLS, connect timeout), where nothing was sent. The status
+  codes are the documented "rejected before processing" signals of the supported providers (OpenAI, Microsoft AI,
+  Anthropic), which is the contract this rule relies on; a status code alone cannot prove it for an arbitrary
+  upstream, and the proxy does not attempt to. `529` is not a standard status, so it is trusted only on Anthropic
+  routes; on any other provider it is treated like every other ambiguous `5xx`. Everything else is ambiguous and is
+  never retried or failed over: any other `5xx` (`500`, `502`, `504`, ...), and any transport failure after the
+  connection was established (a response that ended early, or a connection reset after the request was sent),
+  because the upstream may have accepted and acted on the request. (Routing enforces no response timeout today; if
+  one is ever added it would be ambiguous too and must not be classified as a connect failure. The classification
+  lives in `UpstreamFailureClassifier`.) For an ambiguous outcome the endpoint is still marked unhealthy so
+  *subsequent* requests skip it (cross-request circuit breaker, below), and the caller receives that endpoint's own
+  error verbatim (an error body cut off mid-stream is returned empty), or a generic error when there was no response;
+  an earlier endpoint's replay-safe snapshot is not substituted, because a stale `429`/`Retry-After` would invite a
+  confident retry of work that may already be done.
+  Operations that are safe to repeat are not distinguished, so this is deliberately conservative; widening it would
+  need an explicit per-operation or per-endpoint opt-in, and narrowing it further (for example, an idempotency key
+  before any status-based replay) would be a separate design decision.
 - **Bounded credential fallback (Iteration 16)**: HTTP forwarding resolves the active endpoint credential first.
   During an explicitly configured, unexpired window it may retry the same buffered request exactly once with the
   previous slot, without delay, only after an upstream HTTP `401` received before any client response is committed.
   No provider-specific structured `403` rejection codes are currently proven, so every `403`, `429`, `5xx`, timeout,
   and transport failure is ineligible. Credential fallback does not advance round-robin state, mark the endpoint
   unhealthy, promote either slot, or consume an endpoint retry. If fallback also fails, the original active-key
-  response is replayed. Realtime remains immediate-cutover-only (§6.5).
+  response is replayed — except when the fallback attempt may have been processed (an ambiguous `5xx` or a
+  transport failure after connecting), in which case that fallback outcome is returned instead and the endpoint is
+  marked unhealthy, so the earlier `401` cannot mask a possibly-completed operation (see replay safety above).
+  Realtime remains immediate-cutover-only (§6.5).
 - **Sticky sessions — automatic and protocol-inherent only (Iteration 2)**: there is no deployment-level sticky
   session config flag and no generic client-supplied `session`/`X-Session-Id` mechanism — both existed in
   Iteration 1 and were removed. Every request that isn't inherently stateful just uses priority + round-robin
@@ -515,7 +542,8 @@ shape and fixed token are confined to local development and are not acceptable d
   none succeed, the client does **not** get a generic 503 that hides what actually happened. `ProxyRoutingService`
   buffers the response (status, headers, body) from the *first* endpoint attempted this request — typically
   priority 1 — the moment it fails, and replays that snapshot verbatim once failover is exhausted, even if a
-  later endpoint failed with a *different* status. This matters most for `429`: the client gets the original
+  later endpoint failed with a *different* status (except when a later endpoint fails ambiguously, in which case that
+  endpoint's own outcome is returned — see replay safety above). This matters most for `429`: the client gets the original
   `Retry-After`/rate-limit headers back and can back off correctly, instead of a synthetic error that gives no
   indication of when to retry. (The one exception is the sticky-endpoint-failure path in the bullet above —
   that intentionally stays a generic error, not a replayed upstream body, per the "fail fast, don't mask a

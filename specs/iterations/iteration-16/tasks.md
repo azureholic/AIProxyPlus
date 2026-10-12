@@ -163,8 +163,10 @@ release, then is removed deliberately in a later versioned change.
 - [ ] Introduce a provider-aware structured credential-rejection classifier; do not use substring matching.
 - [x] Extend credential resolution to return active and currently eligible fallback candidates without loading
   unused slots unnecessarily.
-- [x] Add exactly one pre-commit fallback attempt to buffered HTTP forwarding while preserving existing `429`/`5xx`
-  retry, endpoint failover, affinity, usage extraction, and first-failure replay semantics.
+- [x] Add exactly one pre-commit fallback attempt to buffered HTTP forwarding while preserving existing endpoint
+  failover, affinity, usage extraction, and first-failure replay semantics. Status-based retry/failover applies only
+  to the replay-safe set `429`/`503` (and Anthropic's `529`); other `5xx` responses are never replayed (architecture
+  §9, replay safety, which narrowed the original `429`/all-`5xx` behavior).
 - [x] Ensure credential rejection does not mark endpoint connectivity unhealthy or consume round-robin state.
 - [ ] Add tests for active success, fallback success, expired/disabled fallback, generic `403`, `429`, `5xx`, timeout,
   streaming pre-commit behavior, binary requests, stateful Responses calls, and both-key rejection.

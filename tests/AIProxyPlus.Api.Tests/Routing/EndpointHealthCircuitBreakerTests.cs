@@ -51,6 +51,29 @@ public class EndpointHealthCircuitBreakerTests : IAsyncLifetime, IDisposable
     private static object ChatBody(string model) => new { model, messages = new[] { new { role = "user", content = "hi" } } };
 
     [Fact]
+    public async Task EndpointReturning500_IsNotReplayedForThatRequest_ButIsSkippedOnTheNext()
+    {
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _failingBackend.Url!, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _healthyBackend.Url!, priority: 2));
+        _factory.Models.Seed(model);
+
+        _failingBackend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(500));
+        _healthyBackend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-1" }));
+
+        var first = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+        first.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        _healthyBackend.LogEntries.Should().BeEmpty("a possibly-processed request must not be replayed elsewhere");
+
+        var second = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        _failingBackend.LogEntries.Should().ContainSingle("the failed endpoint is skipped while it cools down");
+    }
+
+    [Fact]
     public async Task FailedEndpoint_IsSkippedOnSubsequentRequest_ThenEligibleAgainAfterCooldown()
     {
         // Different priorities (rather than a shared priority) make failover order deterministic — otherwise
@@ -62,7 +85,7 @@ public class EndpointHealthCircuitBreakerTests : IAsyncLifetime, IDisposable
         _factory.Models.Seed(model);
 
         _failingBackend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
-            .RespondWith(Response.Create().WithStatusCode(500));
+            .RespondWith(Response.Create().WithStatusCode(503));
         _healthyBackend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-1" }));
 

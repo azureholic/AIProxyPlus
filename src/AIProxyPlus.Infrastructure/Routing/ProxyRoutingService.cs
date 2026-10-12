@@ -212,6 +212,19 @@ public sealed class ProxyRoutingService(
                     $"Sticky assignment '{stickyAssignmentId}' failed and failover is disallowed for stateful sessions.");
             }
 
+            if (outcome.MayHaveBeenProcessed)
+            {
+                // Report this endpoint's own outcome (or a generic error when there was no response), never an
+                // earlier endpoint's replay-safe snapshot: a stale 429/Retry-After would invite a confident retry of
+                // a request this endpoint may already have processed.
+                return new RoutingFailure(
+                    RoutingFailureReason.NoHealthyEndpoint,
+                    outcome.StatusCode > 0
+                        ? $"The endpoint returned {outcome.StatusCode}, so the request may have been processed and was not retried or failed over."
+                        : "The endpoint failed after the request may have been sent, so it was not retried or failed over.",
+                    outcome.Failure);
+            }
+
             excludedEndpointIds.Add(endpoint.Id);
         }
     }
@@ -297,27 +310,52 @@ public sealed class ProxyRoutingService(
                 using var request = DirectHttpProxy.BuildRequest(httpContext, targetUri, bodyBytes, credential);
                 response = await httpClient.SendAsync(request, cancellationToken);
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException exception)
             {
-                if (fallbackAttempted && activeCredentialRejection is not null)
+                if (UpstreamFailureClassifier.FailedBeforeRequestWasSent(exception))
+                {
+                    if (fallbackAttempted && activeCredentialRejection is not null)
+                    {
+                        // The fallback request never reached the upstream, so the active-key rejection is the real outcome.
+                        metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
+                        await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
+                        return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
+                    }
+
+                    // Refused, DNS, or TLS failure: nothing reached the upstream, so trying again is safe.
+                    continue;
+                }
+
+                // The connection was established, so the upstream may have received and acted on the request. This
+                // includes a fallback attempt: replaying the earlier 401 would hide that and invite a duplicate.
+                if (fallbackAttempted)
                 {
                     metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
-                    await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
-                    return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
                 }
-                // Connection-level failure (refused, DNS, TLS, etc.) — treat as retriable and try the next attempt.
-                continue;
+
+                return new ForwardOutcome(false, 0, null, null, MayHaveBeenProcessed: true);
             }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
-                if (fallbackAttempted && activeCredentialRejection is not null)
+                if (UpstreamFailureClassifier.FailedBeforeRequestWasSent(exception))
+                {
+                    if (fallbackAttempted && activeCredentialRejection is not null)
+                    {
+                        metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
+                        await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
+                        return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
+                    }
+
+                    // The connect timeout fired before anything was sent, so trying again is safe.
+                    continue;
+                }
+
+                if (fallbackAttempted)
                 {
                     metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
-                    await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
-                    return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
                 }
-                // Upstream timeout distinct from the caller cancelling the original request — also retriable.
-                continue;
+
+                return new ForwardOutcome(false, 0, null, null, MayHaveBeenProcessed: true);
             }
 
             using (response)
@@ -346,8 +384,11 @@ public sealed class ProxyRoutingService(
                     continue;
                 }
 
+                // A 5xx other than the replay-safe ones may mean the upstream processed the request. After a fallback
+                // attempt it must not be masked by replaying the earlier 401, so it skips the rejection replay below.
+                var mayHaveBeenProcessed = statusCode >= 500 && !UpstreamFailureClassifier.IsSafeToReplay(provider, statusCode);
                 if (fallbackAttempted && activeCredentialRejection is not null
-                    && statusCode >= 400)
+                    && statusCode >= 400 && !mayHaveBeenProcessed)
                 {
                     metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "failed");
                     await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
@@ -356,12 +397,34 @@ public sealed class ProxyRoutingService(
 
                 if (fallbackAttempted)
                 {
-                    metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "succeeded");
+                    metrics.RecordCredentialFallback(
+                        provider.ToString(), endpoint.Id, endpoint.Name, statusCode < 400 ? "succeeded" : "failed");
                 }
-                if (statusCode == 429 || statusCode >= 500)
+                if (UpstreamFailureClassifier.IsSafeToReplay(provider, statusCode))
                 {
                     lastFailureSnapshot = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
                     continue;
+                }
+
+                if (mayHaveBeenProcessed)
+                {
+                    // The upstream may already have processed the request (state created, tokens billed), so a
+                    // replay here, to this endpoint or another, could duplicate the operation. Stop and let the
+                    // caller see the upstream's own error.
+                    UpstreamFailureSnapshot ambiguousFailure;
+                    try
+                    {
+                        ambiguousFailure = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        // The caller hung up while the error body was being read. The endpoint's 5xx is already
+                        // known, so it must still be recorded as failed rather than lost to the cancellation.
+                        ambiguousFailure = new UpstreamFailureSnapshot(
+                            statusCode, new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase), string.Empty);
+                    }
+
+                    return new ForwardOutcome(false, statusCode, null, null, ambiguousFailure, MayHaveBeenProcessed: true);
                 }
 
                 if (streaming)
@@ -462,5 +525,10 @@ public sealed class ProxyRoutingService(
     }
 
     private readonly record struct ForwardOutcome(
-        bool Succeeded, int StatusCode, UsageExtractionResult? Usage, string? CapturedResponseId, UpstreamFailureSnapshot? Failure = null);
+        bool Succeeded,
+        int StatusCode,
+        UsageExtractionResult? Usage,
+        string? CapturedResponseId,
+        UpstreamFailureSnapshot? Failure = null,
+        bool MayHaveBeenProcessed = false);
 }
