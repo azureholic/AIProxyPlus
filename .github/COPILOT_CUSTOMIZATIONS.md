@@ -29,7 +29,6 @@ preserved in `awesome-copilot-LICENSE`.
 - `expert-react-frontend-engineer.agent.md`
 - `implementation-plan.agent.md`
 - `playwright-tester.agent.md`
-- `se-security-reviewer.agent.md`
 - `se-system-architecture-reviewer.agent.md`
 
 ## Skills
@@ -44,5 +43,12 @@ preserved in `awesome-copilot-LICENSE`.
 - `postgresql-code-review`
 - `postgresql-optimization`
 - `review-and-refactor`
-- `security-review`
 - `webapp-testing`
+
+## Security scanning
+
+Security scanning is defined once in [docs/security-scanning.md](../docs/security-scanning.md). The only
+customization file for it is `instructions/security-review.instructions.md`, which drives Copilot code review on
+every pull request. The generic upstream security agent, skill, and one-time setup prompt were removed so there is
+one definition of the agentic scan and so the project skill no longer shadows the built-in `/security-review`
+command.

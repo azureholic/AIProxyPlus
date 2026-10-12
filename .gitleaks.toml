@@ -1,0 +1,12 @@
+title = "AIProxyPlus secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated and dependency output"
+paths = [
+  '''(^|/)(bin|obj|node_modules|logs|test-results)/''',
+  '''src/AIProxyPlus\.Api/wwwroot/''',
+  '''package-lock\.json$''',
+]

@@ -51,10 +51,11 @@ pull request and reviews new pushes using the repository's Copilot instructions.
 repository-wide [`security-review.instructions.md`](.github/instructions/security-review.instructions.md) applies
 to every changed file, so high-confidence security analysis is part of each automatic Copilot pull-request review.
 
-For security-sensitive changes, developers should additionally run the experimental GitHub Copilot CLI
-`/security-review` command as a deeper advisory review of local changes. Its findings require human validation and
-do not replace the required checks. See [docs/security-review.md](docs/security-review.md) for usage, trust
-boundaries, and current automation limitations.
+Security scanning has four layers: CodeQL, dependency review and Dependabot, secret scanning, and the advisory
+agentic review above. Secret scanning also runs locally: after `winget install Gitleaks.Gitleaks`, run
+`git config core.hooksPath .githooks` once per clone so gitleaks blocks commits and pushes that contain secrets.
+For security-sensitive changes, also run the Copilot CLI `/security-review` command. See
+[docs/security-scanning.md](docs/security-scanning.md) for each layer's scope, setup, and limitations.
 
 Human approval is optional while the project has one maintainer. After reading Copilot's review and confirming the
 required checks passed, the maintainer can merge normally without approving their own pull request or selecting a

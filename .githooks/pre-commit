@@ -1,0 +1,10 @@
+#!/bin/sh
+# Blocks a commit when gitleaks finds a secret in staged changes.
+# Enable once per clone: git config core.hooksPath .githooks
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed; install it (winget install Gitleaks.Gitleaks) or see docs/security-scanning.md." >&2
+  exit 1
+fi
+
+exec gitleaks git --config .gitleaks.toml --pre-commit --staged --redact --no-banner .
