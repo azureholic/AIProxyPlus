@@ -49,9 +49,16 @@ The `main` branch is protected by a GitHub repository ruleset. Changes must arri
 the CodeQL checks for C# and TypeScript plus dependency review. GitHub Copilot is requested automatically for every
 pull request and reviews new pushes using the repository's Copilot instructions.
 
-The `azureholic` account is the explicit sole-maintainer bypass actor. This allows the repository owner to merge
-their own work when no independent approver exists; GitHub does not allow a pull request author to approve their
-own pull request. Force pushes and branch deletion remain blocked unless that explicit bypass is used.
+Human approval is optional while the project has one maintainer. After reading Copilot's review and confirming the
+required checks passed, the maintainer can merge normally without approving their own pull request or selecting a
+bypass option. The `azureholic` account remains the explicit emergency bypass actor. Force pushes and branch
+deletion remain blocked unless that bypass is used.
+
+Dependabot pull requests receive an additional compile-and-test gate. The workflow compiles the complete .NET
+solution, runs Domain, Application, and architecture tests, then runs the frontend unit tests and production build.
+A separate trusted workflow verifies the pull request author and source repository before approving the update and
+enabling squash auto-merge. GitHub merges it only after the normal CodeQL and dependency-review requirements also
+pass.
 
 ## Architecture at a glance
 

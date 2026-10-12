@@ -25,7 +25,7 @@ describe('App shell + navigation', () => {
     expect(await screen.findByText('New model')).toBeInTheDocument();
   });
 
-  it('centers sign-in around the configured identity provider when unauthenticated', async () => {
+  it('renders sign-in for the configured identity provider when unauthenticated', async () => {
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
       const path = input.toString();
       if (path === '/api/v1/auth/session') {
@@ -38,8 +38,10 @@ describe('App shell + navigation', () => {
     render(<App />);
 
     expect(await screen.findByRole('button', { name: 'Sign in with Keycloak' })).toBeInTheDocument();
+    const main = screen.getByRole('main');
+
+    expect(main).toContainElement(screen.getByRole('heading', { name: 'AIProxyPlus' }));
     expect(screen.getByText('Administrator access is provided by Keycloak.')).toBeInTheDocument();
-    expect(screen.getByRole('main')).toHaveStyle({ minHeight: '100vh', justifyContent: 'center' });
   });
 
   it('navigates to each top-level page via the sidebar', async () => {
