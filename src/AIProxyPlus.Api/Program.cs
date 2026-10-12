@@ -182,7 +182,10 @@ builder.Services.AddScoped<RealtimeProxyService>();
 builder.Services.AddSingleton<IApiKeyHasher>(sp =>
     ApiKeyHasher.CreateAsync(sp.GetRequiredService<ISecretResolver>()).GetAwaiter().GetResult());
 builder.Services.AddSingleton(sp =>
-    AdminApiKeyAuthenticator.CreateAsync(sp.GetRequiredService<ISecretResolver>(), sp.GetRequiredService<ILogger<Program>>())
+    AdminApiKeyAuthenticator.CreateAsync(
+            sp.GetRequiredService<ISecretResolver>(),
+            sp.GetRequiredService<ILogger<Program>>(),
+            sp.GetRequiredService<IConfiguration>()["Authentication:AdminApiKey"])
         .GetAwaiter().GetResult());
 builder.Services.AddSingleton<IApiKeyGenerator, ApiKeyGenerator>();
 builder.Services.AddScoped<IConsumerAuthenticator, ConsumerAuthenticator>();

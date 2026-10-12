@@ -124,9 +124,8 @@ On first run:
   dotnet ef database update --project src/AIProxyPlus.Infrastructure --startup-project src/AIProxyPlus.Infrastructure
   ```
   (point `ConnectionStrings__aiproxyplusdb` at whatever port Aspire assigned Postgres, visible in the dashboard).
-- The admin API key is auto-generated on first read and logged **once** by the API process
-  (`No admin API key existed in the secret store; generated a new one...`) — save it, it can't be retrieved
-  again (only its hash is stored).
+- The static admin API key is **not** generated or logged by the application. It is a disabled-by-default
+  break-glass path (see below); browser sessions are the normal way to administer the proxy.
 - `GET /health/live` is always healthy; `GET /health/ready` reports Postgres/Vault reachability individually.
 
 Aspire keeps the Postgres, Vault, and Keycloak containers running across AppHost restarts, and all three use named
@@ -277,7 +276,12 @@ pair on the Consumers page or through the configuration API. Local disable/revok
 attribution then work exactly as they do for API-key Consumers. Workload identities are never auto-provisioned.
 
 The static Admin API Key is a disabled-by-default migration/break-glass path. Set
-`Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration. Browser sessions require
+`Authentication__AdminApiKeyFallbackEnabled=true` only during a controlled migration, and supply the key yourself
+through `Authentication__AdminApiKey` (use a secret store or secret-aware parameter, never a committed file). The
+application stores only its SHA-256 hash in Vault, never generates a key, and never logs one. Changing
+`Authentication__AdminApiKey` replaces the stored hash, which is how you rotate it; if an earlier version of the
+proxy logged a generated key, rotate it this way and treat the old value as compromised. With no key configured and
+none stored, the break-glass key is unavailable. Browser sessions require
 the antiforgery header on unsafe requests; API-key clients do not.
 
 ## Example requests
