@@ -47,12 +47,21 @@ the phase-by-phase build history for every iteration is under [specs/iterations/
 
 The `main` branch is protected by a GitHub repository ruleset. Changes must arrive through a pull request and pass
 the CodeQL checks for C# and TypeScript plus dependency review. GitHub Copilot is requested automatically for every
-pull request and reviews new pushes using the repository's Copilot instructions.
+pull request and reviews new pushes using the repository's Copilot instructions. The
+repository-wide [`security-review.instructions.md`](.github/instructions/security-review.instructions.md) applies
+to every changed file, so high-confidence security analysis is part of each automatic Copilot pull-request review.
+
+Security scanning has four layers: CodeQL, dependency review and Dependabot, secret scanning, and the advisory
+agentic review above. Secret scanning also runs locally: after `winget install Gitleaks.Gitleaks`, run
+`git config core.hooksPath .githooks` once per clone so gitleaks blocks commits and pushes that contain secrets.
+For security-sensitive changes, also run the Copilot CLI `/security-review` command. See
+[docs/security-scanning.md](docs/security-scanning.md) for each layer's scope, setup, and limitations.
 
 Human approval is optional while the project has one maintainer. After reading Copilot's review and confirming the
-required checks passed, the maintainer can merge normally without approving their own pull request or selecting a
-bypass option. The `azureholic` account remains the explicit emergency bypass actor. Force pushes and branch
-deletion remain blocked unless that bypass is used.
+required checks passed, the maintainer can merge normally without approving their own pull request. The ruleset has
+no bypass actors, so nobody, including the repository owner, can push directly to `main`, force-push it, or delete
+it; always commit to a branch and merge through a pull request. Local git hooks refuse commits and pushes on `main`
+as an early warning (see [docs/security-scanning.md](docs/security-scanning.md)).
 
 Dependabot pull requests receive an additional compile-and-test gate. The workflow compiles the complete .NET
 solution, runs Domain, Application, and architecture tests, then runs the frontend unit tests and production build.

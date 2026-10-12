@@ -1,0 +1,5 @@
+# False positives: the consumer-creation response maps a result property to a response field; no literal secret.
+ee9f79ec2c1192ad85b9fa5bd5124d5de882a752:src/AIProxyPlus.Api/Program.cs:generic-api-key:667
+a7fa472886c5b815b23b62962e64a99e417289c9:src/AiProxy.Api/Program.cs:generic-api-key:667
+da72047fc5e233b6077399e33fede3ff2afa8ff2:src/AiProxy.Api/Program.cs:generic-api-key:667
+490091bdec8a687eb814eaf293e1c3156d8f203a:src/AiProxy.Api/Program.cs:generic-api-key:532

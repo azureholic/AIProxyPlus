@@ -1,0 +1,18 @@
+#!/bin/sh
+# Blocks a commit when gitleaks finds a secret in staged changes.
+# Enable once per clone: git config core.hooksPath .githooks
+
+if [ "$(git symbolic-ref --short -q HEAD)" = "main" ]; then
+  echo "pre-commit: committing directly to main is not allowed. Create a branch (git switch -c <name>) and open a pull request." >&2
+  exit 1
+fi
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed; install it (winget install Gitleaks.Gitleaks) or see docs/security-scanning.md." >&2
+  exit 1
+fi
+
+status=0
+gitleaks git --config .gitleaks.toml --pre-commit --staged --redact --no-banner . || status=1
+gitleaks git --config .gitleaks.lockfiles.toml --pre-commit --staged --redact --no-banner . || status=1
+exit "$status"

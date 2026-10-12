@@ -1,0 +1,11 @@
+title = "AIProxyPlus lockfile secret scanning"
+
+# The built-in gitleaks config globally skips lockfiles and an extending config cannot undo that. This standalone
+# config has no allowlist and checks lockfiles only, where a credential would hide in a registry URL.
+
+[[rules]]
+id = "lockfile-registry-credential"
+description = "Credential or token embedded in a lockfile"
+regex = '''://[^/\s:@"']+:[^/\s@"']+@|(?:gh[pousr]_|npm_)[0-9A-Za-z]{36}'''
+path = '''(^|/)package-lock\.json$'''
+keywords = ["@", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "npm_"]
