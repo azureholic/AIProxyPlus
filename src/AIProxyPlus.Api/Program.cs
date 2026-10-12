@@ -183,6 +183,8 @@ builder.Services.AddScoped<RealtimeProxyService>();
 // supplies one).
 builder.Services.AddSingleton<IApiKeyHasher>(sp =>
     ApiKeyHasher.CreateAsync(sp.GetRequiredService<ISecretResolver>()).GetAwaiter().GetResult());
+// Fail at startup, not on first admin request, if a configured admin key is too weak.
+AdminApiKeyAuthenticator.EnsureConfiguredKeyIsStrong(builder.Configuration["Authentication:AdminApiKey"]);
 builder.Services.AddSingleton(sp =>
     AdminApiKeyAuthenticator.CreateAsync(
             sp.GetRequiredService<ISecretResolver>(),

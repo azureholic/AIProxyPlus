@@ -32,6 +32,20 @@ public sealed class AdminApiKeyAuthenticator(string adminApiKeyHash)
 
     public static string Hash(string plaintextApiKey) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(plaintextApiKey)));
 
+    /// <summary>
+    /// Rejects a configured key that is too short. Pure configuration check (no secret-store access) so it can run
+    /// at host startup. The message deliberately omits the value so a rejected key is not leaked to logs.
+    /// </summary>
+    public static void EnsureConfiguredKeyIsStrong(string? configuredApiKey)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredApiKey) && configuredApiKey.Length < MinimumConfiguredKeyLength)
+        {
+            throw new InvalidOperationException(
+                $"Authentication:AdminApiKey must be at least {MinimumConfiguredKeyLength} characters. " +
+                "Generate one with a CSPRNG, for example: openssl rand -hex 32");
+        }
+    }
+
     /// <param name="bootstrapApiKey">
     /// Operator-supplied key. When present it is the source of truth: its hash replaces any stored hash, which is
     /// how the key is rotated.
@@ -42,18 +56,11 @@ public sealed class AdminApiKeyAuthenticator(string adminApiKeyHash)
         string? bootstrapApiKey = null,
         CancellationToken cancellationToken = default)
     {
+        EnsureConfiguredKeyIsStrong(bootstrapApiKey);
         var storedHash = await secretResolver.TryResolveAsync(SecretRef, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(bootstrapApiKey))
         {
-            if (bootstrapApiKey.Length < MinimumConfiguredKeyLength)
-            {
-                // The message deliberately omits the value so a rejected key is not leaked to logs.
-                throw new InvalidOperationException(
-                    $"Authentication:AdminApiKey must be at least {MinimumConfiguredKeyLength} characters. " +
-                    "Generate one with a CSPRNG, for example: openssl rand -hex 32");
-            }
-
             var configuredHash = Hash(bootstrapApiKey);
             if (!string.Equals(storedHash, configuredHash, StringComparison.Ordinal))
             {
