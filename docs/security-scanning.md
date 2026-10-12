@@ -13,6 +13,23 @@ Only the deterministic scans are authoritative merge controls; the agentic scan 
 The `main` ruleset requires the two CodeQL checks and dependency review. It also requests Copilot code review for
 every pull request. Branch deletion and force pushes remain blocked.
 
+## Branch and pull-request workflow
+
+Nothing is committed or pushed directly to `main`. Work on a branch and merge through a pull request:
+
+```text
+git switch -c <topic>
+git push -u origin <topic>
+gh pr create
+```
+
+- The `main` ruleset has no bypass actors, so the repository owner is held to the same rules: a pull request, the two
+  CodeQL checks, and dependency review. Force pushes and branch deletion are blocked.
+- The local hooks also refuse a commit on `main` and any push to `refs/heads/main`, so the mistake is caught before
+  it reaches the server. The ruleset remains the authoritative control because hooks can be skipped with `--no-verify`.
+- Human approval stays optional (a sole maintainer cannot approve their own pull request); the required checks and
+  the advisory Copilot review are the gate.
+
 ## Static analysis (CodeQL)
 
 CodeQL scans C# and JavaScript/TypeScript with the `security-extended` suite. Do not reduce its languages, queries,

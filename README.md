@@ -58,9 +58,10 @@ For security-sensitive changes, also run the Copilot CLI `/security-review` comm
 [docs/security-scanning.md](docs/security-scanning.md) for each layer's scope, setup, and limitations.
 
 Human approval is optional while the project has one maintainer. After reading Copilot's review and confirming the
-required checks passed, the maintainer can merge normally without approving their own pull request or selecting a
-bypass option. The `azureholic` account remains the explicit emergency bypass actor. Force pushes and branch
-deletion remain blocked unless that bypass is used.
+required checks passed, the maintainer can merge normally without approving their own pull request. The ruleset has
+no bypass actors, so nobody, including the repository owner, can push directly to `main`, force-push it, or delete
+it; always commit to a branch and merge through a pull request. Local git hooks refuse commits and pushes on `main`
+as an early warning (see [docs/security-scanning.md](docs/security-scanning.md)).
 
 Dependabot pull requests receive an additional compile-and-test gate. The workflow compiles the complete .NET
 solution, runs Domain, Application, and architecture tests, then runs the frontend unit tests and production build.
