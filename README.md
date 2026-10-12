@@ -54,6 +54,12 @@ required checks passed, the maintainer can merge normally without approving thei
 bypass option. The `azureholic` account remains the explicit emergency bypass actor. Force pushes and branch
 deletion remain blocked unless that bypass is used.
 
+Dependabot pull requests receive an additional compile-and-test gate. The workflow compiles the complete .NET
+solution, runs Domain, Application, and architecture tests, then runs the frontend unit tests and production build.
+A separate trusted workflow verifies the pull request author and source repository before approving the update and
+enabling squash auto-merge. GitHub merges it only after the normal CodeQL and dependency-review requirements also
+pass.
+
 ## Architecture at a glance
 
 - **Clean Architecture**: `AIProxyPlus.Domain` (zero dependencies) → `AIProxyPlus.Application` (ports + use cases) →
