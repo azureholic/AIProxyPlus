@@ -47,12 +47,14 @@ the phase-by-phase build history for every iteration is under [specs/iterations/
 
 The `main` branch is protected by a GitHub repository ruleset. Changes must arrive through a pull request and pass
 the CodeQL checks for C# and TypeScript plus dependency review. GitHub Copilot is requested automatically for every
-pull request and reviews new pushes using the repository's Copilot instructions.
+pull request and reviews new pushes using the repository's Copilot instructions. The
+repository-wide [`security-review.instructions.md`](.github/instructions/security-review.instructions.md) applies
+to every changed file, so high-confidence security analysis is part of each automatic Copilot pull-request review.
 
-For security-sensitive changes, developers can also run the experimental GitHub Copilot CLI `/security-review`
-command as an advisory review of local changes. Its findings require human validation and do not replace the
-required checks. See [docs/security-review.md](docs/security-review.md) for usage, trust boundaries, and current
-automation limitations.
+For security-sensitive changes, developers should additionally run the experimental GitHub Copilot CLI
+`/security-review` command as a deeper advisory review of local changes. Its findings require human validation and
+do not replace the required checks. See [docs/security-review.md](docs/security-review.md) for usage, trust
+boundaries, and current automation limitations.
 
 Human approval is optional while the project has one maintainer. After reading Copilot's review and confirming the
 required checks passed, the maintainer can merge normally without approving their own pull request or selecting a

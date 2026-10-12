@@ -8,6 +8,23 @@ The capability is experimental/public preview. Its findings are advisory, can co
 miss vulnerabilities. Validate every applicable finding against the code and runtime context before remediation
 or a merge decision. An empty result is not proof that a change is secure.
 
+## Pull-request review integration
+
+The active `Automatic Copilot review for every pull request` repository ruleset requests Copilot code review for
+each pull request and again after new pushes. GitHub Copilot code review loads matching files from
+`.github/instructions`; because
+[`security-review.instructions.md`](../.github/instructions/security-review.instructions.md) uses
+`applyTo: "**"`, its security categories, trust boundaries, confidence threshold, and finding format apply to every
+changed file in every automatic Copilot pull-request review.
+
+This integrates security analysis into the existing PR review without running pull-request code, exposing Actions
+secrets, or granting an AI reviewer write access. It remains advisory: maintainers must validate applicable
+findings, while CodeQL and dependency review remain the required security checks.
+
+For security-sensitive changes, the pull-request template also asks the author to run or request the dedicated
+CLI `/security-review`. The dedicated command performs a deeper security-specific review of the local worktree; it
+is complementary to, not identical with, native Copilot code review.
+
 ## Run a review locally
 
 Use a current [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) authenticated for an account
@@ -92,4 +109,6 @@ private auditable output, and fork-safe behavior for this ownership model. Until
 manually. Do not create a long-lived personal access token for this preview capability.
 
 Native Copilot code review remains separately enabled by the repository ruleset for pull requests. It is also
-advisory and does not replace required checks.
+advisory and does not replace required checks. Its automatic security guidance comes from the repository
+instruction file described above; the dedicated CLI command remains a separate optional review for
+security-sensitive changes.
