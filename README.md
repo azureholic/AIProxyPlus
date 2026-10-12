@@ -282,7 +282,9 @@ be at least 32 characters and the proxy refuses to start with a shorter value; g
 example `openssl rand -hex 32` or
 `[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()` in PowerShell. The
 application stores only its SHA-256 hash in Vault, never generates a key, and never logs one. Changing
-`Authentication__AdminApiKey` replaces the stored hash, which is how you rotate it; if an earlier version of the
+`Authentication__AdminApiKey` replaces the stored hash, which is how you rotate it. Configure every replica with the
+same value: each replica validates against the hash of its own configured key, but replicas started with different
+values overwrite the shared stored hash with whichever started last. If an earlier version of the
 proxy logged a generated key, rotate it this way and treat the old value as compromised. With no key configured and
 none stored, the break-glass key is unavailable. Browser sessions require
 the antiforgery header on unsafe requests; API-key clients do not.
