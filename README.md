@@ -60,10 +60,10 @@ A separate trusted workflow verifies the pull request author and source reposito
 enabling squash auto-merge. GitHub merges it only after the normal CodeQL and dependency-review requirements also
 pass.
 
-Frontend packages resolve exclusively through Microsoft's anonymously readable CFS npm proxy configured in
-`src/AIProxyPlus.Web/.npmrc`. The Docker build and GitHub Actions use the same npm configuration, and Dependabot
-replaces its npm base registry with CFS. There is no credential or fallback to the public npm registry; package
-resolution fails closed if CFS is unavailable.
+Application dependencies resolve exclusively through Microsoft's anonymously readable CFS proxies. NuGet uses the
+repository-level `NuGet.config`; npm uses `src/AIProxyPlus.Web/.npmrc`. Docker builds, GitHub Actions, and Dependabot
+use the same proxy configuration. There are no credentials or fallbacks to the public NuGet or npm registries, so
+package resolution fails closed if either CFS proxy is unavailable.
 
 ## Architecture at a glance
 

@@ -1,5 +1,8 @@
 version: 2
 registries:
+  microsoft-cfs-nuget:
+    type: nuget-feed
+    url: https://packagefeedproxy.microsoft.io/nuget/v3/index.json
   microsoft-cfs-npm:
     type: npm-registry
     url: https://packagefeedproxy.microsoft.io/npm/
@@ -11,6 +14,8 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    registries:
+      - microsoft-cfs-nuget
 
   - package-ecosystem: "npm"
     directory: "/src/AIProxyPlus.Web"

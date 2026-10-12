@@ -37,7 +37,7 @@ jobs:
           cache-dependency-path: src/AIProxyPlus.Web/package-lock.json
 
       - name: Restore .NET dependencies
-        run: dotnet restore AIProxyPlus.sln
+        run: dotnet restore AIProxyPlus.sln --configfile NuGet.config
 
       - name: Compile solution
         run: dotnet build AIProxyPlus.sln --configuration Release --no-restore

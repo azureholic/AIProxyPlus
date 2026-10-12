@@ -9,13 +9,13 @@ RUN npm run build
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY Directory.Build.props Directory.Packages.props AIProxyPlus.sln ./
+COPY Directory.Build.props Directory.Packages.props NuGet.config AIProxyPlus.sln ./
 COPY src/AIProxyPlus.Api/AIProxyPlus.Api.csproj src/AIProxyPlus.Api/
 COPY src/AIProxyPlus.Application/AIProxyPlus.Application.csproj src/AIProxyPlus.Application/
 COPY src/AIProxyPlus.Domain/AIProxyPlus.Domain.csproj src/AIProxyPlus.Domain/
 COPY src/AIProxyPlus.Infrastructure/AIProxyPlus.Infrastructure.csproj src/AIProxyPlus.Infrastructure/
 COPY src/AIProxyPlus.ServiceDefaults/AIProxyPlus.ServiceDefaults.csproj src/AIProxyPlus.ServiceDefaults/
-RUN dotnet restore src/AIProxyPlus.Api/AIProxyPlus.Api.csproj
+RUN dotnet restore src/AIProxyPlus.Api/AIProxyPlus.Api.csproj --configfile NuGet.config
 
 COPY src/ src/
 # Single-container pattern (specs/iterations/iteration-3/tasks.md §Phase 2): each Docker stage has its own

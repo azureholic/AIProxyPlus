@@ -670,8 +670,9 @@ shape and fixed token are confined to local development and are not acceptable d
 - **Transport security**: TLS to all backends; HSTS + TLS termination in front of the proxy in real deployments.
 - **Dependency hygiene**: `.github/dependabot.yml` (Iteration 12) covers both ecosystems in this repository —
   `nuget` (root, covering every `.csproj` via `AIProxyPlus.sln`) and `npm` (`src/AIProxyPlus.Web`) — on a weekly
-  schedule. There is still no CI workflow that runs tests/builds automatically; that remains a separate gap
-  from dependency update hygiene specifically.
+  schedule. Both ecosystems resolve anonymously and fail closed through Microsoft's CFS proxies with no public
+  registry fallback. Dependabot pull requests must compile the solution and pass the focused backend and frontend
+  test/build workflow before trusted automation can approve and enable auto-merge.
 - **Least privilege (Postgres)**: `Program.cs` supports an optional `ConnectionStrings:aiproxyplusdb-migrations`
   connection string (Iteration 12) — when configured, only the startup `Database.MigrateAsync()` step uses it,
   while every runtime query keeps using the regular, narrower-scoped `ConnectionStrings:aiproxyplusdb`. Local
@@ -776,7 +777,9 @@ session, antiforgery, and logout endpoints. One authority/issuer and client are 
   that runs `npm ci && npm run build` before the .NET publish stage, and its output is explicitly copied into
   the .NET build stage's `wwwroot` before `dotnet publish` (each Docker stage is an isolated filesystem, so
   this copy can't be skipped) — the runtime image ships one artifact, frontend and API together, per the
-  single-container pattern (§19).
+  single-container pattern (§19). Repository, CI, Dependabot, and container restores use the same anonymous
+  Microsoft CFS package proxies configured by `NuGet.config` and `src/AIProxyPlus.Web/.npmrc`; both package
+  managers have no public-registry fallback.
 
 ![Deployment topology](diagrams/05-deployment-topology.png)
 
