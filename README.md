@@ -141,8 +141,11 @@ symptoms mean a stale volume rather than a bug in the current code:
 - `GET /health/ready` reports `vault: unhealthy` with `permission denied` / `invalid token`. The dev token that
   `bootstrap.sh` creates used to expire after Vault's default 32 days; `local.hcl` now raises that to 10 years, but a
   volume initialized earlier still holds the short-lived token. Reset Vault as above. Back up `vault-data` first if
-  you may need it: Vault 2.x requires authentication to regenerate a root token, so once the dev token has expired the
-  stored secrets cannot be recovered from the unseal key alone.
+  you may need it. When this was investigated on Vault 2.0.3, `vault operator generate-root` was refused with HTTP
+  403 without a token, so the unseal key alone did not restore access to the stored secrets; if a different Vault
+  version lets you regenerate a root token from the unseal key, you can recreate the restricted dev token instead
+  of resetting. Both Aspire and Compose publish local Vault and Postgres on loopback only, which is what makes the
+  long-lived dev token acceptable; do not expose them.
 - Keycloak exits during startup with a duplicate `USER_ENTITY` error from the realm import. Remove the Keycloak
   container and delete `keycloak-data`; the realm is re-imported from `src/AIProxyPlus.AppHost/keycloak`.
 

@@ -382,7 +382,12 @@ authenticates to Vault using **AppRole** (role id + wrapped
 secret id supplied via environment/orchestrator secret, never committed). Local runs use a fixed development-only
 token restricted to `secret/aiproxyplus/*`; the bootstrap persists its single local unseal key beside Vault's file
 backend in the `vault-data` volume so Docker restarts do not orphan endpoint credentials. This automatic unseal
-shape and fixed token are confined to local development and are not acceptable deployment defaults.
+shape and fixed token are confined to local development and are not acceptable deployment defaults. Vault caps
+token lifetimes at 32 days unless told otherwise, which silently expired that token and broke secret access on any
+long-lived local volume, so the local server config (`local.hcl`) raises the default and maximum lease TTL to 10
+years. That long-lived, repository-known credential is only acceptable because local Vault is never reachable off the
+developer's machine: Aspire publishes it on loopback only, and Compose binds its published ports to `127.0.0.1`.
+Do not publish the local Vault, or reuse this token or TTL, anywhere else.
 
 - `Endpoint.PrimarySecretRef` and `SecondarySecretRef` in Postgres store only immutable Vault **references**, never
   secret values. Replacement writes Vault first, atomically switches the PostgreSQL pointer, publishes cache
