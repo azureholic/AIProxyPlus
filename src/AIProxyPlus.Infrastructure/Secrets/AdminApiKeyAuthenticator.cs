@@ -74,7 +74,7 @@ public sealed class AdminApiKeyAuthenticator(string adminApiKeyHash)
         {
             logger.LogWarning(
                 "No admin API key is configured, so the break-glass admin key is unavailable. " +
-                "Set Authentication:AdminApiKey to enable it.");
+                "Set Authentication:AdminApiKey (and Authentication:AdminApiKeyFallbackEnabled=true) to enable it.");
         }
 
         return new AdminApiKeyAuthenticator(storedHash ?? string.Empty);

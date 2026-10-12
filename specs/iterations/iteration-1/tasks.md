@@ -304,3 +304,9 @@ Definition of Done for this iteration:
   where test/log output lands.
 - 251/251 tests passing solution-wide — **Iteration 1 complete** (all 10 phases done, one commit per phase).
 
+> **Superseded (security review):** the admin API key is no longer auto-generated or logged once. The Iteration 1
+> notes above on hash auto-provisioning, `AdminApiKeyAuthenticatorTests` (auto-provision branch), and the
+> "admin-key-is-logged-once" README step describe behavior that was removed because it wrote a usable credential
+> to logs and telemetry. An operator now supplies `Authentication:AdminApiKey` (at least 32 characters) and only its
+> hash is stored. See architecture §7.2 and §13 and the README.
+
