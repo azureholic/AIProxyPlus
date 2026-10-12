@@ -135,6 +135,23 @@ restarts. To intentionally reset local Vault, stop the AppHost, remove its Vault
 and restart; this removes both Vault data and the local-only unseal key, and existing API-key endpoints must then
 have their secrets set again.
 
+Local volume names are fixed (`vault-data`, `keycloak-data`), so state from an older checkout is reused. Two
+symptoms mean a stale volume rather than a bug in the current code:
+
+- `GET /health/ready` reports `vault: unhealthy` with `permission denied` / `invalid token`. The dev token that
+  `bootstrap.sh` creates used to expire after Vault's default 32 days; `local.hcl` now raises that to 10 years, but a
+  volume initialized earlier still holds the short-lived token. Reset Vault as above. Back up `vault-data` first if
+  you may need it. When this was investigated on Vault 2.0.3, `vault operator generate-root` was refused with HTTP
+  403 without a token, so the unseal key alone did not restore access to the stored secrets; if a different Vault
+  version lets you regenerate a root token from the unseal key, you can recreate the restricted dev token instead
+  of resetting. Both Aspire and Compose publish local Vault and Postgres on loopback only, which is what makes the
+  long-lived dev token acceptable; do not expose them.
+- Keycloak exits during startup with a duplicate `USER_ENTITY` error from the realm import. Remove the Keycloak
+  container and delete `keycloak-data`; the realm is re-imported from `src/AIProxyPlus.AppHost/keycloak`.
+
+Browse to `http://localhost:5205`, the API's launch-profile port that Aspire proxies, rather than the random port the
+dashboard shows for the API process: Keycloak only allows sign-in callbacks on 5205, 7194, and 5173.
+
 ### Option B — Docker Compose
 
 ```powershell
