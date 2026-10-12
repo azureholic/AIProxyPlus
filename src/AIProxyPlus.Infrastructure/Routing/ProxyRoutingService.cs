@@ -366,7 +366,7 @@ public sealed class ProxyRoutingService(
                 {
                     metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "succeeded");
                 }
-                if (IsSafeToReplay(statusCode))
+                if (IsSafeToReplay(provider, statusCode))
                 {
                     lastFailureSnapshot = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
                     continue;
@@ -472,12 +472,14 @@ public sealed class ProxyRoutingService(
     }
 
     // Every proxied operation is a POST. Only a response that says the upstream did not process the request may be
-    // replayed to the same or another endpoint: 429 (rate limited), 503 (temporarily unavailable), and 529
-    // (Anthropic's documented "overloaded" rejection).
-    private static bool IsSafeToReplay(int statusCode) =>
-        statusCode is StatusCodes.Status429TooManyRequests or StatusCodes.Status503ServiceUnavailable or UpstreamOverloaded;
+    // replayed to the same or another endpoint: 429 (rate limited) and 503 (temporarily unavailable) for every
+    // provider, plus 529, which only Anthropic documents as an "overloaded" rejection. 529 is not a standard status,
+    // so another provider could use it after accepting work and it must not be trusted there.
+    private static bool IsSafeToReplay(Provider provider, int statusCode) =>
+        statusCode is StatusCodes.Status429TooManyRequests or StatusCodes.Status503ServiceUnavailable
+        || (provider == Provider.Anthropic && statusCode == AnthropicOverloaded);
 
-    private const int UpstreamOverloaded = 529;
+    private const int AnthropicOverloaded = 529;
 
     private static TimeSpan JitteredBackoff(int attempt)
     {
