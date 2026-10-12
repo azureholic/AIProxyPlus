@@ -1,7 +1,8 @@
 # Security scanning
 
-AIProxyPlus uses four complementary scans. Each has one owner, one configuration location, and one place it runs.
-Only the deterministic scans are authoritative merge controls; the agentic scan is advisory.
+AIProxyPlus uses four complementary scan layers. Some layers combine tools with different scopes, and each row
+below names what runs, when, and whether it can block. Only the deterministic scans are authoritative merge
+controls; the agentic scan is advisory.
 
 | Layer | Tool | Runs | Blocks | Configuration |
 |---|---|---|---|---|
@@ -54,13 +55,18 @@ git config core.hooksPath .githooks
 ```
 
 - `pre-commit` scans staged changes and blocks the commit.
-- `pre-push` scans every commit about to be pushed and blocks the push. It fails closed: a missing gitleaks or an
-  unreadable ref range blocks the push rather than skipping the scan.
+- `pre-push` scans every commit about to be pushed and blocks the push. It fails closed: a missing gitleaks, an
+  unreadable ref range, or a force-push over a remote tip that is not fetched locally blocks the push rather than
+  skipping the scan. For a new branch it scans only commits the destination remote does not already have.
 
-Both hooks require gitleaks on `PATH`. Run a full-history scan at any time with:
+Both hooks require gitleaks on `PATH` and run two configs: [.gitleaks.toml](../.gitleaks.toml) for everything, and
+[.gitleaks.lockfiles.toml](../.gitleaks.lockfiles.toml) for `package-lock.json`. The second exists because the
+built-in gitleaks config globally skips lockfiles and an extending config cannot undo that, yet a registry
+credential or token can sit in a lockfile `resolved` URL. Run a full-history scan at any time with:
 
 ```text
 gitleaks git --config .gitleaks.toml --redact --no-banner .
+gitleaks git --config .gitleaks.lockfiles.toml --redact --no-banner .
 ```
 
 If a secret is found, remove it, **rotate the credential**, and rewrite the unpushed commit. Rotation is mandatory

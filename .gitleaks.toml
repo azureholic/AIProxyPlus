@@ -8,5 +8,4 @@ description = "Generated and dependency output"
 paths = [
   '''(^|/)(bin|obj|node_modules|logs|test-results)/''',
   '''src/AIProxyPlus\.Api/wwwroot/''',
-  '''package-lock\.json$''',
 ]

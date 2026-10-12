@@ -12,4 +12,7 @@ if ! command -v gitleaks >/dev/null 2>&1; then
   exit 1
 fi
 
-exec gitleaks git --config .gitleaks.toml --pre-commit --staged --redact --no-banner .
+status=0
+gitleaks git --config .gitleaks.toml --pre-commit --staged --redact --no-banner . || status=1
+gitleaks git --config .gitleaks.lockfiles.toml --pre-commit --staged --redact --no-banner . || status=1
+exit "$status"
