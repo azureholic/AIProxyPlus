@@ -5,6 +5,9 @@ namespace AIProxyPlus.Infrastructure.Routing;
 
 public sealed class UpstreamRouteResolver
 {
+    // Credentials that authenticate the caller to this proxy; they must never reach an upstream provider.
+    private static readonly string[] ProxyAuthQueryParameters = ["api_key", "ticket"];
+
     public Uri ResolveHttp(ModelEndpoint assignment, OperationType operationType, string queryString)
     {
         var suffix = ResolveSuffix(assignment.Provider, operationType);
@@ -49,7 +52,29 @@ public sealed class UpstreamRouteResolver
         }
 
         var prefix = pathPrefix == "/" ? string.Empty : pathPrefix.TrimEnd('/');
-        var query = string.IsNullOrEmpty(queryString) ? string.Empty : queryString;
+        var query = StripProxyAuthParameters(queryString);
         return new Uri($"{normalizedBaseUrl}{prefix}/{suffix.TrimStart('/')}{query}");
+    }
+
+    private static string StripProxyAuthParameters(string queryString)
+    {
+        if (string.IsNullOrEmpty(queryString))
+        {
+            return string.Empty;
+        }
+
+        var kept = queryString.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Where(pair => !IsProxyAuthParameter(pair))
+            .ToArray();
+        return kept.Length == 0 ? string.Empty : "?" + string.Join('&', kept);
+    }
+
+    private static bool IsProxyAuthParameter(string pair)
+    {
+        var separator = pair.IndexOf('=');
+        var rawName = separator < 0 ? pair : pair[..separator];
+        var name = Uri.UnescapeDataString(rawName.Replace('+', ' '));
+        return ProxyAuthQueryParameters.Contains(name, StringComparer.OrdinalIgnoreCase);
     }
 }

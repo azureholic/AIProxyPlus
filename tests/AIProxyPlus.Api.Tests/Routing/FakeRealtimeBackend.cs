@@ -22,6 +22,11 @@ public sealed class FakeRealtimeBackend : IAsyncDisposable
 
     public bool RejectHandshake { get; set; }
 
+    public string? LastRequestQuery { get; private set; }
+
+    public IReadOnlyDictionary<string, string> LastRequestHeaders { get; private set; } =
+        new Dictionary<string, string>();
+
     public IReadOnlyList<string> ServerMessageFragments { get; set; } = [];
 
     public int AcceptedConnectionCount => _acceptedConnectionCount;
@@ -39,6 +44,10 @@ public sealed class FakeRealtimeBackend : IAsyncDisposable
         app.UseWebSockets();
         app.Run(async context =>
         {
+            backend.LastRequestQuery = context.Request.QueryString.Value;
+            backend.LastRequestHeaders = context.Request.Headers.ToDictionary(
+                header => header.Key, header => header.Value.ToString(), StringComparer.OrdinalIgnoreCase);
+
             if (backend.RejectHandshake || !context.WebSockets.IsWebSocketRequest)
             {
                 context.Response.StatusCode = StatusCodes.Status400BadRequest;

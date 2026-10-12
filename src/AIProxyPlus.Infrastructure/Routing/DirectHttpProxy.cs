@@ -24,7 +24,7 @@ internal static class DirectHttpProxy
 
     private static readonly HashSet<string> ProxyLocalRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Cookie", "Origin", "Referer", "X-Api-Key", "X-Admin-Api-Key", "X-CSRF-TOKEN", "Forwarded",
+        "Authorization", "Cookie", "Origin", "Referer", "X-Api-Key", "X-Admin-Api-Key", "X-CSRF-TOKEN", "Forwarded",
     };
 
     private static readonly HashSet<string> HopByHopResponseHeaders = new(StringComparer.OrdinalIgnoreCase)

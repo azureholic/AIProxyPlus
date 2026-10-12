@@ -443,8 +443,11 @@ shape and fixed token are confined to local development and are not acceptable d
   endpoint's credential configuration. Payloads and responses remain protocol passthrough; OpenAI-compatible and
   Anthropic schemas are never cross-translated.
 - **Outbound header boundary (Iteration 10)**: provider protocol headers pass through, but proxy-local transport,
-  ingress credential, browser session, antiforgery, CORS context, Fetch Metadata, and reverse-proxy topology headers
-  do not. In particular, `Origin` is not forwarded because native Anthropic interprets its presence as a direct
+  ingress credential (including the caller's `Authorization` bearer token), browser session, antiforgery, CORS
+  context, Fetch Metadata, and reverse-proxy topology headers do not. Proxy authentication query parameters
+  (`api_key`, `ticket`) are likewise removed from the composed upstream URI for HTTP and Realtime, so a caller's
+  credential is never disclosed to an upstream provider; other query parameters (such as `api-version`) pass
+  through unchanged. In particular, `Origin` is not forwarded because native Anthropic interprets its presence as a direct
   browser request and rejects it unless the unsafe direct-browser opt-in is supplied. The selected endpoint
   credential is added only after filtering and always replaces any caller-supplied value for that header. Transport
   compression negotiation is also proxy-owned: outbound HTTP requests use `Accept-Encoding: identity` because

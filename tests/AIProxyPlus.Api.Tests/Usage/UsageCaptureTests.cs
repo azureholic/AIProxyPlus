@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using AIProxyPlus.Api.Tests.Infrastructure;
+using AIProxyPlus.Application.Abstractions;
 using AIProxyPlus.Domain.Entities;
 using AIProxyPlus.Domain.Enums;
 using FluentAssertions;
@@ -364,6 +365,37 @@ public class UsageCaptureTests : IAsyncLifetime, IDisposable
         receivedHeaders.Should().NotContainKey("Sec-Fetch-Site");
         receivedHeaders.Should().NotContainKey("X-Forwarded-Host");
         receivedHeaders.Should().NotContainKey("X-Admin-Api-Key");
+    }
+
+    [Fact]
+    public async Task AnthropicMessages_WithConsumerBearerToken_DoesNotForwardAuthorizationToTheUpstream()
+    {
+        const string consumerBearerToken = "consumer-workload-token";
+        _factory.Credentials.Candidates = new EndpointCredentialCandidates(
+            new EndpointCredential("x-api-key", "upstream-provider-key"), null);
+        var modelName = $"claude-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewAnthropicEndpoint(model.Id, _backend.Url!));
+        _factory.Models.Seed(model);
+
+        _backend.Given(Request.Create().WithPath("/anthropic/v1/messages").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new
+            {
+                content = Array.Empty<object>(),
+                usage = new { input_tokens = 1, output_tokens = 0 },
+            }));
+
+        using var request = BuildRequest(
+            "/anthropic/v1/messages",
+            new { model = modelName, max_tokens = 1, messages = new[] { new { role = "user", content = "hi" } } });
+        request.Headers.Add("Authorization", $"Bearer {consumerBearerToken}");
+
+        var response = await _factory.CreateClient().SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var receivedHeaders = _backend.LogEntries.Should().ContainSingle().Which.RequestMessage!.Headers!;
+        receivedHeaders.Should().NotContainKey("Authorization");
+        receivedHeaders.Should().ContainKey("x-api-key").WhoseValue.Should().Contain("upstream-provider-key");
     }
 
     [Fact]
