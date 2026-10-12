@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using AIProxyPlus.Api.Tests.Infrastructure;
 using AIProxyPlus.Domain.Entities;
 using AIProxyPlus.Domain.Enums;
@@ -142,8 +143,31 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task FirstEndpointFails429_SecondEndpointFailsWithADifferentError_ClientSeesFirstEndpoints429()
     {
-        // The two endpoints fail with genuinely different errors (429 vs 500) — the client must still see the
-        // priority-1 endpoint's 429 + Retry-After, not priority-2's 500 and not a generic 503.
+        // Both failures are replay-safe (429 then 503), so nothing was processed anywhere: the client must see the
+        // priority-1 endpoint's 429 + Retry-After, not priority-2's 503 and not a generic error.
+        var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+        _factory.Models.Seed(model);
+
+        _backend1.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(429).WithHeader("Retry-After", "5").WithBodyAsJson(new { error = "rate limited" }));
+        _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(503).WithBodyAsJson(new { error = "backend2 unavailable" }));
+
+        var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+
+        response.StatusCode.Should().Be((HttpStatusCode)429);
+        response.Headers.RetryAfter?.Delta.Should().Be(TimeSpan.FromSeconds(5));
+        (await response.Content.ReadAsStringAsync()).Should().Contain("rate limited");
+    }
+
+    [Fact]
+    public async Task FirstEndpointFails429_ThenSecondEndpointReturns500_ClientSeesTheLatestPossiblyProcessedError()
+    {
+        // Priority-2 may have processed the request before failing, so a stale 429 + Retry-After from priority-1
+        // would invite a confident retry of work that may already be done. The client sees priority-2's own error.
         var modelName = $"gpt-4o-{Guid.NewGuid():N}";
         var model = Model.Create(Guid.NewGuid(), modelName);
         model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url!, priority: 1));
@@ -157,8 +181,63 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
 
         var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
 
-        response.StatusCode.Should().Be((HttpStatusCode)429);
-        response.Headers.RetryAfter?.Delta.Should().Be(TimeSpan.FromSeconds(5));
-        (await response.Content.ReadAsStringAsync()).Should().Contain("rate limited");
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Headers.RetryAfter.Should().BeNull();
+        (await response.Content.ReadAsStringAsync()).Should().Contain("backend2 exploded");
+    }
+
+    [Fact]
+    public async Task TransportFailureAfterConnecting_IsNotRetriedOrFailedOver()
+    {
+        // The server accepts the connection and reads the request, then closes without answering. The request may
+        // have been received, so replaying the POST (here or on another endpoint) could duplicate the operation.
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var acceptedConnections = 0;
+        var serverTask = Task.Run(async () =>
+        {
+            while (true)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync();
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+
+                Interlocked.Increment(ref acceptedConnections);
+                using (client)
+                {
+                    await client.GetStream().ReadAsync(new byte[4096]);
+                }
+            }
+        });
+
+        try
+        {
+            var modelName = $"gpt-4o-{Guid.NewGuid():N}";
+            var model = Model.Create(Guid.NewGuid(), modelName);
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, $"http://127.0.0.1:{port}", priority: 1, maxRetries: 3));
+            model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend2.Url!, priority: 2));
+            _factory.Models.Seed(model);
+
+            _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
+                .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
+
+            var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
+
+            response.IsSuccessStatusCode.Should().BeFalse();
+            acceptedConnections.Should().Be(1, "the same endpoint must not be retried");
+            _backend2.LogEntries.Should().BeEmpty("the request must not be failed over to another endpoint");
+        }
+        finally
+        {
+            listener.Stop();
+            await serverTask;
+        }
     }
 }

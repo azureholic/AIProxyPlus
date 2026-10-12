@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using AIProxyPlus.Application.Abstractions;
 using AIProxyPlus.Application.Exceptions;
@@ -214,10 +215,15 @@ public sealed class ProxyRoutingService(
 
             if (outcome.MayHaveBeenProcessed)
             {
+                // Report this endpoint's own outcome (or a generic error when there was no response), never an
+                // earlier endpoint's replay-safe snapshot: a stale 429/Retry-After would invite a confident retry of
+                // a request this endpoint may already have processed.
                 return new RoutingFailure(
                     RoutingFailureReason.NoHealthyEndpoint,
-                    $"The endpoint returned {outcome.StatusCode}, so the request may have been processed and was not retried or failed over.",
-                    firstFailureSnapshot);
+                    outcome.StatusCode > 0
+                        ? $"The endpoint returned {outcome.StatusCode}, so the request may have been processed and was not retried or failed over."
+                        : "The endpoint failed after the request may have been sent, so it was not retried or failed over.",
+                    outcome.Failure);
             }
 
             excludedEndpointIds.Add(endpoint.Id);
@@ -305,7 +311,7 @@ public sealed class ProxyRoutingService(
                 using var request = DirectHttpProxy.BuildRequest(httpContext, targetUri, bodyBytes, credential);
                 response = await httpClient.SendAsync(request, cancellationToken);
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException exception)
             {
                 if (fallbackAttempted && activeCredentialRejection is not null)
                 {
@@ -313,8 +319,15 @@ public sealed class ProxyRoutingService(
                     await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
                     return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
                 }
-                // Connection-level failure (refused, DNS, TLS, etc.) — treat as retriable and try the next attempt.
-                continue;
+
+                if (FailedBeforeRequestWasSent(exception))
+                {
+                    // Refused, DNS, or TLS failure: nothing reached the upstream, so trying again is safe.
+                    continue;
+                }
+
+                // The connection was established, so the upstream may have received and acted on the request.
+                return new ForwardOutcome(false, 0, null, null, MayHaveBeenProcessed: true);
             }
             catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -324,8 +337,9 @@ public sealed class ProxyRoutingService(
                     await DirectHttpProxy.ReplaySnapshotAsync(activeCredentialRejection, httpContext, cancellationToken);
                     return new ForwardOutcome(true, activeCredentialRejection.StatusCode, null, null);
                 }
-                // Upstream timeout distinct from the caller cancelling the original request — also retriable.
-                continue;
+
+                // Upstream timeout (distinct from the caller cancelling): it may still have processed the request.
+                return new ForwardOutcome(false, 0, null, null, MayHaveBeenProcessed: true);
             }
 
             using (response)
@@ -470,6 +484,23 @@ public sealed class ProxyRoutingService(
             return null;
         }
     }
+
+    // Only failures that happen while establishing the connection prove the request never reached the upstream.
+    // HttpRequestError.ConnectionError alone is not enough: .NET also reports a connection that was reset after the
+    // request was sent as ConnectionError, so it counts only when the socket error says no connection was made.
+    private static bool FailedBeforeRequestWasSent(HttpRequestException exception) =>
+        exception.HttpRequestError is HttpRequestError.NameResolutionError
+            or HttpRequestError.SecureConnectionError
+            or HttpRequestError.ProxyTunnelError
+        || (exception.HttpRequestError == HttpRequestError.ConnectionError
+            && exception.InnerException is SocketException
+            {
+                SocketErrorCode: SocketError.ConnectionRefused
+                    or SocketError.HostUnreachable
+                    or SocketError.NetworkUnreachable
+                    or SocketError.AddressNotAvailable
+                    or SocketError.HostNotFound
+            });
 
     // Every proxied operation is a POST. Only a response that says the upstream did not process the request may be
     // replayed to the same or another endpoint: 429 (rate limited) and 503 (temporarily unavailable) for every
