@@ -410,9 +410,9 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
                 var stream = client.GetStream();
                 await stream.ReadAsync(new byte[4096]);
                 await stream.WriteAsync(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 12\r\n\r\n"u8.ToArray());
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n"u8.ToArray());
                 await Task.Delay(TimeSpan.FromSeconds(2));
-                await stream.WriteAsync("{\"id\":\"late\"}"u8.ToArray().AsMemory(0, 12));
+                await stream.WriteAsync("{\"id\":\"late\"}"u8.ToArray());
             }
             catch (Exception)
             {
@@ -429,7 +429,7 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
             var response = await _factory.CreateClient().PostAsJsonAsync("/openai/v1/chat/completions", ChatBody(modelName));
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            (await response.Content.ReadAsStringAsync()).Should().Contain("late");
+            (await response.Content.ReadAsStringAsync()).Should().Be("{\"id\":\"late\"}", "the whole body must arrive intact");
         }
         finally
         {
