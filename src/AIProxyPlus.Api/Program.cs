@@ -177,12 +177,19 @@ builder.Services.AddScoped<ProxyRoutingService>(sp => new ProxyRoutingService(
     builder.Configuration.GetValue<TimeSpan?>("Routing:SessionAffinityTtl")));
 builder.Services.AddScoped<RealtimeProxyService>();
 
-// Secrets/auth — pepper and admin key hash are auto-provisioned from Vault on first read (§8); ISecretResolver
-// itself isn't registered until Phase 9 wires a real Vault client (or a test double supplies one).
+// Secrets/auth — the consumer-key pepper is auto-provisioned from Vault on first read (§8). The admin key is never
+// generated: an operator supplies Authentication:AdminApiKey (hashed into Vault) or the break-glass key is
+// unavailable. ISecretResolver itself isn't registered until Phase 9 wires a real Vault client (or a test double
+// supplies one).
 builder.Services.AddSingleton<IApiKeyHasher>(sp =>
     ApiKeyHasher.CreateAsync(sp.GetRequiredService<ISecretResolver>()).GetAwaiter().GetResult());
+// Fail at startup, not on first admin request, if a configured admin key is too weak.
+AdminApiKeyAuthenticator.EnsureConfiguredKeyIsStrong(builder.Configuration["Authentication:AdminApiKey"]);
 builder.Services.AddSingleton(sp =>
-    AdminApiKeyAuthenticator.CreateAsync(sp.GetRequiredService<ISecretResolver>(), sp.GetRequiredService<ILogger<Program>>())
+    AdminApiKeyAuthenticator.CreateAsync(
+            sp.GetRequiredService<ISecretResolver>(),
+            sp.GetRequiredService<ILogger<Program>>(),
+            sp.GetRequiredService<IConfiguration>()["Authentication:AdminApiKey"])
         .GetAwaiter().GetResult());
 builder.Services.AddSingleton<IApiKeyGenerator, ApiKeyGenerator>();
 builder.Services.AddScoped<IConsumerAuthenticator, ConsumerAuthenticator>();

@@ -8,17 +8,19 @@ namespace AIProxyPlus.Infrastructure.Secrets;
 /// <summary>
 /// Validates the config API's admin key (architecture.md §7.2/§13). A single static secret (not a per-caller
 /// credential like Consumer keys), so it's hashed with plain SHA-256 rather than the Consumer pepper scheme,
-/// and compared in constant time. Auto-provisions a random key on first run — same pattern as the Consumer
-/// key pepper (<see cref="ApiKeyHasher.CreateAsync"/>) — since there is no chicken-and-egg config API to
-/// create it through.
+/// and compared in constant time. The plaintext key is never generated, returned, or logged by this process: an
+/// operator supplies it through <c>Authentication:AdminApiKey</c> and only its hash is stored in the secret store.
 /// </summary>
 public sealed class AdminApiKeyAuthenticator(string adminApiKeyHash)
 {
+    /// <summary>Operator-supplied keys must carry at least 128 bits of entropy as 32 hexadecimal characters.</summary>
+    public const int MinimumConfiguredKeyLength = 32;
+
     private const string SecretRef = "admin-api-key-hash";
 
     public bool Validate(string? plaintextApiKey)
     {
-        if (string.IsNullOrWhiteSpace(plaintextApiKey))
+        if (string.IsNullOrWhiteSpace(plaintextApiKey) || string.IsNullOrEmpty(adminApiKeyHash))
         {
             return false;
         }
@@ -30,20 +32,51 @@ public sealed class AdminApiKeyAuthenticator(string adminApiKeyHash)
 
     public static string Hash(string plaintextApiKey) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(plaintextApiKey)));
 
-    public static async Task<AdminApiKeyAuthenticator> CreateAsync(
-        ISecretResolver secretResolver, ILogger logger, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Rejects a configured key that is too short. Pure configuration check (no secret-store access) so it can run
+    /// at host startup. The message deliberately omits the value so a rejected key is not leaked to logs.
+    /// </summary>
+    public static void EnsureConfiguredKeyIsStrong(string? configuredApiKey)
     {
-        var hash = await secretResolver.TryResolveAsync(SecretRef, cancellationToken);
-        if (hash is null)
+        if (!string.IsNullOrWhiteSpace(configuredApiKey) && configuredApiKey.Length < MinimumConfiguredKeyLength)
         {
-            var plaintext = "aip_admin_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-            hash = Hash(plaintext);
-            await secretResolver.StoreAsync(SecretRef, hash, cancellationToken);
-            logger.LogWarning(
-                "No admin API key existed in the secret store; generated a new one. It will not be shown again: {AdminApiKey}",
-                plaintext);
+            throw new InvalidOperationException(
+                $"Authentication:AdminApiKey must be at least {MinimumConfiguredKeyLength} characters. " +
+                "Generate one with a CSPRNG, for example: openssl rand -hex 32");
+        }
+    }
+
+    /// <param name="bootstrapApiKey">
+    /// Operator-supplied key. When present it is the source of truth: its hash replaces any stored hash, which is
+    /// how the key is rotated.
+    /// </param>
+    public static async Task<AdminApiKeyAuthenticator> CreateAsync(
+        ISecretResolver secretResolver,
+        ILogger logger,
+        string? bootstrapApiKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureConfiguredKeyIsStrong(bootstrapApiKey);
+        var storedHash = await secretResolver.TryResolveAsync(SecretRef, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(bootstrapApiKey))
+        {
+            var configuredHash = Hash(bootstrapApiKey);
+            if (!string.Equals(storedHash, configuredHash, StringComparison.Ordinal))
+            {
+                await secretResolver.StoreAsync(SecretRef, configuredHash, cancellationToken);
+            }
+
+            return new AdminApiKeyAuthenticator(configuredHash);
         }
 
-        return new AdminApiKeyAuthenticator(hash);
+        if (storedHash is null)
+        {
+            logger.LogWarning(
+                "No admin API key is configured, so the break-glass admin key is unavailable. " +
+                "Set Authentication:AdminApiKey (and Authentication:AdminApiKeyFallbackEnabled=true) to enable it.");
+        }
+
+        return new AdminApiKeyAuthenticator(storedHash ?? string.Empty);
     }
 }

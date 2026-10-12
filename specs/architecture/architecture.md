@@ -366,9 +366,12 @@ plaintext or either Vault reference. Consumer responses likewise omit stored key
 > behind admin auth even for reads, per OWASP API3/API5 (broken object/function-level authorization). Ingress
 > inference routes require a separate, per-caller `X-Api-Key` header resolved to a `Consumer` via
 > `ConsumerAuthEndpointFilter` + `IConsumerAuthenticator`; the resolved identity is stashed in
-> `HttpContext.Items` for `ProxyRoutingService`'s usage capture to read. The admin key itself, like the
-> Consumer-key pepper, is auto-provisioned into Vault on first run (logged once, since there is no
-> chicken-and-egg config API to create it through) — see `AdminApiKeyAuthenticator`.
+> `HttpContext.Items` for `ProxyRoutingService`'s usage capture to read. The admin key itself is never generated,
+> returned, or logged by the process: an operator supplies it through `Authentication:AdminApiKey` (at least 32
+> characters, otherwise startup fails without echoing the value), only its hash is written to Vault (replacing any
+> stored hash, which is how it is rotated), and with no key configured the
+> break-glass key is unavailable — see `AdminApiKeyAuthenticator`. (Earlier iterations auto-generated the key and
+> logged it once; any key that may have been captured in logs must be rotated.)
 
 ## 8. Secrets Management
 
