@@ -19,6 +19,7 @@ preserved in `awesome-copilot-LICENSE`.
 - `containerization-docker-best-practices.instructions.md`
 - `dotnet-architecture-good-practices.instructions.md`
 - `playwright-typescript.instructions.md`
+- `security-review.instructions.md`
 - `self-explanatory-code-commenting.instructions.md`
 - `update-docs-on-code-change.instructions.md`
 

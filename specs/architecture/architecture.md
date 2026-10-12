@@ -673,6 +673,13 @@ shape and fixed token are confined to local development and are not acceptable d
   schedule. Both ecosystems resolve anonymously and fail closed through Microsoft's CFS proxies with no public
   registry fallback. Dependabot pull requests must compile the solution and pass the focused backend and frontend
   test/build workflow before trusted automation can approve and enable auto-merge.
+- **Security review controls**: CodeQL remains the deterministic code-scanning control for C# and
+  JavaScript/TypeScript, while dependency review, Dependabot, and GitHub secret scanning cover dependency and
+  credential risks. Native Copilot pull-request review and the manually invoked Copilot CLI `/security-review`
+  command are additional advisory layers only. AI findings require human validation, cannot suppress deterministic
+  findings, and are not authoritative merge gates. Repository-specific review guidance records the admin/consumer,
+  Vault, SSRF, passthrough, response-commit, usage-attribution, WebSocket credential, and browser-session trust
+  boundaries.
 - **Least privilege (Postgres)**: `Program.cs` supports an optional `ConnectionStrings:aiproxyplusdb-migrations`
   connection string (Iteration 12) — when configured, only the startup `Database.MigrateAsync()` step uses it,
   while every runtime query keeps using the regular, narrower-scoped `ConnectionStrings:aiproxyplusdb`. Local

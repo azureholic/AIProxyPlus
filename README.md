@@ -49,6 +49,11 @@ The `main` branch is protected by a GitHub repository ruleset. Changes must arri
 the CodeQL checks for C# and TypeScript plus dependency review. GitHub Copilot is requested automatically for every
 pull request and reviews new pushes using the repository's Copilot instructions.
 
+For security-sensitive changes, developers can also run the experimental GitHub Copilot CLI `/security-review`
+command as an advisory review of local changes. Its findings require human validation and do not replace the
+required checks. See [docs/security-review.md](docs/security-review.md) for usage, trust boundaries, and current
+automation limitations.
+
 Human approval is optional while the project has one maintainer. After reading Copilot's review and confirming the
 required checks passed, the maintainer can merge normally without approving their own pull request or selecting a
 bypass option. The `azureholic` account remains the explicit emergency bypass actor. Force pushes and branch
