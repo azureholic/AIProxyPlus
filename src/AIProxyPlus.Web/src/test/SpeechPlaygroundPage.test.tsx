@@ -54,7 +54,7 @@ describe('SpeechPlaygroundPage', () => {
       if (url === '/api/v1/auth/antiforgery') return jsonResponse({ token: 'csrf' });
       if (url === '/api/v1/config/models') return jsonResponse(models);
       if (url === '/openai/v1/audio/speech' && init?.method === 'POST') {
-        return new Response(new Blob(['speech'], { type: 'audio/mpeg' }), {
+        return new Response(new TextEncoder().encode('speech'), {
           status: 200,
           headers: { 'Content-Type': 'audio/mpeg' },
         });
