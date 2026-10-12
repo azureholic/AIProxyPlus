@@ -471,10 +471,13 @@ public sealed class ProxyRoutingService(
         }
     }
 
-    // Every proxied operation is a POST. Only a 429 (rate limited) or 503 (temporarily unavailable) says the
-    // upstream did not process the request, so only those may be replayed to the same or another endpoint.
+    // Every proxied operation is a POST. Only a response that says the upstream did not process the request may be
+    // replayed to the same or another endpoint: 429 (rate limited), 503 (temporarily unavailable), and 529
+    // (Anthropic's documented "overloaded" rejection).
     private static bool IsSafeToReplay(int statusCode) =>
-        statusCode is StatusCodes.Status429TooManyRequests or StatusCodes.Status503ServiceUnavailable;
+        statusCode is StatusCodes.Status429TooManyRequests or StatusCodes.Status503ServiceUnavailable or UpstreamOverloaded;
+
+    private const int UpstreamOverloaded = 529;
 
     private static TimeSpan JitteredBackoff(int attempt)
     {

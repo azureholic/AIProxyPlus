@@ -66,8 +66,10 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
         _backend2.LogEntries.Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task Failover_OnBackend503_TriesNextPriorityEndpoint()
+    [Theory]
+    [InlineData(503)]
+    [InlineData(529)]
+    public async Task Failover_OnBackendRejectionBeforeProcessing_TriesNextPriorityEndpoint(int statusCode)
     {
         var modelName = $"gpt-4o-{Guid.NewGuid():N}";
         var model = Model.Create(Guid.NewGuid(), modelName);
@@ -76,7 +78,7 @@ public class ChatCompletionRoutingTests : IAsyncLifetime, IDisposable
         _factory.Models.Seed(model);
 
         _backend1.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
-            .RespondWith(Response.Create().WithStatusCode(503));
+            .RespondWith(Response.Create().WithStatusCode(statusCode));
         _backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2", choices = Array.Empty<object>() }));
 

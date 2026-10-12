@@ -30,7 +30,7 @@ it is not tied to Azure:
 | 5 | OpenTelemetry (traces, logs, metrics) | OTLP exporter → Aspire dashboard locally, OTLP collector in prod |
 | 6 | Configuration | see §7 |
 | 6.1 | Model name | `Model.Name` (routing key) |
-| 6.2 | 1+ endpoints, priority + failover | `ModelEndpoint.Priority`, `EndpointSelector` (Domain): lowest-priority tier first, round-robin across assignments that share a priority, failover on `429`/`503` and transport failures (Iteration 2; narrowed so a possibly-processed `POST` is never replayed, see §9) |
+| 6.2 | 1+ endpoints, priority + failover | `ModelEndpoint.Priority`, `EndpointSelector` (Domain): lowest-priority tier first, round-robin across assignments that share a priority, failover on `429`/`503`/`529` and transport failures (Iteration 2; narrowed so a possibly-processed `POST` is never replayed, see §9) |
 | 6.3 | Sticky sessions for stateful calls | **Automatic, protocol-inherent affinity only** — no config flag (Iteration 2). Responses API: `previous_response_id`-keyed affinity (`ISessionAffinityStore`, persisted in Postgres). Realtime API: the WebSocket connection itself is the affinity (§6.5/§9) |
 | 6.4 | API key vs Managed Identity per endpoint | `Endpoint.AuthMode` + `ICredentialProvider` strategy |
 | 6.5 | Configuration REST API | `/api/v1/config/*` CRUD endpoints, incl. `Consumer` (API key) management |
@@ -238,7 +238,7 @@ request-body limit fail locally before endpoint or credential resolution.
 `POST /openai/v1/audio/speech` uses the existing JSON `model` peek and forwards the request unchanged. Successful
 synthesis responses are arbitrary binary audio, so the winning response is streamed directly with its upstream
 status and end-to-end content headers rather than decoded as UTF-8 or inspected as JSON. Failed replay-safe responses
-(`429`/`503`) are still buffered for retry/failover and first-error replay. OpenAI and Microsoft AI routes use
+(`429`/`503`/`529`) are still buffered for retry/failover and first-error replay. OpenAI and Microsoft AI routes use
 `/audio/transcriptions` and `/audio/speech`; unsupported provider/operation pairs fail locally. Usage is captured
 only when the provider returns a real token or non-token usage signal; the proxy does not invent billing values.
 
@@ -460,22 +460,26 @@ shape and fixed token are confined to local development and are not acceptable d
   endpoint, or a deployment where every endpoint has a distinct priority, behaves exactly like strict
   priority-order failover — round-robin only has a visible effect when two or more endpoints share a priority.
   Two endpoints sharing a priority is intentional configuration (ties round-robin together), not an error.
-- **Failover triggers**: a backend response of `429` (rate limited) or `503` (temporarily unavailable), or a
-  transport-level failure (timeout, connection refused), marks the endpoint unhealthy for this request
-  (`IEndpointHealthTracker`) and the next candidate in the round-robin tier — or the next priority tier if the
-  current one is exhausted — is tried, bounded by the deployment's total endpoint count. `429` was added in
-  Iteration 2: it's the single most common real-world reason to want failover, and treating it as a failover
-  trigger means a rate-limited primary endpoint no longer fails every in-flight request while a secondary endpoint
-  sits idle.
+- **Failover triggers**: a backend response of `429` (rate limited), `503` (temporarily unavailable), or `529`
+  (Anthropic's documented "overloaded" rejection), or a transport-level failure (timeout, connection refused),
+  marks the endpoint unhealthy for this request (`IEndpointHealthTracker`) and the next candidate in the round-robin
+  tier — or the next priority tier if the current one is exhausted — is tried, bounded by the deployment's total
+  endpoint count. `429` was added in Iteration 2: it's the single most common real-world reason to want failover,
+  and treating it as a failover trigger means a rate-limited primary endpoint no longer fails every in-flight
+  request while a secondary endpoint sits idle.
 - **Replay safety — no automatic replay after a possibly-processed request (security review)**: every proxied
   operation is a non-idempotent `POST`, and replaying one can duplicate billable work or stateful objects (image
   generation, stored Responses API objects). The proxy therefore replays a request, to the same endpoint or
-  another, only when the upstream signalled that it did not process it: `429`, `503`, or a failure with no
-  response at all. Any other `5xx` (`500`, `502`, `504`, ...) may mean the upstream accepted and acted on the
-  request, so it is never retried or failed over: the endpoint is still marked unhealthy so *subsequent* requests
-  skip it (cross-request circuit breaker, below), and the caller receives that upstream's own error verbatim.
-  Operations that are safe to repeat are not distinguished, so this is deliberately conservative; widening it
-  would need an explicit per-operation or per-endpoint opt-in.
+  another, only when the upstream signalled that it did not process it: `429`, `503`, `529`, or a failure with no
+  response at all. These are the documented "rejected before processing" signals of the supported providers
+  (OpenAI, Microsoft AI, Anthropic), which is the contract this rule relies on; a status code alone cannot prove it
+  for an arbitrary upstream, and the proxy does not attempt to. Any other `5xx` (`500`, `502`, `504`, ...) may mean
+  the upstream accepted and acted on the request, so it is never retried or failed over: the endpoint is still
+  marked unhealthy so *subsequent* requests skip it (cross-request circuit breaker, below), and the caller receives
+  that upstream's own error verbatim. Operations that are safe to repeat are not distinguished, so this is
+  deliberately conservative; widening it would need an explicit per-operation or per-endpoint opt-in, and
+  narrowing it further (for example, an idempotency key before any status-based replay) would be a separate design
+  decision.
 - **Bounded credential fallback (Iteration 16)**: HTTP forwarding resolves the active endpoint credential first.
   During an explicitly configured, unexpired window it may retry the same buffered request exactly once with the
   previous slot, without delay, only after an upstream HTTP `401` received before any client response is committed.
