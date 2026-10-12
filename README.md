@@ -19,8 +19,9 @@ optional, per-endpoint authentication mode.
   images, the stateful Responses API, and the Realtime (voice) WebSocket API, plus request/response speech
   (transcription and text-to-speech).
 - **Routes with resiliency**: each model can have several endpoints across priority tiers; requests round-robin
-  within a tier and fail over to the next tier on `429`/`5xx`, without ever double-committing a response to the
-  caller.
+  within a tier and fail over to the next tier on `429`/`503` (responses that mean the request was not processed),
+  without ever double-committing a response to the caller. Other `5xx` errors are never replayed, because the
+  upstream may already have acted on the request; the caller sees the upstream's own error.
 - **Preserves protocol-inherent affinity**: Responses API calls stay pinned to the endpoint that owns their
   `previous_response_id`; Realtime calls stay pinned to their WebSocket connection. There is no generic
   session-affinity configuration to get wrong.

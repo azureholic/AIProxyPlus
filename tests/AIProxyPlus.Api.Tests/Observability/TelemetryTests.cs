@@ -108,7 +108,7 @@ public class TelemetryTests : IAsyncLifetime, IDisposable
             _factory.Models.Seed(model);
 
             _backend.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
-                .RespondWith(Response.Create().WithStatusCode(500));
+                .RespondWith(Response.Create().WithStatusCode(503));
             backend2.Given(Request.Create().WithPath("/openai/v1/chat/completions").UsingPost())
                 .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new { id = "resp-2" }));
 

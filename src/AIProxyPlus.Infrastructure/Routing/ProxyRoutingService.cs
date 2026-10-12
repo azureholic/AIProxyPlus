@@ -212,6 +212,14 @@ public sealed class ProxyRoutingService(
                     $"Sticky assignment '{stickyAssignmentId}' failed and failover is disallowed for stateful sessions.");
             }
 
+            if (outcome.MayHaveBeenProcessed)
+            {
+                return new RoutingFailure(
+                    RoutingFailureReason.NoHealthyEndpoint,
+                    $"The endpoint returned {outcome.StatusCode}, so the request may have been processed and was not retried or failed over.",
+                    firstFailureSnapshot);
+            }
+
             excludedEndpointIds.Add(endpoint.Id);
         }
     }
@@ -358,10 +366,19 @@ public sealed class ProxyRoutingService(
                 {
                     metrics.RecordCredentialFallback(provider.ToString(), endpoint.Id, endpoint.Name, "succeeded");
                 }
-                if (statusCode == 429 || statusCode >= 500)
+                if (IsSafeToReplay(statusCode))
                 {
                     lastFailureSnapshot = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
                     continue;
+                }
+
+                if (statusCode >= 500)
+                {
+                    // The upstream may already have processed the request (state created, tokens billed), so a
+                    // replay here, to this endpoint or another, could duplicate the operation. Stop and let the
+                    // caller see the upstream's own error.
+                    var ambiguousFailure = await DirectHttpProxy.CaptureFailureSnapshotAsync(response, cancellationToken);
+                    return new ForwardOutcome(false, statusCode, null, null, ambiguousFailure, MayHaveBeenProcessed: true);
                 }
 
                 if (streaming)
@@ -454,6 +471,11 @@ public sealed class ProxyRoutingService(
         }
     }
 
+    // Every proxied operation is a POST. Only a 429 (rate limited) or 503 (temporarily unavailable) says the
+    // upstream did not process the request, so only those may be replayed to the same or another endpoint.
+    private static bool IsSafeToReplay(int statusCode) =>
+        statusCode is StatusCodes.Status429TooManyRequests or StatusCodes.Status503ServiceUnavailable;
+
     private static TimeSpan JitteredBackoff(int attempt)
     {
         var baseDelayMs = Math.Min(100 * Math.Pow(2, attempt - 1), 2000);
@@ -462,5 +484,10 @@ public sealed class ProxyRoutingService(
     }
 
     private readonly record struct ForwardOutcome(
-        bool Succeeded, int StatusCode, UsageExtractionResult? Usage, string? CapturedResponseId, UpstreamFailureSnapshot? Failure = null);
+        bool Succeeded,
+        int StatusCode,
+        UsageExtractionResult? Usage,
+        string? CapturedResponseId,
+        UpstreamFailureSnapshot? Failure = null,
+        bool MayHaveBeenProcessed = false);
 }
