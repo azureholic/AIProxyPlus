@@ -28,7 +28,7 @@ public sealed class UpdateEndpointConfigurationValidator : AbstractValidator<Upd
         RuleFor(command => command.ManagedIdentityTenantId)
             .Must(tenantId => string.IsNullOrWhiteSpace(tenantId) || Guid.TryParse(tenantId, out _))
             .WithMessage("ManagedIdentityTenantId must be a valid tenant GUID.");
-        RuleFor(command => command.TimeoutSeconds).GreaterThanOrEqualTo(1);
+        RuleFor(command => command.TimeoutSeconds).InclusiveBetween(1, Endpoint.MaxTimeoutSeconds);
         RuleFor(command => command.MaxRetries).GreaterThanOrEqualTo(0);
     }
 }

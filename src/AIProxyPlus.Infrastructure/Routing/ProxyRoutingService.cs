@@ -309,7 +309,8 @@ public sealed class ProxyRoutingService(
             // Endpoint.TimeoutSeconds bounds the wait for response headers. It stops counting once they arrive so a
             // long streamed response is never cut off.
             using var responseTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            responseTimeout.CancelAfter(TimeSpan.FromSeconds(endpoint.TimeoutSeconds));
+            // Clamped so a value persisted before the upper bound existed cannot exceed what a timer accepts.
+            responseTimeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(endpoint.TimeoutSeconds, 1, Endpoint.MaxTimeoutSeconds)));
             try
             {
                 using var request = DirectHttpProxy.BuildRequest(httpContext, targetUri, bodyBytes, credential);

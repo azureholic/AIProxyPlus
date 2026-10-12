@@ -484,7 +484,7 @@ shape and fixed token are confined to local development and are not acceptable d
   never retried or failed over: any other `5xx` (`500`, `502`, `504`, ...), and any transport failure after the
   connection was established (a response that ended early, a connection reset after the request was sent, or the
   endpoint's response timeout expiring), because the upstream may have accepted and acted on the request.
-  `Endpoint.TimeoutSeconds` (default 100) bounds each attempt's wait for response headers; it stops counting once
+  `Endpoint.TimeoutSeconds` (default 100, allowed range 1–3600) bounds each attempt's wait for response headers; it stops counting once
   headers arrive, so a long streamed or slowly delivered body is never cut off, and its expiry is ambiguous, never a
   connect failure. Only the handler's separate 15 second connect timeout is replay-safe. The classification lives in
   `UpstreamFailureClassifier`. For an ambiguous outcome the endpoint is still marked unhealthy so

@@ -39,7 +39,7 @@ public sealed class CreateEndpointValidator : AbstractValidator<CreateEndpointCo
             .Empty()
             .When(command => command.AuthMode != AuthMode.ManagedIdentity)
             .WithMessage("ManagedIdentityTenantId is only valid for ManagedIdentity auth mode.");
-        RuleFor(command => command.TimeoutSeconds).GreaterThanOrEqualTo(1);
+        RuleFor(command => command.TimeoutSeconds).InclusiveBetween(1, Endpoint.MaxTimeoutSeconds);
         RuleFor(command => command.MaxRetries).GreaterThanOrEqualTo(0);
     }
 

@@ -274,14 +274,17 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
                 }
 
                 Interlocked.Increment(ref acceptedConnections);
-                using (client)
+                _ = Task.Run(async () =>
                 {
-                    var stream = client.GetStream();
-                    await stream.ReadAsync(new byte[4096]);
-                    await stream.WriteAsync(
-                        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 1000\r\n\r\npartial"u8.ToArray());
-                    await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(10)));
-                }
+                    using (client)
+                    {
+                        var stream = client.GetStream();
+                        await stream.ReadAsync(new byte[4096]);
+                        await stream.WriteAsync(
+                            "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 1000\r\n\r\npartial"u8.ToArray());
+                        await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+                    }
+                });
             }
         });
 
@@ -347,11 +350,15 @@ public class LoadBalancingTests : IAsyncLifetime, IDisposable
                 }
 
                 Interlocked.Increment(ref acceptedConnections);
-                using (client)
+                // Each connection stalls on its own task so the loop keeps accepting and counting every attempt.
+                _ = Task.Run(async () =>
                 {
-                    await client.GetStream().ReadAsync(new byte[4096]);
-                    await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(30)));
-                }
+                    using (client)
+                    {
+                        await client.GetStream().ReadAsync(new byte[4096]);
+                        await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+                    }
+                });
             }
         });
 
