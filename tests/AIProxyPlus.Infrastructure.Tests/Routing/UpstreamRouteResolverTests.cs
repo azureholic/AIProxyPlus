@@ -57,6 +57,31 @@ public class UpstreamRouteResolverTests
     }
 
     [Fact]
+    public void ResolveRealtime_StripsProxyAuthenticationQueryParameters()
+    {
+        var assignment = CreateAssignment(Provider.OpenAI, "/v1");
+
+        var result = _resolver.ResolveRealtime(assignment, "?model=gpt-realtime&api_key=aip_consumer_secret&ticket=one-time");
+
+        result.Should().Be(new Uri("wss://foundry.example.com/v1/realtime?model=gpt-realtime"));
+    }
+
+    [Theory]
+    [InlineData("?api_key=aip_consumer_secret", "")]
+    [InlineData("?API_KEY=aip_consumer_secret&api-version=preview", "?api-version=preview")]
+    [InlineData("?api%5Fkey=aip_consumer_secret&api-version=preview", "?api-version=preview")]
+    [InlineData("?ticket=one-time&api-version=preview&api_key", "?api-version=preview")]
+    [InlineData("?api-key=provider-param&api-version=preview", "?api-key=provider-param&api-version=preview")]
+    public void ResolveHttp_StripsOnlyProxyAuthenticationQueryParameters(string query, string expectedQuery)
+    {
+        var assignment = CreateAssignment(Provider.OpenAI, "/v1");
+
+        var result = _resolver.ResolveHttp(assignment, OperationType.ChatCompletion, query);
+
+        result.Should().Be(new Uri($"https://foundry.example.com/v1/chat/completions{expectedQuery}"));
+    }
+
+    [Fact]
     public void ResolveHttp_ForUnsupportedProviderOperation_ThrowsBeforeComposition()
     {
         var assignment = CreateAssignment(Provider.Anthropic, "/anthropic/v1");

@@ -193,6 +193,23 @@ public class RealtimeProxyTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task ApiKeyQueryParamHandshake_DoesNotForwardConsumerKeyToTheUpstream()
+    {
+        var modelName = $"realtime-{Guid.NewGuid():N}";
+        var model = Model.Create(Guid.NewGuid(), modelName);
+        model.AddEndpoint(NewApiKeyEndpoint(model.Id, _backend1.Url, priority: 1));
+        _factory.Models.Seed(model);
+
+        var uri = new Uri(_factory.Server.BaseAddress, $"/openai/v1/realtime?model={modelName}&api_key={ApiTestFactory.DefaultConsumerApiKey}");
+        using var socket = await _factory.Server.CreateWebSocketClient().ConnectAsync(uri, CancellationToken.None);
+
+        _backend1.LastRequestQuery.Should().Be($"?model={modelName}");
+        _backend1.LastRequestHeaders.Should().NotContainKey("X-Api-Key");
+
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task TicketHandshake_ConsumesTicketOnce_AndRejectsReplay()
     {
         var modelName = $"realtime-{Guid.NewGuid():N}";
