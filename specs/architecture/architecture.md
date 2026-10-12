@@ -496,7 +496,10 @@ shape and fixed token are confined to local development and are not acceptable d
   No provider-specific structured `403` rejection codes are currently proven, so every `403`, `429`, `5xx`, timeout,
   and transport failure is ineligible. Credential fallback does not advance round-robin state, mark the endpoint
   unhealthy, promote either slot, or consume an endpoint retry. If fallback also fails, the original active-key
-  response is replayed. Realtime remains immediate-cutover-only (§6.5).
+  response is replayed — except when the fallback attempt may have been processed (an ambiguous `5xx` or a
+  transport failure after connecting), in which case that fallback outcome is returned instead and the endpoint is
+  marked unhealthy, so the earlier `401` cannot mask a possibly-completed operation (see replay safety above).
+  Realtime remains immediate-cutover-only (§6.5).
 - **Sticky sessions — automatic and protocol-inherent only (Iteration 2)**: there is no deployment-level sticky
   session config flag and no generic client-supplied `session`/`X-Session-Id` mechanism — both existed in
   Iteration 1 and were removed. Every request that isn't inherently stateful just uses priority + round-robin

@@ -78,6 +78,40 @@ public class CredentialFallbackRoutingTests : IAsyncLifetime, IDisposable
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task FallbackFailsWithPossiblyProcessedError_ReturnsFallbackErrorNotTheEarlier401(HttpStatusCode statusCode)
+    {
+        // The fallback request may have been processed before failing, so replaying the active-key 401 would hide that
+        // and invite a duplicate retry. The caller sees the fallback's own error instead.
+        var modelName = SeedModel();
+        StubCredential("Bearer active-key", HttpStatusCode.Unauthorized, "active-rejected");
+        StubCredential("Bearer fallback-key", statusCode, "fallback-failed");
+
+        var response = await SendChatAsync(modelName);
+
+        response.StatusCode.Should().Be(statusCode);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("fallback-failed");
+        _backend.LogEntries.Should().HaveCount(2);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task FallbackRejectedBeforeProcessing_ReturnsTheOriginalActiveCredentialResponse(HttpStatusCode statusCode)
+    {
+        var modelName = SeedModel();
+        StubCredential("Bearer active-key", HttpStatusCode.Unauthorized, "active-rejected");
+        StubCredential("Bearer fallback-key", statusCode, "fallback-unavailable");
+
+        var response = await SendChatAsync(modelName);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("active-rejected");
+        _backend.LogEntries.Should().HaveCount(2);
+    }
+    [Theory]
     [InlineData(HttpStatusCode.Forbidden)]
     [InlineData(HttpStatusCode.TooManyRequests)]
     [InlineData(HttpStatusCode.InternalServerError)]
