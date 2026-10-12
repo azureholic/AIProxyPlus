@@ -43,6 +43,16 @@ optional, per-endpoint authentication mode.
 The full design rationale lives in [specs/architecture/architecture.md](specs/architecture/architecture.md), and
 the phase-by-phase build history for every iteration is under [specs/iterations/](specs/iterations/).
 
+## Pull request governance
+
+The `main` branch is protected by a GitHub repository ruleset. Changes must arrive through a pull request and pass
+the CodeQL checks for C# and TypeScript plus dependency review. GitHub Copilot is requested automatically for every
+pull request and reviews new pushes using the repository's Copilot instructions.
+
+The `azureholic` account is the explicit sole-maintainer bypass actor. This allows the repository owner to merge
+their own work when no independent approver exists; GitHub does not allow a pull request author to approve their
+own pull request. Force pushes and branch deletion remain blocked unless that explicit bypass is used.
+
 ## Architecture at a glance
 
 - **Clean Architecture**: `AIProxyPlus.Domain` (zero dependencies) → `AIProxyPlus.Application` (ports + use cases) →

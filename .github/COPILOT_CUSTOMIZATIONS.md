@@ -4,6 +4,10 @@ The agents, instructions, and skills in this directory were copied from
 [github/awesome-copilot](https://github.com/github/awesome-copilot) at commit
 `336af71f1b7d2e6e15a8a986ba79ca031a40549b` on 2026-08-03.
 
+GitHub Copilot code review is automatically requested for pull requests through
+the repository's `main` branch ruleset. Reviews use `.github/copilot-instructions.md`
+as the repository-wide review guidance.
+
 They were selected for this repository's .NET 10, ASP.NET Core Minimal API,
 .NET Aspire, PostgreSQL/EF Core, React 19, TypeScript, Vitest, Docker, security,
 architecture, documentation, and draw.io workflows. The upstream MIT license is
