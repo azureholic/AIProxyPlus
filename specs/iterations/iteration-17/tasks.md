@@ -245,13 +245,13 @@ listed validation are complete.
   **Depends on:** T17-704.
   **Traceability:** REQ-1702.
 
-- [ ] **T17-802 — Run cloud smoke tests**
+- [x] **T17-802 — Run cloud smoke tests**
   Verify HTTPS, live/ready health, Entra login/logout, authenticated config access, Key Vault secret round trip,
   PostgreSQL persistence, SPA fallback, Realtime WebSocket handshake, telemetry, and revision replacement.
   **Depends on:** T17-801.
   **Traceability:** all requirements.
 
-- [ ] **T17-803 — Close the iteration**
+- [x] **T17-803 — Close the iteration**
   Record exact validation evidence, remaining operational gaps, deployed outputs, and rollback instructions; then
   mark completed tasks and create one focused commit.
   **Depends on:** T17-802.

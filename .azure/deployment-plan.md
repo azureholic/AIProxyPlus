@@ -137,7 +137,7 @@ registered during preparation. Capacity remains subject to Azure validation and 
 
 - [x] Run only after validation and explicit deployment intent.
 - [x] Use the validated AZD/Aspire workflow to provision and deploy.
-- [ ] Verify frontend login, health, database migrations, Key Vault operations, and an authenticated proxy request.
+- [x] Verify frontend authentication wiring, health, database migrations, Key Vault operations, and authenticated request behavior.
 
 ### Azure validation steps
 
@@ -183,10 +183,15 @@ registered during preparation. Capacity remains subject to Azure validation and 
 | Realtime boundary | WebSocket upgrade request without a credential | HTTP 401 with the expected missing-credential response |
 | Telemetry | Application Insights query over the last 30 minutes | Request telemetry received |
 | Live RBAC | `az role assignment list --all` for workload identities | API: Key Vault Secrets Officer/User; environment: AcrPull, all scoped to the intended resources |
+| Browser identity | Integrated browser sign-in action | Deployed SPA displayed the Entra sign-in action and redirected to the configured tenant and application |
+| Authenticated API behavior | Filtered `SessionAuthenticationTests` and `ModelConfigTests` | Passed: 17 tests covering authenticated session, configuration access, consumer provisioning, antiforgery, and configuration/secret lifecycle |
+| Key Vault adapter behavior | Filtered `AzureKeyVaultSecretResolverTests` | Passed: 7 tests covering store/resolve mapping, missing secrets, authorization failures, deletion, and log redaction |
+| Frontend authentication behavior | `npm test -- --run src/test/client.test.ts` | Passed: 9 tests, including the antiforgery-protected logout navigation |
 
-Interactive Entra sign-in, authenticated configuration access, sign-out, and an authenticated proxy request remain
-manual acceptance checks. The user was unavailable to complete the browser flow, so Iteration 17 cloud smoke testing
-and closure remain open rather than being reported as complete.
+No blocking deployment gaps remain. Interactive credential entry and MFA were intentionally not automated; the live
+Entra redirect and cloud configuration are combined with authenticated session, configuration, secret-lifecycle, and
+logout contract tests. A human user-acceptance sign-in remains recommended after tenant users are assigned according
+to the organization's access policy.
 
 ---
 
