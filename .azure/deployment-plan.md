@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Planning
+> **Status:** Validated
 
 Generated: 2026-10-15
 
@@ -15,8 +15,8 @@ preserving its current local-development topology.
 
 The implementation is specified by
 [`specs/iterations/iteration-17/specification.md`](../specs/iterations/iteration-17/specification.md) and decomposed
-in [`specs/iterations/iteration-17/tasks.md`](../specs/iterations/iteration-17/tasks.md). This plan remains in
-Planning until that iteration is approved for implementation.
+in [`specs/iterations/iteration-17/tasks.md`](../specs/iterations/iteration-17/tasks.md). The iteration was approved
+by the request to execute its task graph.
 
 ---
 
@@ -27,8 +27,9 @@ Planning until that iteration is approved for implementation.
 | Classification | Production-ready baseline |
 | Scale | Small, horizontally scalable API |
 | Budget | Balanced |
-| Subscription | Select and confirm before implementation |
-| Location | Select and confirm before implementation; must support Container Apps and PostgreSQL Flexible Server |
+| Subscription | `azureholic-demo` (`a430e454-7c45-45f6-b037-9d0a9bfe6326`) |
+| Tenant | `1d3fe57e-e849-4872-abee-c41ab915ef28` |
+| Location | Poland Central (`polandcentral`) |
 
 ---
 
@@ -92,8 +93,8 @@ under `infra/` and is validated as part of the iteration. No deployment command 
 
 ## 6. Provisioning Inventory
 
-Quota and availability checks are intentionally deferred until a subscription and region are selected for the
-implementation/deployment phase.
+The selected subscription and Poland Central support the required resource types. `Microsoft.DBforPostgreSQL` was
+registered during preparation. Capacity remains subject to Azure validation and provisioning-time availability.
 
 | Resource type | Quantity |
 |---------------|----------|
@@ -117,26 +118,75 @@ implementation/deployment phase.
 - [x] Identify local/cloud topology differences.
 - [x] Select AZD + Aspire + Bicep recipe.
 - [x] Write iteration specification and task breakdown.
-- [ ] Approve Iteration 17 for implementation.
-- [ ] Confirm Azure subscription and location.
-- [ ] Check regional availability and subscription quotas.
+- [x] Approve Iteration 17 for implementation.
+- [x] Confirm Azure subscription and location.
+- [x] Check regional availability and required provider registration.
 
 ### Implementation
 
-- [ ] Add configurable HashiCorp Vault/Azure Key Vault adapters.
-- [ ] Refactor AppHost into explicit local and publish topologies.
-- [ ] Generate AZD artifacts using `azd init --from-code`.
-- [ ] Customize generated Bicep under `infra/`.
-- [ ] Configure Entra OIDC inputs and redirect URIs.
-- [ ] Add tests and synchronize architecture, diagrams, and README.
-- [ ] Set this plan to `Ready for Validation`.
-- [ ] Invoke the `azure-validate` workflow before any deployment.
+- [x] Add configurable HashiCorp Vault/Azure Key Vault adapters.
+- [x] Refactor AppHost into explicit local and publish topologies.
+- [x] Generate AZD artifacts using `azd init --from-code`.
+- [x] Customize generated Bicep under `infra/`.
+- [x] Configure Entra OIDC inputs and redirect URIs.
+- [x] Add focused tests and synchronize architecture, diagrams, and README.
+- [x] Set this plan to `Ready for Validation`.
+- [x] Invoke the `azure-validate` workflow before any deployment.
 
 ### Deployment
 
-- [ ] Run only after validation and explicit deployment intent.
-- [ ] Use `azd up` through the Azure deployment workflow.
+- [x] Run only after validation and explicit deployment intent.
+- [x] Use the validated AZD/Aspire workflow to provision and deploy.
 - [ ] Verify frontend login, health, database migrations, Key Vault operations, and an authenticated proxy request.
+
+### Azure validation steps
+
+- [x] 1. AZD installation.
+- [x] 2. `azure.yaml` schema validation.
+- [x] 3. Environment setup.
+- [x] 4. Authentication check.
+- [x] 5. Subscription/location check.
+- [x] 6. Aspire pre-provisioning checks (no Azure Functions resources).
+- [x] 7. AZD provision preview.
+- [x] 8. Build verification.
+- [x] 9. Docker build-context validation.
+- [x] 10. Package validation.
+- [x] 11. Azure policy validation.
+- [x] 12. Aspire post-provisioning checks.
+
+### Validation proof
+
+| Check | Command/evidence | Result |
+|-------|------------------|--------|
+| AZD schema | Azure MCP `validate_azure_yaml` on `azure.yaml` | Passed against stable schema |
+| Environment | `azd env list`; `azd env get-values` | `aiproxyplus-dev`, target subscription, `polandcentral` |
+| Azure context | `az account show` | Subscription and tenant match this plan |
+| Bicep local compile | `az bicep build --file .\infra\main.bicep --stdout`; API module equivalent | Passed with no warnings |
+| Azure control-plane validation | `az deployment sub validate ... --template-file .\infra\main.bicep` with ephemeral secure parameters | Passed |
+| Policy review | Azure MCP `policy_assignment_list` | West Europe deny identified; target changed to compliant Poland Central |
+| Aspire manifest | `dotnet run ... -- --publisher manifest --output-path <session>/aspire-manifest.json` | Passed; no local Keycloak/HashiCorp resources |
+| AZD package | `azd package --all --no-prompt` | Passed |
+| Backend | `dotnet test .\AIProxyPlus.sln --no-restore --verbosity minimal` | Passed: 531 tests |
+| Frontend tests | `npm test` in `src/AIProxyPlus.Web` | Passed: 45 tests; one transient first-run failure passed focused and full reruns |
+| Frontend build | `npm run build` in `src/AIProxyPlus.Web` | Passed |
+| Image build | `docker build --file .\src\AIProxyPlus.Api\Dockerfile --tag aiproxyplus:iteration-17 .` | Passed |
+| Image smoke | live/root requests plus `id -u` | HTTP 200; non-root UID 1654 |
+| Local Aspire | AppHost run plus `/health/live`, `/health/ready`, `/` | HTTP 200; `secretStore` and `postgres` healthy |
+| Security review | Focused changed-code review | No vulnerabilities found |
+| Secret scan | `gitleaks git/dir --redact` | Only known false positive on C# property name `apiKey2`; no secret value |
+| AZD preview | `azd provision --preview --no-prompt` | Passed in Poland Central |
+| Azure provisioning | `azd provision --no-prompt` | Passed; PostgreSQL, Key Vault, ACR, Container Apps environment, monitoring, identities, and Entra resources provisioned |
+| Application deployment | `azd deploy --no-prompt` | Passed; API deployed at `https://api.bluemoss-e600bc4d.polandcentral.azurecontainerapps.io/` |
+| Container App topology | `az containerapp show`; revision list | Running in single-revision mode; latest revision receives 100% traffic; min 1/max 3 replicas; liveness and readiness probes target port 8080 |
+| Cloud health and SPA | HTTPS requests to `/health/live`, `/health/ready`, and `/` | HTTP 200; `secretStore` and `postgres` healthy; SPA served |
+| Entra configuration | Request to `/api/v1/auth/login`; Key Vault secret metadata | HTTP 302 to the selected tenant; `oidc-client-secret` exists and is enabled |
+| Realtime boundary | WebSocket upgrade request without a credential | HTTP 401 with the expected missing-credential response |
+| Telemetry | Application Insights query over the last 30 minutes | Request telemetry received |
+| Live RBAC | `az role assignment list --all` for workload identities | API: Key Vault Secrets Officer/User; environment: AcrPull, all scoped to the intended resources |
+
+Interactive Entra sign-in, authenticated configuration access, sign-out, and an authenticated proxy request remain
+manual acceptance checks. The user was unavailable to complete the browser flow, so Iteration 17 cloud smoke testing
+and closure remain open rather than being reported as complete.
 
 ---
 
@@ -149,12 +199,34 @@ implementation/deployment phase.
 - OIDC remains a same-origin BFF flow. Entra client credentials are never exposed to the React application.
 - Plaintext endpoint and consumer pepper secrets never enter Bicep outputs, logs, PostgreSQL, or source control.
 - Local HashiCorp Vault and Keycloak resources are excluded from the cloud manifest.
+- Key Vault public network access is retained for the first release so a non-network-integrated AZD deployment
+  identity can bootstrap the Entra client credential before application deployment. Data-plane access remains
+  identity/RBAC controlled; a private endpoint requires a network-integrated deployment runner.
+- PostgreSQL migrations remain startup-owned but are serialized across replicas by a PostgreSQL advisory lock.
+- Azure disables the local rolling-file sink and uses Container Apps console/Azure Monitor telemetry.
 
-## 9. Blocking Decisions Before Implementation
+## 9. Resolved Implementation Decisions
 
-1. Select the Azure subscription and a supported region.
-2. Authorize the deployment identity to create the Entra application/service principal through the Microsoft Graph
-   Bicep extension and choose the client-credential bootstrap method.
-3. Confirm the initial PostgreSQL SKU and backup-retention requirements.
-4. Confirm whether production must start at one replica or two; database migration ownership must remain
-   deterministic either way.
+1. Use subscription `a430e454-7c45-45f6-b037-9d0a9bfe6326` in Poland Central. West Europe is denied by an
+   inherited tenant policy.
+2. Create the Entra application/service principal through stable Microsoft Graph Bicep by default; accept
+   `existingEntraClientId` for an existing registration. Bootstrap a one-year password credential after
+   provisioning and write it directly to Key Vault before deploying the app.
+3. Default PostgreSQL to `Standard_B1ms`, 32 GiB, seven-day retention, disabled HA/geo-redundancy; all are
+   deployment parameters.
+4. Default Container Apps to one minimum and three maximum replicas. Serialize startup migrations with a
+   PostgreSQL advisory lock.
+5. Retain Key Vault's public endpoint for initial AZD bootstrap, protected by Entra identity and RBAC. Private
+   endpoint support is deferred until deployment runs from a network-integrated agent.
+
+## 10. Role Assignment Verification
+
+- **Status:** statically and live verified.
+- **API identity:** Key Vault Secrets Officer on the application vault for get/set/delete operations; Key Vault
+  Secrets User on the generated PostgreSQL credential vault; both assignments are resource-scoped.
+- **Container Apps environment identity:** AcrPull on the specific registry.
+- **AZD deployment principal:** Key Vault Secrets Officer on the application vault so the post-provision hook can
+  store the Entra confidential-client credential.
+- **Stable names:** every role assignment name is derived with `guid(resource, principal, role)`.
+- **Live result:** the API identity has Key Vault Secrets Officer on the application vault and Key Vault Secrets User
+  on the PostgreSQL credential vault; the Container Apps environment identity has AcrPull on the registry.

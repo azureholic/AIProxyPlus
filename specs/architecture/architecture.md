@@ -10,7 +10,8 @@ it is not tied to Azure:
 - The original proxied only Azure OpenAI, logged usage to Log Analytics, and relied on Azure Managed Identity.
 - This version proxies **OpenAI-compatible** and **Anthropic** APIs, can call model endpoints hosted **anywhere**
   (local, OpenAI, Anthropic, Azure AI Foundry, self-hosted vLLM/Ollama, ...), stores configuration and usage in
-  **PostgreSQL**, stores secrets in a **self-hosted secret store**, and emits **OpenTelemetry** traces/metrics/logs.
+  **PostgreSQL**, stores secrets behind a provider-neutral boundary (**HashiCorp Vault locally, Azure Key Vault in
+  Azure**), and emits **OpenTelemetry** traces/metrics/logs.
 - Azure Managed Identity remains as *one of several* supported authentication modes for an endpoint (useful when the
   proxy itself runs in Azure and the target is Azure AI Foundry / Azure OpenAI), but it is optional, per-endpoint
   configuration — the solution itself has no hard Azure dependency.
@@ -58,6 +59,15 @@ it is not tied to Azure:
 
 *Source: [diagrams/01-high-level-architecture.drawio](diagrams/01-high-level-architecture.drawio)*
 
+The AppHost has two explicit execution topologies. Run mode uses local PostgreSQL, HashiCorp Vault, and Keycloak
+containers. Publish mode emits Azure Container Apps, PostgreSQL Flexible Server, Azure Key Vault, Microsoft Entra
+ID, ACR, private PostgreSQL networking, and Azure Monitor resources; local Vault and Keycloak never enter the
+cloud manifest.
+
+![Local and Azure deployment topology](diagrams/05-deployment-topology.png)
+
+*Source: [diagrams/05-deployment-topology.drawio](diagrams/05-deployment-topology.drawio)*
+
 ## 4. Solution Structure (Clean Architecture)
 
 Dependencies point **inward**. Nothing in `Domain` or `Application` references ASP.NET Core, EF Core,
@@ -68,13 +78,13 @@ aiproxyplus/
 ├── src/
 │   ├── AIProxyPlus.Domain/            # Entities, value objects, domain events, repository interfaces (ports)
 │   ├── AIProxyPlus.Application/       # Use cases (CQRS-ish handlers), DTOs, validation, application-level interfaces
-│   ├── AIProxyPlus.Infrastructure/    # EF Core + Npgsql, Vault client, direct-HTTP routing/forwarding,
+│   ├── AIProxyPlus.Infrastructure/    # EF Core + Npgsql, secret-store adapters, direct-HTTP routing/forwarding,
 │   │                              # HTTP forwarding, OpenTelemetry instrumentation, background jobs
 │   ├── AIProxyPlus.Api/                # ASP.NET Core minimal API host, endpoint mapping, middleware, composition root
 │   │                                # (wwwroot/ — Iteration 3 frontend build output, gitignored, see §19)
 │   ├── AIProxyPlus.Web/                 # React + TypeScript + FluentUI admin/ops frontend (Iteration 3, §19)
 │   ├── AIProxyPlus.ServiceDefaults/    # Aspire shared service defaults (OTel, health checks, resilience defaults)
-│   └── AIProxyPlus.AppHost/            # .NET Aspire AppHost — orchestrates Api, Postgres, Vault, Aspire Dashboard
+│   └── AIProxyPlus.AppHost/            # .NET Aspire AppHost — local orchestration and Azure publish topology
 ├── tests/
 │   ├── AIProxyPlus.Domain.Tests/               # Unit tests, no I/O
 │   ├── AIProxyPlus.Application.Tests/          # Unit tests w/ mocked ports
@@ -375,7 +385,12 @@ plaintext or either Vault reference. Consumer responses likewise omit stored key
 
 ## 8. Secrets Management
 
-**HashiCorp Vault (OSS)** runs as a container alongside the proxy (a local-only bootstrapped `file` backend via
+`ISecretResolver` is the only application-facing secret-store port. `Secrets:Provider` selects
+`HashiCorpVault` or `AzureKeyVault` at composition time; unsupported values or incomplete provider configuration
+fail startup. Opaque immutable secret references remain provider-neutral. The Azure adapter maps each reference
+to `aiproxyplus-{lowercase SHA-256}` so Key Vault naming restrictions do not leak into Domain or Application.
+
+**HashiCorp Vault (OSS)** runs as a container alongside the proxy in local development (a bootstrapped `file` backend via
 Aspire/Compose; operator-managed `file` or `raft` storage in real deployments). API keys are stored under a **KV v2** engine at
 immutable references such as `secret/aiproxyplus/endpoints/{endpointId}/primary/{credentialVersionId}`. The proxy
 authenticates to Vault using **AppRole** (role id + wrapped
@@ -389,6 +404,13 @@ years. That long-lived, repository-known credential is only acceptable because l
 developer's machine: Aspire publishes it on loopback only, and Compose binds its published ports to `127.0.0.1`.
 Do not publish the local Vault, or reuse this token or TTL, anywhere else.
 
+**Azure Key Vault** is the Azure publish-mode provider. The Container App uses its user-assigned managed identity;
+`DefaultAzureCredential` is allowed only for explicit local Key Vault development. The vault uses RBAC, soft
+delete, and purge protection. Missing secrets map to `null`; authorization, throttling, transport, and service
+errors remain visible. The initial AZD bootstrap keeps the public endpoint enabled so the deployment identity can
+write the Entra confidential-client credential before the application revision is deployed; access remains
+identity/RBAC controlled. A private endpoint requires a network-integrated deployment runner and is deferred.
+
 - `Endpoint.PrimarySecretRef` and `SecondarySecretRef` in Postgres store only immutable Vault **references**, never
   secret values. Replacement writes Vault first, atomically switches the PostgreSQL pointer, publishes cache
   invalidation after commit, and schedules the old unreferenced value for deletion after a configurable grace period.
@@ -399,16 +421,17 @@ Do not publish the local Vault, or reuse this token or TTL, anywhere else.
   specify `ManagedIdentityTenantId` to request the token from the target resource's Entra tenant; when omitted,
   the credential chain's default tenant behavior is preserved. The tenant ID is configuration, not secret
   material. This is the **only** place the solution touches an Azure SDK, and it's opt-in per endpoint.
-- Resolved secrets are cached per replica for five minutes to avoid a Vault round trip per request. PostgreSQL
+- Resolved secrets are cached per replica for five minutes to avoid a secret-store round trip per request. PostgreSQL
   `LISTEN/NOTIFY` broadcasts endpoint ids and affected references only; every listener evicts the same singleton
   local cache used by requests. A per-reference generation prevents an in-flight pre-invalidation Vault read from
   refilling a retired cache entry. TTL remains the recovery bound for a missed notification. Plaintext is never
   placed in PostgreSQL or a distributed cache and is never logged.
 - The replica committing replacement/removal owns delayed cleanup through an in-memory hosted retirement queue.
-  Unreferenced values wait `Vault:Retirement:GracePeriod` (one hour by default); failed deletions retry with bounded
+  Unreferenced values wait `Secrets:Retirement:GracePeriod` (one hour by default); failed deletions retry with bounded
   exponential backoff, while failed-transaction orphans are eligible immediately. Queue work is best-effort and is
   not durable across a process restart, so an interrupted cleanup can leave an unreachable Vault version for an
   operator to remove; it cannot reactivate or affect request correctness because references are immutable.
+  `Vault:Retirement` remains a compatibility fallback for existing deployments during the transition.
 - **Scope note**: Vault holds secrets the proxy must *present outbound* (endpoint credentials, the admin key hash).
   Inbound **Consumer** API keys (see the domain model in §5 and authentication in §13) are a different concern —
   the proxy only ever needs to *verify* them, never retrieve or replay them — so they are stored as a salted
@@ -656,12 +679,16 @@ Do not publish the local Vault, or reuse this token or TTL, anywhere else.
   - `aiproxyplus.credential_invalidation_notification.count` (tags: operation, outcome)
   - `aiproxyplus.credential_retirement.count` (tags: reason, outcome)
   - Standard ASP.NET Core / HttpClient / Npgsql instrumentation metrics.
-- **Logs**: Serilog configured as the ILogger provider, enriched with trace/span ids, exported via OTLP **and**
-  written to `logs/aiproxyplus-.log` (rolling file) for local debugging — see §14.
+- **Logs**: Serilog configured as the ILogger provider, enriched with trace/span ids, and exported through the
+  configured OpenTelemetry path. The rolling `logs/aiproxyplus-.log` sink is enabled by default for local debugging
+  and disabled in Azure, where container logs are ephemeral and flow to Log Analytics.
 - **Local dev**: everything exports via **OTLP** to the **.NET Aspire dashboard**, started by
   `AIProxyPlus.AppHost`. The `AIProxyPlus.ServiceDefaults` project centralizes this wiring (the standard Aspire pattern)
   so the same code exports to any OTLP collector in non-Aspire/production deployments (configured purely via
   `OTEL_EXPORTER_OTLP_ENDPOINT`).
+- **Azure**: when `APPLICATIONINSIGHTS_CONNECTION_STRING` is present, ServiceDefaults enables Azure Monitor
+  OpenTelemetry export. The Container Apps environment sends platform logs to Log Analytics and Application
+  Insights is workspace-based.
 
 ## 12. API Surface Summary
 
@@ -676,13 +703,13 @@ Do not publish the local Vault, or reuse this token or TTL, anywhere else.
 | Configuration | `/api/v1/config/*` | See §7.2, incl. `consumers` CRUD |
 | Usage query | `GET /api/v1/usage` | Chargeback / reporting, filterable by deployment and consumer |
 | Authentication (Iteration 4) | `/api/v1/auth/*`, `/signin-oidc`, `/signout-callback-oidc` | Same-origin OIDC BFF login/session/logout, antiforgery token, and Realtime ticket issuance |
-| Health | `GET /health/live`, `GET /health/ready` | Standard ASP.NET Core health checks (Postgres, Vault reachability) |
+| Health | `GET /health/live`, `GET /health/ready` | Standard ASP.NET Core health checks (Postgres, provider-neutral `secretStore` reachability) |
 | OpenAPI | `/openapi/v1.json`, Scalar/Swagger UI in dev | Generated from minimal API metadata |
 | Frontend (Iteration 3) | `GET /` and any other non-API path | Serves the built React SPA (`wwwroot`) with a client-side-routing fallback to `index.html` — see §19 |
 
 ## 13. Security Considerations (OWASP-aligned)
 
-- **Secrets**: never stored in Postgres or logs; Vault is the single source of truth; in-memory cache is
+- **Secrets**: never stored in Postgres or logs; the configured secret store is the single source of truth; in-memory cache is
   process-local and short-lived; configuration responses and notification/metric payloads always omit key
   material; Serilog enrichers redact `Authorization`/`api-key` headers.
 - **SSRF**: `Endpoint.BaseUrl` is admin-supplied (trusted input via the config API), but is still validated
@@ -709,6 +736,11 @@ Do not publish the local Vault, or reuse this token or TTL, anywhere else.
   partially parsed (enough to read `model`/session id) and otherwise streamed through unmodified — the proxy
   does not attempt to fully validate arbitrary upstream API schemas.
 - **Transport security**: TLS to all backends; HSTS + TLS termination in front of the proxy in real deployments.
+- **Azure deployment boundary**: Container Apps terminates external HTTPS and runs the image as a non-root user.
+  PostgreSQL has no public endpoint and is reached through delegated subnet/private DNS with TLS required.
+  ACR admin credentials are disabled; image pull and Key Vault access use narrowly scoped managed identities.
+  PostgreSQL startup migrations are serialized with a PostgreSQL advisory lock so replicas cannot run DDL
+  concurrently.
 - **Dependency hygiene**: `.github/dependabot.yml` (Iteration 12) covers both ecosystems in this repository —
   `nuget` (root, covering every `.csproj` via `AIProxyPlus.sln`) and `npm` (`src/AIProxyPlus.Web`) — on a weekly
   schedule. Both ecosystems resolve anonymously and fail closed through Microsoft's CFS proxies with no public
@@ -871,9 +903,11 @@ Clean Architecture is enforced and verified, not just aspirational:
 | Reverse proxy engine | Custom `DirectHttpProxy` over `HttpMessageInvoker` | Body-driven, domain-rule-based routing/failover/affinity/retry don't map onto YARP's declarative cluster model, and `IHttpForwarder` commits the response before a retry decision can be made (see §9) |
 | Local orchestration | .NET Aspire (AppHost + ServiceDefaults) | Required by the user; first-class OTLP wiring + container orchestration for local dev |
 | Database | PostgreSQL + EF Core/Npgsql | Explicitly requested; portable, container-friendly |
-| Secret store | HashiCorp Vault (OSS), container | Runs in a container as required; industry-standard KV secret engine, supports AppRole and future rotation |
+| Secret store | `ISecretResolver`: HashiCorp Vault locally, Azure Key Vault in Azure | Keeps Domain/Application vendor-neutral while selecting an environment-native adapter at composition time |
 | Resilience | Manual bounded retry + jittered backoff (`ProxyRoutingService`) | Retry must inspect the upstream response before committing anything to the client (see §9), which rules out a `DelegatingHandler`-based resilience pipeline |
 | Observability | OpenTelemetry SDK + OTLP exporter | Explicitly requested; vendor-neutral |
+| Azure hosting | Azure Container Apps + AZD/Aspire-generated Bicep | One Linux image hosts API and SPA; AppHost remains the local/cloud topology source |
+| Azure browser identity | Microsoft Entra ID provisioned through Microsoft Graph Bicep | Reuses the provider-neutral cookie/OIDC BFF; the confidential credential is bootstrapped directly into Key Vault |
 | Optional Azure auth | `Azure.Identity` | Only loaded/used for endpoints configured with `AuthMode = ManagedIdentity` |
 | Realtime transport (Iteration 2) | `System.Net.WebSockets` (`ClientWebSocket` outbound, `HttpContext.WebSockets` inbound) | BCL-only, no extra package; matches the same "inspect before committing" philosophy as `DirectHttpProxy` — the outbound handshake must succeed before the inbound upgrade is accepted |
 | Frontend (Iteration 3) | Vite + React 19 + TypeScript | Plain client-side React — no SSR/server routing needed since ASP.NET Core just serves static files; Vite over CRA (unmaintained)/Next.js (its server model doesn't fit this deployment shape) |
@@ -893,9 +927,13 @@ Clean Architecture is enforced and verified, not just aspirational:
   key, that will need new design work, not a reuse of the removed mechanism.
 - Cross-protocol translation (OpenAI ↔ Anthropic) is explicitly deferred; if needed sooner, it changes the
   ingress/routing design meaningfully and should be scoped as its own iteration.
-- Vault is chosen over alternatives (Docker Secrets, SOPS, age-encrypted files) because it offers dynamic
-  secrets, an HTTP API, audit logging, and a mature .NET client (VaultSharp) while still running fully in a
-  container — this can be revisited if operational overhead proves too high for the target environment.
+- HashiCorp Vault remains the local provider because it offers an HTTP API and a mature .NET client while running
+  fully in a container. Azure deployments select Key Vault without changing the domain contract.
+- Azure defaults to West Europe, `Standard_B1ms`, 32 GiB storage, seven-day backup retention, disabled HA, and
+  one-to-three Container App replicas. These are Bicep parameters rather than architectural constants.
+- Graph Bicep creates the Entra application and service principal by default; `existingEntraClientId` can select an
+  existing registration. The provisioning identity requires tenant-level permission to manage Graph application
+  objects and application credentials, plus Key Vault Secrets Officer on the provisioned vault.
 - Consumer API keys are presented by callers as a header, finalized as `X-Api-Key` (the admin key uses
   `X-Admin-Api-Key`); the plaintext key is shown to the admin **exactly once** at
   creation/rotation time and only its salted hash is ever persisted — losing the plaintext means rotating, not
@@ -920,7 +958,7 @@ Clean Architecture is enforced and verified, not just aspirational:
 - Cross-protocol request/response translation.
 - Per-user RBAC or provider role/group mapping. Iteration 4 authenticates the existing ops/config frontend, but every
   user admitted by the configured OIDC client is an administrator.
-- Durable, restart-safe persistence for delayed Vault retirement work; current cleanup is best-effort per replica.
+- Durable, restart-safe persistence for delayed secret retirement work; current cleanup is best-effort per replica.
 - Provider-managed automatic credential creation/revocation; Iteration 16 supplies explicit dual-slot operator rotation.
 - Moderation endpoints. Request/response speech-to-text and text-to-speech are implemented in Iteration 9
   (§6.6/§19.6).

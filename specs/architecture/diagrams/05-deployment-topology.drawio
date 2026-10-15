@@ -1,32 +1,77 @@
-<mxGraphModel dx="900" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="500" math="0" shadow="0">
+<mxGraphModel dx="1500" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="900" math="0" shadow="0">
   <root>
     <mxCell id="0" />
     <mxCell id="1" parent="0" />
 
-    <mxCell id="box" value="AIProxyPlus.AppHost (.NET Aspire)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontStyle=1;fontSize=14;" vertex="1" parent="1">
-      <mxGeometry x="40" y="40" width="760" height="360" as="geometry" />
+    <mxCell id="localBox" value="Local development - Aspire run mode" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+      <mxGeometry x="30" y="40" width="630" height="700" as="geometry" />
+    </mxCell>
+    <mxCell id="localBrowser" value="Browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="70" y="115" width="120" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="localApi" value="AIProxyPlus API + React SPA&#10;.NET process, HTTP 8080" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="270" y="110" width="260" height="65" as="geometry" />
+    </mxCell>
+    <mxCell id="localPg" value="PostgreSQL container&#10;persistent volume" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+      <mxGeometry x="80" y="280" width="150" height="85" as="geometry" />
+    </mxCell>
+    <mxCell id="localVault" value="HashiCorp Vault&#10;KV v2 + vault-data" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+      <mxGeometry x="275" y="280" width="150" height="85" as="geometry" />
+    </mxCell>
+    <mxCell id="localKeycloak" value="Keycloak&#10;local OIDC provider" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+      <mxGeometry x="470" y="290" width="145" height="65" as="geometry" />
+    </mxCell>
+    <mxCell id="localDashboard" value="Aspire Dashboard&#10;OTLP telemetry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+      <mxGeometry x="270" y="470" width="160" height="65" as="geometry" />
     </mxCell>
 
-    <mxCell id="api" value="api" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
-      <mxGeometry x="380" y="100" width="180" height="60" as="geometry" />
+    <mxCell id="cloudBox" value="Azure - Aspire publish mode / azd up" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#0078d4;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+      <mxGeometry x="700" y="40" width="750" height="700" as="geometry" />
+    </mxCell>
+    <mxCell id="internet" value="Internet / Browser / SDK clients" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="745" y="105" width="180" height="55" as="geometry" />
+    </mxCell>
+    <mxCell id="entra" value="Microsoft Entra ID&#10;confidential web application" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+      <mxGeometry x="1190" y="100" width="200" height="65" as="geometry" />
+    </mxCell>
+    <mxCell id="aca" value="Azure Container Apps&#10;AIProxyPlus API + React SPA&#10;external HTTPS, non-root, managed identity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+      <mxGeometry x="930" y="220" width="285" height="90" as="geometry" />
+    </mxCell>
+    <mxCell id="acr" value="Azure Container Registry&#10;managed-identity pull" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+      <mxGeometry x="1245" y="235" width="165" height="65" as="geometry" />
+    </mxCell>
+    <mxCell id="vnet" value="Virtual network" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=5;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="750" y="365" width="455" height="230" as="geometry" />
+    </mxCell>
+    <mxCell id="acaSubnet" value="Container Apps&#10;infrastructure subnet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+      <mxGeometry x="785" y="420" width="160" height="65" as="geometry" />
+    </mxCell>
+    <mxCell id="postgres" value="PostgreSQL Flexible Server&#10;private access + TLS" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+      <mxGeometry x="995" y="410" width="175" height="85" as="geometry" />
+    </mxCell>
+    <mxCell id="dns" value="Private DNS zone&#10;delegated PostgreSQL subnet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+      <mxGeometry x="890" y="520" width="180" height="55" as="geometry" />
+    </mxCell>
+    <mxCell id="kv" value="Azure Key Vault&#10;RBAC + soft delete + purge protection" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+      <mxGeometry x="1240" y="390" width="175" height="90" as="geometry" />
+    </mxCell>
+    <mxCell id="monitor" value="Application Insights + Log Analytics&#10;Azure Monitor OpenTelemetry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+      <mxGeometry x="1170" y="550" width="230" height="70" as="geometry" />
     </mxCell>
 
-    <mxCell id="pg" value="postgres" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-      <mxGeometry x="120" y="240" width="140" height="90" as="geometry" />
-    </mxCell>
-    <mxCell id="vault" value="vault&#10;KV v2 + file backend&#10;vault-data volume" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-      <mxGeometry x="380" y="240" width="140" height="90" as="geometry" />
-    </mxCell>
-    <mxCell id="dash" value="Aspire Dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
-      <mxGeometry x="620" y="275" width="140" height="60" as="geometry" />
-    </mxCell>
-    <mxCell id="keycloak" value="Keycloak 26.3.1&#10;aiproxyplus-local realm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
-      <mxGeometry x="620" y="120" width="140" height="70" as="geometry" />
-    </mxCell>
+    <mxCell id="le1" value="HTTP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="localBrowser" target="localApi"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="le2" value="Npgsql" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="localApi" target="localPg"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="le3" value="VaultSharp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="localApi" target="localVault"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="le4" value="OIDC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="localApi" target="localKeycloak"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="le5" value="OTLP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="localApi" target="localDashboard"><mxGeometry relative="1" as="geometry" /></mxCell>
 
-    <mxCell id="e1" value="Npgsql" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="api" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e2" value="VaultSharp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="api" target="vault"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e3" value="OTLP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.8;entryX=0;entryY=0.5;" edge="1" parent="1" source="api" target="dash"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="575" y="148" /><mxPoint x="575" y="305" /></Array></mxGeometry></mxCell>
-    <mxCell id="e4" value="OIDC discovery + callback" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="api" target="keycloak"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce1" value="HTTPS / WebSocket" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="internet" target="aca"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce2" value="OIDC redirects" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="aca" target="entra"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce3" value="image pull" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="aca" target="acr"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce4" value="private TLS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="aca" target="postgres"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce5" value="managed identity" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="aca" target="kv"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce6" value="logs / traces / metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="aca" target="monitor"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce7" value="name resolution" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="dns" target="postgres"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="ce8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="aca" target="acaSubnet"><mxGeometry relative="1" as="geometry" /></mxCell>
   </root>
 </mxGraphModel>

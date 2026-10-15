@@ -6,19 +6,19 @@ using Microsoft.Extensions.Logging;
 
 namespace AIProxyPlus.Infrastructure.Secrets;
 
-public sealed class VaultSecretRetirementOptions
+public sealed class SecretRetirementOptions
 {
     public TimeSpan GracePeriod { get; init; } = TimeSpan.FromHours(1);
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(5);
     public TimeSpan MaxRetryDelay { get; init; } = TimeSpan.FromMinutes(5);
 }
 
-public sealed class VaultSecretRetirementQueue(
+public sealed class SecretRetirementQueue(
     ISecretResolver secretResolver,
     TimeProvider timeProvider,
-    VaultSecretRetirementOptions options,
+    SecretRetirementOptions options,
     AIProxyPlusMetrics metrics,
-    ILogger<VaultSecretRetirementQueue> logger)
+    ILogger<SecretRetirementQueue> logger)
     : BackgroundService, IEndpointCredentialRetirementQueue
 {
     private readonly Channel<RetirementWorkItem> _queue = Channel.CreateUnbounded<RetirementWorkItem>(

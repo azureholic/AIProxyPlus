@@ -14,17 +14,17 @@ public sealed class VaultSecretRetirementQueueTests
         var secretResolver = new FailingOnceSecretResolver();
         using var metrics = new AIProxyPlusMetrics();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        using var queue = new VaultSecretRetirementQueue(
+        using var queue = new SecretRetirementQueue(
             secretResolver,
             TimeProvider.System,
-            new VaultSecretRetirementOptions
+            new SecretRetirementOptions
             {
                 GracePeriod = TimeSpan.Zero,
                 RetryDelay = TimeSpan.FromMilliseconds(10),
                 MaxRetryDelay = TimeSpan.FromMilliseconds(10),
             },
             metrics,
-            NullLogger<VaultSecretRetirementQueue>.Instance);
+            NullLogger<SecretRetirementQueue>.Instance);
 
         await queue.StartAsync(timeout.Token);
         queue.ScheduleOrphanCleanup(Guid.NewGuid(), "endpoints/test/primary/orphan");
