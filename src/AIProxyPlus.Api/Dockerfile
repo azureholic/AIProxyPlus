@@ -25,9 +25,12 @@ RUN dotnet publish src/AIProxyPlus.Api/AIProxyPlus.Api.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-COPY --from=build /app .
+COPY --from=build --chown=$APP_UID:$APP_UID /app .
+RUN mkdir -p /app/logs && chown $APP_UID:$APP_UID /app/logs
 
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
+
+USER $APP_UID
 
 ENTRYPOINT ["dotnet", "AIProxyPlus.Api.dll"]

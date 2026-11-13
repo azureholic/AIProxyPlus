@@ -21,3 +21,4 @@ test-results/*
 # Frontend build output (Vite writes straight into wwwroot — a build artifact, not source)
 src/AIProxyPlus.Api/wwwroot/*
 !src/AIProxyPlus.Api/wwwroot/.gitkeep
+.azure

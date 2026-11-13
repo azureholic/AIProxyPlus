@@ -17,13 +17,17 @@ using AIProxyPlus.Infrastructure.Security;
 using AIProxyPlus.Infrastructure.Usage;
 using Azure.Core;
 using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using Serilog;
@@ -41,17 +45,23 @@ workloadOptions.Validate();
 
 builder.AddServiceDefaults();
 
-builder.Host.UseSerilog((context, services, configuration) => configuration
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext()
-    .Enrich.WithSpan()
-    .Enrich.WithProperty("Application", "AIProxyPlus")
-    // EndpointCredential carries the outbound Authorization/api-key header value — never render it raw (architecture.md §13).
-    .Destructure.ByTransforming<EndpointCredential>(c => new { c.HeaderName, HeaderValue = "[REDACTED]" })
-    .WriteTo.Console()
-    .WriteTo.File("logs/aiproxyplus-.log", rollingInterval: RollingInterval.Day),
-    writeToProviders: true); // also forward to the OTel logging provider registered by AddServiceDefaults, for OTLP export
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .Enrich.WithSpan()
+        .Enrich.WithProperty("Application", "AIProxyPlus")
+        // EndpointCredential carries the outbound Authorization/api-key header value — never render it raw (architecture.md §13).
+        .Destructure.ByTransforming<EndpointCredential>(c => new { c.HeaderName, HeaderValue = "[REDACTED]" })
+        .WriteTo.Console();
+
+    if (context.Configuration.GetValue("Logging:File:Enabled", true))
+    {
+        configuration.WriteTo.File("logs/aiproxyplus-.log", rollingInterval: RollingInterval.Day);
+    }
+}, writeToProviders: true); // also forward to the OTel logging provider registered by AddServiceDefaults, for OTLP export
 
 builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 {
@@ -92,16 +102,75 @@ builder.Services.AddScoped<IConsumerRepository, ConsumerRepository>();
 builder.Services.AddScoped<ISessionAffinityStore, SessionAffinityStore>();
 builder.Services.AddScoped<IUsageRecordRepository, UsageRecordRepository>();
 
-// Vault (architecture.md §8) — address/token come from AIProxyPlus.AppHost's Vault__Address/Vault__Token in dev.
-builder.Services.AddSingleton(_ => new VaultOptions
+var secretStoreOptions = builder.Configuration.GetSection(SecretStoreOptions.SectionName)
+    .Get<SecretStoreOptions>() ?? new SecretStoreOptions();
+builder.Services.AddSingleton(secretStoreOptions);
+switch (secretStoreOptions.Provider)
 {
-    Address = builder.Configuration["Vault:Address"] ?? "http://localhost:8200",
-    Token = builder.Configuration["Vault:Token"],
-});
-builder.Services.AddSingleton<IVaultClient>(sp => VaultClientFactory.Create(sp.GetRequiredService<VaultOptions>()));
-builder.Services.AddSingleton<ISecretResolver, VaultSecretResolver>();
+    case SecretStoreProvider.HashiCorpVault:
+        builder.Services.AddSingleton(_ => new VaultOptions
+        {
+            Address = builder.Configuration["Vault:Address"] ?? "http://localhost:8200",
+            Token = builder.Configuration["Vault:Token"],
+            AppRoleId = builder.Configuration["Vault:AppRoleId"],
+            AppRoleSecretId = builder.Configuration["Vault:AppRoleSecretId"],
+        });
+        builder.Services.AddSingleton<IVaultClient>(
+            services => VaultClientFactory.Create(services.GetRequiredService<VaultOptions>()));
+        builder.Services.AddSingleton<ISecretResolver, VaultSecretResolver>();
+        break;
+    case SecretStoreProvider.AzureKeyVault:
+        var keyVaultOptions = builder.Configuration.GetSection(AzureKeyVaultOptions.SectionName)
+            .Get<AzureKeyVaultOptions>() ?? new AzureKeyVaultOptions();
+        keyVaultOptions = new AzureKeyVaultOptions
+        {
+            VaultUri = keyVaultOptions.VaultUri ??
+                (Uri.TryCreate(builder.Configuration.GetConnectionString("keyvault"), UriKind.Absolute, out var vaultUri)
+                    ? vaultUri
+                    : null),
+            UseManagedIdentity = keyVaultOptions.UseManagedIdentity,
+            ManagedIdentityClientId = keyVaultOptions.ManagedIdentityClientId,
+        };
+        if (keyVaultOptions.VaultUri is null || !keyVaultOptions.VaultUri.IsAbsoluteUri ||
+            keyVaultOptions.VaultUri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidOperationException("AzureKeyVault:VaultUri must be an absolute HTTPS URI.");
+        }
+
+        if (!keyVaultOptions.UseManagedIdentity && !builder.Environment.IsDevelopment())
+        {
+            throw new InvalidOperationException(
+                "Azure Key Vault must use managed identity outside the Development environment.");
+        }
+
+        builder.Services.AddSingleton(keyVaultOptions);
+        builder.Services.AddSingleton<TokenCredential>(_ =>
+        {
+            if (!keyVaultOptions.UseManagedIdentity)
+            {
+                return new DefaultAzureCredential();
+            }
+
+            return string.IsNullOrWhiteSpace(keyVaultOptions.ManagedIdentityClientId)
+                ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
+                : new ManagedIdentityCredential(
+                    ManagedIdentityId.FromUserAssignedClientId(keyVaultOptions.ManagedIdentityClientId));
+        });
+        builder.Services.AddSingleton(services =>
+            new SecretClient(keyVaultOptions.VaultUri, services.GetRequiredService<TokenCredential>()));
+        builder.Services.AddSingleton<IAzureKeyVaultSecretClient, AzureKeyVaultSecretClient>();
+        builder.Services.AddSingleton<ISecretResolver, AzureKeyVaultSecretResolver>();
+        break;
+    default:
+        throw new InvalidOperationException($"Unsupported secret store provider '{secretStoreOptions.Provider}'.");
+}
 
 builder.Services.AddMemoryCache();
+builder.Services.AddDataProtection()
+    .SetApplicationName("AIProxyPlus")
+    .PersistKeysToDbContext<AIProxyPlusDbContext>();
+builder.Services.AddOptions<KeyManagementOptions>().Configure<ISecretResolver>((options, secrets) =>
+    options.XmlEncryptor = new SecretStoreXmlEncryptor(secrets));
 builder.Services.AddSingleton<ApiKeyCredentialProvider>();
 builder.Services.AddSingleton<IEndpointCredentialCache>(services => services.GetRequiredService<ApiKeyCredentialProvider>());
 var runtimeDatabaseConnectionString = builder.Configuration.GetConnectionString("aiproxyplusdb");
@@ -124,18 +193,22 @@ else
             services.GetRequiredService<ILogger<PostgresEndpointCredentialInvalidationListener>>()));
     builder.Services.AddHostedService(services => services.GetRequiredService<PostgresEndpointCredentialInvalidationListener>());
 }
-var retirementOptions = builder.Configuration.GetSection("Vault:Retirement").Get<VaultSecretRetirementOptions>()
-    ?? new VaultSecretRetirementOptions();
+var retirementSection = builder.Configuration.GetSection("Secrets:Retirement");
+if (!retirementSection.Exists())
+{
+    retirementSection = builder.Configuration.GetSection("Vault:Retirement");
+}
+var retirementOptions = retirementSection.Get<SecretRetirementOptions>() ?? new SecretRetirementOptions();
 if (retirementOptions.GracePeriod < TimeSpan.Zero || retirementOptions.GracePeriod > TimeSpan.FromHours(24))
 {
     throw new InvalidOperationException("Vault:Retirement:GracePeriod must be between zero and 24 hours.");
 }
 builder.Services.AddSingleton(retirementOptions);
-builder.Services.AddSingleton<VaultSecretRetirementQueue>();
+builder.Services.AddSingleton<SecretRetirementQueue>();
 builder.Services.AddSingleton<IEndpointCredentialRetirementQueue>(services =>
-    services.GetRequiredService<VaultSecretRetirementQueue>());
-builder.Services.AddHostedService(services => services.GetRequiredService<VaultSecretRetirementQueue>());
-builder.Services.AddSingleton<TokenCredential>(new DefaultAzureCredential());
+    services.GetRequiredService<SecretRetirementQueue>());
+builder.Services.AddHostedService(services => services.GetRequiredService<SecretRetirementQueue>());
+builder.Services.TryAddSingleton<TokenCredential>(new DefaultAzureCredential());
 builder.Services.AddScoped<ManagedIdentityCredentialProvider>();
 builder.Services.AddScoped<ICredentialProvider, CredentialProvider>();
 
@@ -177,12 +250,11 @@ builder.Services.AddScoped<ProxyRoutingService>(sp => new ProxyRoutingService(
     builder.Configuration.GetValue<TimeSpan?>("Routing:SessionAffinityTtl")));
 builder.Services.AddScoped<RealtimeProxyService>();
 
-// Secrets/auth — the consumer-key pepper is auto-provisioned from Vault on first read (§8). The admin key is never
-// generated: an operator supplies Authentication:AdminApiKey (hashed into Vault) or the break-glass key is
-// unavailable. ISecretResolver itself isn't registered until Phase 9 wires a real Vault client (or a test double
-// supplies one).
+// Azure replicas only read the deployment-provisioned pepper; local single-instance Vault can auto-provision it.
 builder.Services.AddSingleton<IApiKeyHasher>(sp =>
-    ApiKeyHasher.CreateAsync(sp.GetRequiredService<ISecretResolver>()).GetAwaiter().GetResult());
+    ApiKeyHasher.CreateAsync(
+        sp.GetRequiredService<ISecretResolver>(),
+        autoProvision: secretStoreOptions.Provider == SecretStoreProvider.HashiCorpVault).GetAwaiter().GetResult());
 // Fail at startup, not on first admin request, if a configured admin key is too weak.
 AdminApiKeyAuthenticator.EnsureConfiguredKeyIsStrong(builder.Configuration["Authentication:AdminApiKey"]);
 builder.Services.AddSingleton(sp =>
@@ -352,6 +424,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
+if (secretStoreOptions.Provider == SecretStoreProvider.AzureKeyVault)
+{
+    _ = app.Services.GetRequiredService<IApiKeyHasher>();
+}
+
 if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
 {
     // Least-privilege support (architecture.md §13): when a distinct, more-privileged connection string is
@@ -362,13 +439,13 @@ if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
     if (string.IsNullOrWhiteSpace(migrationsConnectionString))
     {
         await using var scope = app.Services.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<AIProxyPlusDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<AIProxyPlusDbContext>().MigrateWithLockAsync();
     }
     else
     {
         var migrationsOptions = new DbContextOptionsBuilder<AIProxyPlusDbContext>().UseNpgsql(migrationsConnectionString).Options;
         await using var migrationsContext = new AIProxyPlusDbContext(migrationsOptions);
-        await migrationsContext.Database.MigrateAsync();
+        await migrationsContext.MigrateWithLockAsync();
     }
 }
 
@@ -960,14 +1037,14 @@ static void AddWorkloadBearerScheme(
 /// <summary>A short-lived credential for one Realtime WebSocket handshake.</summary>
 sealed record RealtimeTicketResponse(string Ticket, int ExpiresInSeconds);
 
-/// <summary>Probes Postgres/Vault reachability via the registered ports (architecture.md §12).</summary>
+/// <summary>Probes Postgres and secret-store reachability via the registered ports (architecture.md §12).</summary>
 static class HealthChecks
 {
     public static async Task<IResult> CheckReadyAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
         var checks = new Dictionary<string, string>
         {
-            ["vault"] = await ProbeAsync(() =>
+            ["secretStore"] = await ProbeAsync(() =>
                 services.GetRequiredService<ISecretResolver>().TryResolveAsync("__health_check__", cancellationToken)),
             ["postgres"] = await ProbeAsync(() => services.GetRequiredService<IModelRepository>().GetAllAsync(cancellationToken)),
         };

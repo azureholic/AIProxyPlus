@@ -73,6 +73,32 @@ public class ApiKeyHasherTests
     }
 
     [Fact]
+    public async Task CreateAsync_ProvisioningDisabledAndPepperMissing_FailsWithoutWriting()
+    {
+        var secrets = Substitute.For<ISecretResolver>();
+        secrets.TryResolveAsync("consumer-key-pepper", Arg.Any<CancellationToken>()).Returns((string?)null);
+
+        var act = () => ApiKeyHasher.CreateAsync(secrets, autoProvision: false);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*before starting the API*");
+        await secrets.DidNotReceiveWithAnyArgs().StoreAsync(default!, default!, default);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ProvisioningDisabled_ReplicasAndRestartReuseExistingPepper()
+    {
+        var secrets = Substitute.For<ISecretResolver>();
+        secrets.TryResolveAsync("consumer-key-pepper", Arg.Any<CancellationToken>()).Returns("existing-pepper");
+        var first = await ApiKeyHasher.CreateAsync(secrets, autoProvision: false);
+        var replica = await ApiKeyHasher.CreateAsync(secrets, autoProvision: false);
+        var replacement = await ApiKeyHasher.CreateAsync(secrets, autoProvision: false);
+
+        replica.Verify("key", first.Hash("key")).Should().BeTrue();
+        replacement.Verify("key", first.Hash("key")).Should().BeTrue();
+        await secrets.DidNotReceiveWithAnyArgs().StoreAsync(default!, default!, default);
+    }
+
+    [Fact]
     public async Task CreateAsync_WhenPepperAlreadyExists_ReusesIt_AndDoesNotStoreAgain()
     {
         var secretResolver = Substitute.For<ISecretResolver>();

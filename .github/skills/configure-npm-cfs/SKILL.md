@@ -1,9 +1,8 @@
 ---
-name: "Configure npm CFS"
+name: configure-npm-cfs
 description: "Use when configuring npm, lockfiles, CI, containers, and Dependabot to resolve exclusively through Microsoft CFS."
-agent: "agent"
+disable-model-invocation: true
 ---
-
 # Reusable Prompt: Configure npm and Dependabot to Use Microsoft CFS
 
 Implement this task in the current repository. Do not merely explain the changes.

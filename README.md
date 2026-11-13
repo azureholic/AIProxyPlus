@@ -28,8 +28,8 @@ optional, per-endpoint authentication mode.
 - **Captures usage without buffering**: streaming responses are relayed to the caller incrementally while token
   usage is extracted server-side per provider/operation, even when the client itself never asked for usage data.
 - **Keeps secrets out of the database**: outbound endpoint credentials, the admin API key, and the Consumer key
-  pepper live in HashiCorp Vault; Consumer API keys themselves are one-way hashed in PostgreSQL and only ever
-  shown once.
+  pepper live behind `ISecretResolver` (HashiCorp Vault locally or Azure Key Vault in Azure); Consumer API keys
+  themselves are one-way hashed in PostgreSQL and only ever shown once.
 - **Rotates credentials safely**: an endpoint can hold a Primary and an optional Secondary API key. Activating a
   new key can retain the old one as a time-bounded, single-retry fallback so a bad rotation doesn't cause an
   outage.
@@ -75,6 +75,10 @@ repository-level `NuGet.config`; npm uses `src/AIProxyPlus.Web/.npmrc`. Docker b
 use the same proxy configuration. There are no credentials or fallbacks to the public NuGet or npm registries, so
 package resolution fails closed if either CFS proxy is unavailable.
 
+Check all resolved NuGet dependencies, including test and transitive packages, with
+`dotnet list AIProxyPlus.sln package --vulnerable --include-transitive`. Keep the AppHost SDK and centrally managed
+Aspire integrations aligned when applying security updates; do not suppress NuGet vulnerability warnings.
+
 ## Architecture at a glance
 
 - **Clean Architecture**: `AIProxyPlus.Domain` (zero dependencies) → `AIProxyPlus.Application` (ports + use cases) →
@@ -88,8 +92,9 @@ package resolution fails closed if either CFS proxy is unavailable.
   buffering) while extracting token usage per `(Provider, OperationType)` via a pluggable `IUsageExtractor`;
   a forced `stream_options.include_usage` chunk is stripped from the client-facing stream if the client itself
   never asked for it.
-- **Secrets**: HashiCorp Vault (KV v2) holds outbound endpoint credentials, the admin API key hash, and the
-  Consumer API key pepper — never the Consumer keys themselves (those are one-way hashed in Postgres).
+- **Secrets**: provider-neutral `ISecretResolver` uses HashiCorp Vault (KV v2) locally and Azure Key Vault in
+  Azure. It holds outbound endpoint credentials, the admin API key hash, and the Consumer API key pepper — never
+  the Consumer keys themselves (those are one-way hashed in Postgres).
 - **Observability**: OpenTelemetry traces/metrics (custom `Meter("AIProxyPlus")` + `ActivitySource("AIProxyPlus")`,
   auto-instrumented ASP.NET Core/HttpClient/Npgsql) and Serilog (rolling file + OTLP), all wired through
   `AIProxyPlus.ServiceDefaults`.
@@ -118,6 +123,41 @@ changed credentials. To reset only local identity data, stop the AppHost, remove
 development credentials outside local testing. The seeded `proxy-admin` subject is pinned so resetting Keycloak
 does not create a different OIDC identity or collide with its Consumer row in persistent Postgres.
 
+#### Windows: run containers with WSLC
+
+The optional `wslc` launch profile uses WSL containers instead of Docker Desktop. It requires WSLC client and
+session manager 3.0.4.0 or newer (`wslc version` and `wslc info --format json`). Aspire 13.6.5's bundled DCP 0.26.6
+does not support WSLC. Install the standalone DCP 0.27.4 tools from Microsoft's
+official `dotnet-libraries` feed, then configure Aspire's explicit local DCP-path override:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$feed = Invoke-RestMethod 'https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-libraries/nuget/v3/index.json'
+$base = ($feed.resources | Where-Object { $_.'@type' -eq 'PackageBaseAddress/3.0.0' }).'@id'
+$tools = Join-Path $env:LOCALAPPDATA 'AIProxyPlus\tools\dcp\0.27.4'
+New-Item -ItemType Directory -Path $tools -ErrorAction Stop | Out-Null
+$archive = Join-Path $tools 'dcp.zip'
+Invoke-WebRequest "${base}microsoft.developercontrolplane.windows-amd64/0.27.4/microsoft.developercontrolplane.windows-amd64.0.27.4.nupkg" -OutFile $archive
+Expand-Archive -LiteralPath $archive -DestinationPath $tools
+Remove-Item -LiteralPath $archive
+$dcp = Join-Path $tools 'tools\dcp.exe'
+& $dcp info --container-runtime wslc
+if ($LASTEXITCODE -ne 0) { throw 'DCP could not verify the WSLC runtime.' }
+dotnet user-secrets set 'DcpPublisher:CliPath' $dcp --project src\AIProxyPlus.AppHost
+dotnet run --project src\AIProxyPlus.AppHost --launch-profile wslc
+```
+
+These installation commands target Windows x64; install once, then use only the last command on subsequent runs.
+This is an opt-in standalone-tool combination, not the DCP version bundled and tested with Aspire. The tools feed
+is used only for this local tool installation; application package restores still use the repository's CFS proxy.
+The local DCP-path override applies to all AppHost profiles; the existing `https` and `http` profiles still select
+Docker by default. Remove the override with
+`dotnet user-secrets remove 'DcpPublisher:CliPath' --project src\AIProxyPlus.AppHost` to restore bundled DCP.
+Do not alias or wrap `docker` to call `wslc`: their CLI formats differ, producing misleading Docker-health errors.
+Compose and Testcontainers still require a Docker-compatible runtime; this profile changes only Aspire local runs,
+not Azure publishing. WSLC volumes are separate from Docker volumes, so a first WSLC run needs its own database
+migrations and local identity setup.
+
 On first run:
 
 - The database schema is **not** auto-migrated — apply it once with:
@@ -130,7 +170,11 @@ On first run:
 - `GET /health/live` is always healthy; `GET /health/ready` reports Postgres/Vault reachability individually.
 
 Aspire keeps the Postgres, Vault, and Keycloak containers running across AppHost restarts, and all three use named
-storage volumes. Local Vault uses its file backend, so endpoint credentials survive AppHost, container, and Docker
+storage volumes. Local PostgreSQL credentials are optional: Aspire supplies defaults when
+`Parameters:postgres-username` and `Parameters:postgres-password` are absent. Existing AppHost user-secret values
+remain supported and must match credentials already initialized in a persistent PostgreSQL volume; changing a
+parameter does not change the database role's password. Publish mode still requires both deployment parameters.
+Local Vault uses its file backend, so endpoint credentials survive AppHost, container, and Docker
 restarts. To intentionally reset local Vault, stop the AppHost, remove its Vault container, delete `vault-data`,
 and restart; this removes both Vault data and the local-only unseal key, and existing API-key endpoints must then
 have their secrets set again.
@@ -162,6 +206,140 @@ Brings up Postgres, local file-backed Vault, and the API (built from `src/AIProx
 Apply migrations the same way as above, pointing at `localhost:5432`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` in
 `docker-compose.yml` if you have an external OTLP collector; leave it blank to disable OTLP export.
 
+## Deploying to Azure with AZD
+
+The AppHost is also the cloud topology source. Publish mode omits local Vault and Keycloak and deploys the API/SPA
+image to Azure Container Apps with PostgreSQL Flexible Server, Azure Key Vault, Microsoft Entra ID, ACR, private
+PostgreSQL networking, Log Analytics, and Application Insights.
+
+### Prerequisites
+
+- Azure CLI, Azure Developer CLI (`azd`), Docker, .NET 10 SDK, and Bicep CLI support through Azure CLI.
+- PowerShell 7.2 or newer with `pwsh` on PATH for the required AZD provisioning/deployment hooks and their
+  cryptographic APIs. Windows PowerShell 5.1 is not supported for these hooks.
+- An Azure subscription where the deployment identity can create resource groups, role assignments, Container
+  Apps, PostgreSQL Flexible Server, Key Vault, ACR, networking, and monitoring resources.
+- Microsoft Graph `Application.ReadWrite.All` with admin consent when the deployment creates the Entra application
+  and service principal. The post-provision hook also needs permission to add/remove that application's
+  credentials. Resource-group Contributor alone is not sufficient.
+- Permission to set secrets in the provisioned Key Vault. Bicep grants Key Vault Secrets Officer to the AZD
+  principal supplied through `AZURE_PRINCIPAL_ID`.
+
+Authenticate and create an AZD environment for a fresh checkout (`.azure` environment state is not committed):
+
+```powershell
+az login
+azd auth login
+azd env new aiproxyplus-dev
+azd env set AZURE_SUBSCRIPTION_ID "<subscription-id>"
+azd env set AZURE_LOCATION "westeurope"
+```
+
+For an environment already created on this machine, use `azd env select aiproxyplus-dev` instead of `azd env new`.
+
+The templates default to `Standard_B1ms`, 32 GiB storage, seven-day backup retention, disabled HA, and one-to-three
+Container App replicas. Override the corresponding Bicep parameters for production. To reuse an existing Entra
+registration, set the `existingEntraClientId` deployment parameter; its redirect and front-channel logout URIs
+must use `/signin-oidc` and `/signout-oidc` respectively. `/signout-callback-oidc` is the return endpoint for
+application-initiated logout, not the front-channel endpoint. These URIs must match the generated application URL;
+existing registrations are not modified.
+
+The generated enterprise application requires assignment, so no unassigned tenant user can sign in. In Entra
+admin center, open **Enterprise applications > AIProxyPlus > Users and groups** and assign only approved
+administrators. Every admitted browser user is a proxy administrator. For a reused enterprise application, first
+set **Properties > Assignment required? > Yes** and review its assignments. Before accepting a deployment,
+verify an assigned administrator can sign in, an unassigned user is denied, and Entra-initiated logout clears an
+established proxy session.
+
+Deploy from the repository root:
+
+```powershell
+azd up
+```
+
+Provisioning uses the stable Microsoft Graph Bicep extension to create the Entra application/service principal.
+Because Graph Bicep cannot create `passwordCredentials`, the `postprovision` hook creates a one-year AZD-managed
+credential only when `oidc-client-secret` is absent from Key Vault, and writes it there directly. Subsequent
+provisioning reuses the existing secret. No credential is emitted as a Bicep or AZD output.
+
+The postprovision and predeploy hooks also initialize the mapped `consumer-key-pepper` Key Vault secret only when
+absent. Serialize deployments to the same environment: the bootstrap is deployment-owned, not replica-owned.
+Azure API startup requires this existing pepper and fails if it is missing, disabled, or inaccessible; replicas
+never generate or replace it. Local single-instance HashiCorp Vault retains automatic first-use creation.
+For deployments outside AZD, run `.\infra\hooks\initialize-consumer-pepper.ps1` with `KEYVAULT_NAME` set before
+starting the API. Preserve the existing pepper and back it up with the consumer database; replacing it invalidates
+consumer keys. Re-enable or restore an unavailable existing pepper instead of generating a replacement.
+
+To rotate an existing credential, load the selected environment's non-secret output variables into the shell and
+run `.\infra\hooks\postprovision.ps1 -RotateCredential`, then deploy a replacement revision. Rotation appends a
+credential and never deletes the previous one, including if storing the new value or deploying the revision fails.
+After the replacement revision is ready, explicitly verify an Entra sign-in, confirm all old replicas have stopped,
+and allow at least the OIDC remote-authentication timeout (15 minutes by default) for in-flight logins to drain.
+Only then list the application's credentials with `az ad app credential list --id <client-id>` and delete the
+specific superseded AZD-managed key IDs with `az ad app credential delete --id <client-id> --key-id <old-key-id>`.
+Never delete the current credential or unrelated application credentials. Schedule rotation before the one-year
+expiration; failed rollouts and rollback require retaining the old credential.
+
+### Verify and operate
+
+Use `azd env get-values` to read non-secret outputs such as `API_URL`, `KEYVAULT_NAME`, and resource names, then:
+
+```powershell
+$apiUrl = azd env get-value API_URL
+Invoke-WebRequest "$apiUrl/health/live"
+Invoke-WebRequest "$apiUrl/health/ready"
+az containerapp logs show --name api --resource-group "rg-$(azd env get-value AZURE_ENV_NAME)" --follow
+```
+
+Open `$apiUrl` and complete the Entra sign-in. Readiness reports `postgres` and provider-neutral `secretStore`
+components. Application telemetry is available in the provisioned Application Insights resource; Container Apps
+platform and console logs flow to Log Analytics. The Azure revision disables the local rolling-file sink because
+container files are ephemeral.
+
+PostgreSQL is private-only and requires TLS. Startup migrations are serialized with a PostgreSQL advisory lock, so
+multiple replicas cannot execute schema DDL concurrently. The API image runs as the .NET runtime's non-root
+`$APP_UID`; ACR pull and Key Vault access use managed identities rather than registry or service-principal secrets.
+Both published PostgreSQL connection strings quote credential values (including embedded quotes) and set
+`SSL Mode=Require`. A startup probe allows ten minutes for initialization and migration-lock waits before liveness
+takes over. Lock acquisition explicitly allows up to ten minutes rather than the default 30-second SQL command
+timeout; migrations, lock release, and runtime queries retain their normal command timeouts.
+Investigate migrations exceeding that budget before deploying; the probe does not hide startup failures.
+
+Browser sessions, OIDC state, and antiforgery tokens use a shared PostgreSQL `DataProtectionKeys` key ring with the
+fixed application name `AIProxyPlus`. Secret key material is stored only in the configured Vault/Key Vault behind
+immutable `data-protection/*` references, protected at rest by that store; PostgreSQL holds the references and public
+key metadata, not plaintext key material. Back up both stores and retain old key references while cookies or
+in-flight OIDC callbacks can still need them. Migration permissions must create the new table; the runtime role
+needs select/insert access. The first rollout from replica-local keys signs existing browser sessions out once;
+subsequent revision replacements and scale-out share the durable ring.
+
+For an application rollback, activate a prior Container App revision or redeploy the previous commit. Database
+migrations are forward-only; take a PostgreSQL backup before a release that changes schema. To remove an
+environment after preserving any required database data:
+
+```powershell
+azd down --purge --force
+```
+
+### Azure troubleshooting
+
+- **OIDC redirect mismatch**: ensure the registration contains
+  `https://api.<container-apps-default-domain>/signin-oidc` and the matching
+  `/signout-oidc` front-channel logout URI. Keep `/signout-callback-oidc` for application-initiated logout returns.
+  Existing registrations are not modified.
+- **Graph authorization failure**: grant/admin-consent `Application.ReadWrite.All` to the deployment identity and
+  confirm it may manage application credentials.
+- **Key Vault 403/readiness failure**: allow for RBAC propagation, then verify the API managed identity has Key
+  Vault Secrets Officer on the application vault and the AZD principal can run the credential bootstrap.
+- **PostgreSQL DNS/TLS failure**: verify the Container Apps environment uses the infrastructure subnet, the server
+  uses the delegated subnet, the private DNS link exists, and the connection string retains `SSL Mode=Require`.
+- **Migration/startup failure**: inspect Container App logs for the migration error. Advisory locking handles
+  concurrent replicas but does not hide an invalid or incompatible migration.
+- **Unhealthy readiness**: inspect both `postgres` and `secretStore`; readiness intentionally surfaces dependency
+  failures rather than returning a success-shaped fallback.
+- **Stale local state**: local Keycloak/Vault volumes are unrelated to Azure. Reset only the named local volume
+  described in the local-development section.
+
 ### Routing configuration
 
 Two values are configurable via `appsettings`/environment variables — local dev needs neither, both fall back to
@@ -183,9 +361,12 @@ state but never plaintext or Vault references.
 | Key | Default | Purpose |
 |---|---|---|
 | `Endpoints:MaxCredentialFallbackWindow` | `01:00:00` | Maximum requested fallback window; must be greater than zero and no more than 24 hours. |
-| `Vault:Retirement:GracePeriod` | `01:00:00` | Delay before deleting a replaced or removed immutable Vault value; zero to 24 hours. |
-| `Vault:Retirement:RetryDelay` | `00:00:05` | Initial cleanup retry delay. |
-| `Vault:Retirement:MaxRetryDelay` | `00:05:00` | Maximum bounded cleanup retry delay. |
+| `Secrets:Retirement:GracePeriod` | `01:00:00` | Delay before deleting a replaced or removed immutable secret; zero to 24 hours. |
+| `Secrets:Retirement:RetryDelay` | `00:00:05` | Initial cleanup retry delay. |
+| `Secrets:Retirement:MaxRetryDelay` | `00:05:00` | Maximum bounded cleanup retry delay. |
+
+`Vault:Retirement` remains a compatibility fallback for existing configuration. New deployments should use
+`Secrets:Retirement`.
 
 Rotation runbook:
 
@@ -414,7 +595,8 @@ dotnet test --results-directory "test-results/$(Get-Date -Format yyyyMMdd-HHmmss
 
 - TRX results + Cobertura coverage land in `test-results/<timestamp>/` (git-ignored except a `.gitkeep`
   placeholder — this folder is for manual/CI runs, not committed output).
-- The running API writes rolling logs to `logs/aiproxyplus-.log` (also git-ignored beyond `.gitkeep`).
+- Local runs write rolling logs to `logs/aiproxyplus-.log` (also git-ignored beyond `.gitkeep`); Azure disables
+  that sink and uses console/OpenTelemetry export.
 - `AIProxyPlus.Domain.Tests`/`AIProxyPlus.Application.Tests` are pure unit tests. `AIProxyPlus.Infrastructure.Tests` uses
   Testcontainers for Postgres/Vault (requires Docker running). `AIProxyPlus.Api.Tests` uses `WebApplicationFactory`
   + WireMock.Net fake backends (no Docker required) to exercise the full HTTP pipeline — priority/round-robin

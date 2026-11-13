@@ -7,6 +7,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.Repositories;
+using System.Xml.Linq;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
@@ -91,8 +94,31 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             services.AddSingleton<IConsumerRepository>(Consumers);
             services.AddSingleton<IRealtimeTicketService>(RealtimeTickets);
             services.AddSingleton<ISecretResolver>(Secrets);
+            services.PostConfigure<KeyManagementOptions>(options =>
+                options.XmlRepository = new TestKeyRepository());
             services.AddSingleton<IPostConfigureOptions<JwtBearerOptions>>(new TestJwtBearerPostConfigure());
         });
+    }
+
+    private sealed class TestKeyRepository : IXmlRepository
+    {
+        private readonly List<XElement> _keys = [];
+
+        public IReadOnlyCollection<XElement> GetAllElements()
+        {
+            lock (_keys)
+            {
+                return _keys.Select(key => new XElement(key)).ToArray();
+            }
+        }
+
+        public void StoreElement(XElement element, string friendlyName)
+        {
+            lock (_keys)
+            {
+                _keys.Add(new XElement(element));
+            }
+        }
     }
 
     protected override void ConfigureClient(HttpClient client)

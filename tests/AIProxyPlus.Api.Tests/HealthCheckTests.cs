@@ -25,7 +25,7 @@ public class HealthCheckTests : IDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("\"vault\":\"healthy\"");
+        body.Should().Contain("\"secretStore\":\"healthy\"");
         body.Should().Contain("\"postgres\":\"healthy\"");
     }
 }
