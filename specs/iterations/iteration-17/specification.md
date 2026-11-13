@@ -82,13 +82,15 @@ The repository SHALL support a clean deployment from the repository root.
 8. Replicas and replacement revisions SHALL share a durable Data Protection ring in PostgreSQL with application
    name `AIProxyPlus`; secret key material SHALL remain in the configured secret store, referenced immutably from
    ring metadata. Store failures SHALL not fall back to replica-local keys. Both stores SHALL be backed up together.
+9. A Startup probe on `/health/live` SHALL gate liveness during migrations/lock waits with a ten-minute budget
+   (60 failures at ten-second intervals), aligned between Bicep and AppHost.
 
 ### REQ-1704 — PostgreSQL Flexible Server
 
 1. Azure SHALL use PostgreSQL Flexible Server, not a PostgreSQL container.
 2. The database SHALL use private network access from the Container Apps environment, with private DNS resolution.
 3. Public PostgreSQL access SHALL be disabled.
-4. TLS SHALL be required by the application connection string.
+4. Both emitted connection strings SHALL set `SSL Mode=Require` and quote credentials with embedded quotes doubled.
 5. Database name and runtime/migration connection strings SHALL retain the existing
    `aiproxyplusdb`/`aiproxyplusdb-migrations` configuration contract.
 6. Credentials SHALL be generated or supplied as secure deployment values and SHALL NOT appear in Bicep outputs,
@@ -131,7 +133,7 @@ The existing application-layer `ISecretResolver` SHALL remain the only secret-st
    `https://login.microsoftonline.com/{tenantId}/v2.0`.
 3. The Entra application SHALL be a confidential web client with redirect URI
    `https://{containerAppFqdn}/signin-oidc` and front-channel logout URI compatible with
-   `/signout-callback-oidc`.
+   `/signout-oidc`. `/signout-callback-oidc` SHALL remain the application-initiated logout return endpoint.
 4. The client secret or certificate SHALL be supplied through a Container App secret/Key Vault reference and SHALL
    never be exposed to frontend JavaScript.
 5. `openid` and `profile` SHALL be requested; `preferred_username` SHALL remain the default display-name claim.
@@ -152,6 +154,8 @@ The existing application-layer `ISecretResolver` SHALL remain the only secret-st
 11. Provisioning SHALL reuse an existing OIDC secret. Explicit rotation SHALL append a credential without deleting
     old credentials. Retirement SHALL be an operator-owned post-rollout step after new-revision sign-in validation,
     old-replica shutdown, and draining in-flight authentication; rollback SHALL preserve the previous credential.
+12. Generated service principals SHALL require assignment. Operators SHALL assign only approved administrators;
+    reused enterprise applications SHALL enforce the same restriction before sign-in.
 
 ### REQ-1707 — Azure observability
 

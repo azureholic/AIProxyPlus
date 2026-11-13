@@ -213,6 +213,17 @@ resource api 'Microsoft.App/containerApps@2025-07-01' = {
           ]
           probes: [
             {
+              type: 'Startup'
+              httpGet: {
+                path: '/health/live'
+                port: 8080
+                scheme: 'HTTP'
+              }
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 60
+            }
+            {
               type: 'Liveness'
               httpGet: {
                 path: '/health/live'

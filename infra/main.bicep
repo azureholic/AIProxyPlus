@@ -135,12 +135,13 @@ resource entraApplication 'Microsoft.Graph/applications@v1.0' = if (empty(existi
     redirectUris: [
       'https://api.${environment.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}/signin-oidc'
     ]
-    logoutUrl: 'https://api.${environment.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}/signout-callback-oidc'
+    logoutUrl: 'https://api.${environment.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}/signout-oidc'
   }
 }
 
 resource entraServicePrincipal 'Microsoft.Graph/servicePrincipals@v1.0' = if (empty(existingEntraClientId)) {
   appId: entraApplication!.appId
+  appRoleAssignmentRequired: true
 }
 output API_IDENTITY_CLIENTID string = api_identity.outputs.clientId
 output API_IDENTITY_ID string = api_identity.outputs.id

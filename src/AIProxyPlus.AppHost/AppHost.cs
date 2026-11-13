@@ -26,7 +26,7 @@ if (builder.ExecutionContext.IsPublishMode)
     var entraClientSecret = keyVault.GetSecret("oidc-client-secret");
 
 #pragma warning disable ASPIREPROBES001
-    builder.AddProject<Projects.AIProxyPlus_Api>("api")
+    var api = builder.AddProject<Projects.AIProxyPlus_Api>("api")
         .WithReference(postgres)
         .WithReference(keyVault)
         .WithRoleAssignments(keyVault, Azure.Provisioning.KeyVault.KeyVaultBuiltInRole.KeyVaultSecretsOfficer)
@@ -63,6 +63,16 @@ if (builder.ExecutionContext.IsPublishMode)
             dockerfilePath: "src/AIProxyPlus.Api/Dockerfile"))
         .WaitFor(postgres)
         .WaitFor(keyVault);
+    // WithHttpProbe adds a duplicate health-check key when startup and liveness share a path.
+    api.WithAnnotation(new EndpointProbeAnnotation
+    {
+        Type = ProbeType.Startup,
+        EndpointReference = api.GetEndpoint("http"),
+        Path = "/health/live",
+        PeriodSeconds = 10,
+        TimeoutSeconds = 5,
+        FailureThreshold = 60,
+    });
 #pragma warning restore ASPIREPROBES001
 }
 else

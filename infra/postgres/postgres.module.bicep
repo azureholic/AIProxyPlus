@@ -88,7 +88,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
 resource connectionString 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
   name: 'connectionstrings--postgres'
   properties: {
-    value: 'Host=${postgres.properties.fullyQualifiedDomainName};Username=${administratorLogin};Password=${administratorLoginPassword}'
+    value: 'Host=${postgres.properties.fullyQualifiedDomainName};Username="${replace(administratorLogin, '"', '""')}";Password="${replace(administratorLoginPassword, '"', '""')}";SSL Mode=Require'
   }
   parent: keyVault
 }
@@ -96,7 +96,7 @@ resource connectionString 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
 resource aiproxyplusdb_connectionString 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
   name: 'connectionstrings--aiproxyplusdb'
   properties: {
-    value: 'Host=${postgres.properties.fullyQualifiedDomainName};Username=${administratorLogin};Password=${administratorLoginPassword};Database=aiproxyplusdb'
+    value: 'Host=${postgres.properties.fullyQualifiedDomainName};Username="${replace(administratorLogin, '"', '""')}";Password="${replace(administratorLoginPassword, '"', '""')}";Database=aiproxyplusdb;SSL Mode=Require'
   }
   parent: keyVault
 }

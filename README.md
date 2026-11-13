@@ -238,7 +238,16 @@ For an environment already created on this machine, use `azd env select aiproxyp
 The templates default to `Standard_B1ms`, 32 GiB storage, seven-day backup retention, disabled HA, and one-to-three
 Container App replicas. Override the corresponding Bicep parameters for production. To reuse an existing Entra
 registration, set the `existingEntraClientId` deployment parameter; its redirect and front-channel logout URIs
-must already match the generated application URL.
+must use `/signin-oidc` and `/signout-oidc` respectively. `/signout-callback-oidc` is the return endpoint for
+application-initiated logout, not the front-channel endpoint. These URIs must match the generated application URL;
+existing registrations are not modified.
+
+The generated enterprise application requires assignment, so no unassigned tenant user can sign in. In Entra
+admin center, open **Enterprise applications > AIProxyPlus > Users and groups** and assign only approved
+administrators. Every admitted browser user is a proxy administrator. For a reused enterprise application, first
+set **Properties > Assignment required? > Yes** and review its assignments. Before accepting a deployment,
+verify an assigned administrator can sign in, an unassigned user is denied, and Entra-initiated logout clears an
+established proxy session.
 
 Deploy from the repository root:
 
@@ -288,6 +297,9 @@ container files are ephemeral.
 PostgreSQL is private-only and requires TLS. Startup migrations are serialized with a PostgreSQL advisory lock, so
 multiple replicas cannot execute schema DDL concurrently. The API image runs as the .NET runtime's non-root
 `$APP_UID`; ACR pull and Key Vault access use managed identities rather than registry or service-principal secrets.
+Both published PostgreSQL connection strings quote credential values (including embedded quotes) and set
+`SSL Mode=Require`. A startup probe allows ten minutes for initialization and migration-lock waits before liveness
+takes over. Investigate migrations exceeding that budget before deploying; the probe does not hide startup failures.
 
 Browser sessions, OIDC state, and antiforgery tokens use a shared PostgreSQL `DataProtectionKeys` key ring with the
 fixed application name `AIProxyPlus`. Secret key material is stored only in the configured Vault/Key Vault behind
@@ -309,7 +321,8 @@ azd down --purge --force
 
 - **OIDC redirect mismatch**: ensure the registration contains
   `https://api.<container-apps-default-domain>/signin-oidc` and the matching
-  `/signout-callback-oidc` front-channel logout URI. Existing registrations are not modified.
+  `/signout-oidc` front-channel logout URI. Keep `/signout-callback-oidc` for application-initiated logout returns.
+  Existing registrations are not modified.
 - **Graph authorization failure**: grant/admin-consent `Application.ReadWrite.All` to the deployment identity and
   confirm it may manage application credentials.
 - **Key Vault 403/readiness failure**: allow for RBAC propagation, then verify the API managed identity has Key

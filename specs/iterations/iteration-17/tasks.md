@@ -345,3 +345,24 @@ listed validation are complete.
   `pwsh -NoProfile -File tests\infra\postprovision.Tests.ps1` passed all five OIDC lifecycle scenarios with the added
   bootstrap invocation. AZD configuration includes both deployment and provisioning bootstrap hooks.
   Docker-API-dependent fixtures remain excluded for WSLC. No Azure deployment or secret mutation was performed.
+
+- [x] **T17-806 — Address remaining Azure deployment review contracts**
+  Require assignment on the generated Entra service principal and document approved administrator assignment for
+  generated/reused enterprise applications. Correct front-channel logout to `/signout-oidc`, preserving the
+  application-initiated callback. Quote PostgreSQL credentials with embedded quotes doubled and explicitly require
+  TLS in both published secrets. Align Bicep and AppHost startup probes with a ten-minute migration/lock budget.
+  **Depends on:** T17-805.
+  **Traceability:** REQ-1703.9, REQ-1704.4, REQ-1706.3, REQ-1706.12.
+  **Validation:** Using the installed .NET 10.0.403 CLI,
+  `dotnet test AIProxyPlus.sln --no-restore -p:RuntimeFrameworkVersion=10.0.14 --filter "(FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Persistence&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.VaultSecretResolverTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.ConsumerAuthenticatorEndToEndTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.PostgresEndpointCredentialInvalidationTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Usage.UsageRecordBackgroundWriterTests)|FullyQualifiedName~PostgresDeploymentConnectionStringTests"`
+  passed 497 tests, including 9 architecture tests and 2 Npgsql parsing cases using semicolons, embedded quotes,
+  whitespace, and attempted connection-string setting injection. AppHost build and manifest publishing passed.
+  `pwsh -NoProfile -File tests\infra\deployment-contracts.Tests.ps1 -GeneratedApiTemplatePath F:\ai-proxy_v2\test-results\pr49-startup-manifest\api-containerapp.module.bicep`
+  passed compiled Graph assignment/remote-logout checks and confirmed generated/checked-in startup probe parity.
+  The AppHost uses a direct startup probe annotation because `WithHttpProbe` registers duplicate health checks
+  when startup and liveness share a path. Compilation surfaced the collision; manifest publishing passes with the
+  annotation. Validation explicitly used installed runtime 10.0.14 after the local SDK requested unavailable
+  10.0.15; no repository runtime policy was changed.
+  Docker-API fixtures remain excluded for WSLC. Generated Bicep has existing unused-parameter/secure-input warnings;
+  manifest publishing logged a nonfatal local auxiliary-backchannel access error. Tenant-level assigned/unassigned
+  sign-in and Entra-initiated logout with an established session remain operator checks. No cloud changes were made.

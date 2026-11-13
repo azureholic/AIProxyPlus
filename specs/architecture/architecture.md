@@ -760,7 +760,10 @@ identity/RBAC controlled. A private endpoint requires a network-integrated deplo
   PostgreSQL has no public endpoint and is reached through delegated subnet/private DNS with TLS required.
   ACR admin credentials are disabled; image pull and Key Vault access use narrowly scoped managed identities.
   PostgreSQL startup migrations are serialized with a PostgreSQL advisory lock so replicas cannot run DDL
-  concurrently.
+  concurrently. Container Apps uses a startup probe on `/health/live` with a ten-minute budget (60 failures at
+  ten-second intervals) before liveness takes over, covering startup migrations and migration-lock waits.
+  Published PostgreSQL connection strings quote credential values, double embedded quotes, and explicitly
+  require TLS with `SSL Mode=Require`.
 - **Dependency hygiene**: `.github/dependabot.yml` (Iteration 12) covers both ecosystems in this repository —
   `nuget` (root, covering every `.csproj` via `AIProxyPlus.sln`) and `npm` (`src/AIProxyPlus.Web`) — on a weekly
   schedule. Both ecosystems resolve anonymously and fail closed through Microsoft's CFS proxies with no public
@@ -811,6 +814,11 @@ not map provider roles or groups. Deployments in a shared identity domain must t
 or login eligibility at the provider. Config and Usage routes accept the OIDC session; the static Admin API Key is a
 configurable migration/break-glass fallback and is disabled by default after migration. External inference clients
 may use Consumer API keys or the separately configured workload bearer schemes in §13.2.
+
+The generated Entra service principal requires assignment; operators assign only approved administrators before
+sign-in. Reused enterprise applications require the same operator-enforced restriction. Entra front-channel
+logout targets `/signout-oidc` (the middleware's remote sign-out endpoint); `/signout-callback-oidc` remains the
+return endpoint for application-initiated logout and must not be used as the front-channel logout URL.
 
 OIDC-backed inference resolves the authenticated identity to a `Consumer`. API-key Consumers have an API-key hash
 and no OIDC identity; OIDC Consumers have an immutable canonical issuer plus exact, case-sensitive, opaque `sub`
