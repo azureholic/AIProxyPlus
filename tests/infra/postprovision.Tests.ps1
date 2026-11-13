@@ -5,6 +5,11 @@ $env:KEYVAULT_NAME = 'test-vault'
 $env:AZURE_ENV_NAME = 'test-environment'
 
 function global:az {
+    if (($args[0..2] -join ' ') -eq 'keyvault secret list' -and
+        ($args -join ' ') -notmatch 'oidc-client-secret') {
+        $global:LASTEXITCODE = 0
+        return 'existing-consumer-pepper'
+    }
     $global:Pr49HookTestState.Commands.Add(($args -join ' '))
     $global:LASTEXITCODE = 0
     switch ($args[0..2] -join ' ') {

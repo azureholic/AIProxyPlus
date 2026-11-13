@@ -8,6 +8,11 @@ services:
     host: containerapp
 
 hooks:
+  predeploy:
+    shell: pwsh
+    run: ./infra/hooks/initialize-consumer-pepper.ps1
+    interactive: false
+    continueOnError: false
   postprovision:
     shell: pwsh
     run: ./infra/hooks/postprovision.ps1

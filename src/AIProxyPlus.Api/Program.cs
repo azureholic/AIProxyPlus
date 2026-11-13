@@ -250,12 +250,11 @@ builder.Services.AddScoped<ProxyRoutingService>(sp => new ProxyRoutingService(
     builder.Configuration.GetValue<TimeSpan?>("Routing:SessionAffinityTtl")));
 builder.Services.AddScoped<RealtimeProxyService>();
 
-// Secrets/auth — the consumer-key pepper is auto-provisioned from Vault on first read (§8). The admin key is never
-// generated: an operator supplies Authentication:AdminApiKey (hashed into Vault) or the break-glass key is
-// unavailable. ISecretResolver itself isn't registered until Phase 9 wires a real Vault client (or a test double
-// supplies one).
+// Azure replicas only read the deployment-provisioned pepper; local single-instance Vault can auto-provision it.
 builder.Services.AddSingleton<IApiKeyHasher>(sp =>
-    ApiKeyHasher.CreateAsync(sp.GetRequiredService<ISecretResolver>()).GetAwaiter().GetResult());
+    ApiKeyHasher.CreateAsync(
+        sp.GetRequiredService<ISecretResolver>(),
+        autoProvision: secretStoreOptions.Provider == SecretStoreProvider.HashiCorpVault).GetAwaiter().GetResult());
 // Fail at startup, not on first admin request, if a configured admin key is too weak.
 AdminApiKeyAuthenticator.EnsureConfiguredKeyIsStrong(builder.Configuration["Authentication:AdminApiKey"]);
 builder.Services.AddSingleton(sp =>
@@ -424,6 +423,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 var app = builder.Build();
+
+if (secretStoreOptions.Provider == SecretStoreProvider.AzureKeyVault)
+{
+    _ = app.Services.GetRequiredService<IApiKeyHasher>();
+}
 
 if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
 {

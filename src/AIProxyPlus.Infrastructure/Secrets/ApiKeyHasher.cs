@@ -39,12 +39,21 @@ public sealed class ApiKeyHasher : IApiKeyHasher
         return computed.Length == expected.Length && CryptographicOperations.FixedTimeEquals(computed, expected);
     }
 
-    /// <summary>Resolves the shared pepper from Vault, auto-provisioning a new random one on first run.</summary>
-    public static async Task<ApiKeyHasher> CreateAsync(ISecretResolver secretResolver, CancellationToken cancellationToken = default)
+    /// <summary>Resolves the shared pepper, optionally auto-provisioning it for single-instance local development.</summary>
+    public static async Task<ApiKeyHasher> CreateAsync(
+        ISecretResolver secretResolver,
+        CancellationToken cancellationToken = default,
+        bool autoProvision = true)
     {
         var pepper = await secretResolver.TryResolveAsync(PepperSecretRef, cancellationToken);
         if (pepper is null)
         {
+            if (!autoProvision)
+            {
+                throw new InvalidOperationException(
+                    "The consumer-key pepper must be provisioned in Azure Key Vault before starting the API. Run the AZD pepper bootstrap hook.");
+            }
+
             pepper = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
             await secretResolver.StoreAsync(PepperSecretRef, pepper, cancellationToken);
         }

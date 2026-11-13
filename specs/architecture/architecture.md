@@ -455,6 +455,11 @@ identity/RBAC controlled. A private endpoint requires a network-integrated deplo
   `consumers` table ever leaks) is itself a real secret the app must retrieve, so it lives in Vault at
   `secret/aiproxyplus/consumer-key-pepper`, read once at startup and cached in memory — not the individual consumer
   keys, just this single shared value.
+  Single-instance local HashiCorp Vault development may auto-create the pepper. In Azure, AZD postprovision and
+  predeploy hooks initialize the mapped Key Vault secret only when absent, before API deployment. Deployments to
+  the same environment must be serialized. Azure API startup requires the existing pepper and never creates or
+  replaces it, so concurrent replicas cannot cache different initial values. Disabled or inaccessible secrets
+  fail startup rather than being replaced. Retain the pepper with database backups; changing it invalidates keys.
 
 ## 9. Routing & Failover
 

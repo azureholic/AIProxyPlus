@@ -119,6 +119,10 @@ The existing application-layer `ISecretResolver` SHALL remain the only secret-st
 10. Health readiness SHALL report a provider-neutral `secretStore` component rather than `vault`.
 11. Retirement configuration SHALL move to provider-neutral `Secrets:Retirement` keys, with a documented
     compatibility window for existing `Vault:Retirement` configuration.
+12. Azure deployment SHALL initialize the mapped `consumer-key-pepper` secret once before deploying API replicas.
+    Existing peppers SHALL NOT be replaced. Azure API startup SHALL require the pepper and fail if it cannot be
+    resolved, never auto-provisioning it. Local single-instance HashiCorp Vault auto-creation SHALL remain supported.
+    Deployments to the same environment SHALL be serialized.
 
 ### REQ-1706 — Microsoft Entra browser identity
 

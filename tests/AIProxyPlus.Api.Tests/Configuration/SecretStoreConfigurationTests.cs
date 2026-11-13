@@ -9,6 +9,35 @@ namespace AIProxyPlus.Api.Tests.Configuration;
 public sealed class SecretStoreConfigurationTests
 {
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CreateClient_AzureKeyVault_RequiresExistingPepperBeforeServing(bool pepperExists)
+    {
+        using var root = new ApiTestFactory();
+        if (!pepperExists)
+        {
+            await root.Secrets.DeleteAsync("consumer-key-pepper");
+        }
+        using var factory = root.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Secrets:Provider", "AzureKeyVault");
+            builder.UseSetting("AzureKeyVault:VaultUri", "https://example.vault.azure.net/");
+        });
+
+        var act = () => factory.CreateClient();
+
+        if (pepperExists)
+        {
+            using var client = act();
+        }
+        else
+        {
+            act.Should().Throw<InvalidOperationException>().WithMessage("*before starting the API*");
+            (await root.Secrets.TryResolveAsync("consumer-key-pepper")).Should().BeNull();
+        }
+    }
+
+    [Theory]
     [InlineData(false, 37, 7)]
     [InlineData(true, 12, 3)]
     public void CreateClient_RetirementConfiguration_PreservesLegacyFallbackAndNewPrecedence(

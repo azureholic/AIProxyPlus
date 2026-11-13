@@ -2,6 +2,8 @@ param([switch]$RotateCredential)
 
 $ErrorActionPreference = 'Stop'
 
+& (Join-Path $PSScriptRoot 'initialize-consumer-pepper.ps1')
+
 if ([string]::IsNullOrWhiteSpace($env:AZURE_ENTRA_CLIENT_ID)) {
     throw 'AZURE_ENTRA_CLIENT_ID was not produced by provisioning.'
 }

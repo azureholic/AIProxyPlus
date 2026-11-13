@@ -251,6 +251,14 @@ Because Graph Bicep cannot create `passwordCredentials`, the `postprovision` hoo
 credential only when `oidc-client-secret` is absent from Key Vault, and writes it there directly. Subsequent
 provisioning reuses the existing secret. No credential is emitted as a Bicep or AZD output.
 
+The postprovision and predeploy hooks also initialize the mapped `consumer-key-pepper` Key Vault secret only when
+absent. Serialize deployments to the same environment: the bootstrap is deployment-owned, not replica-owned.
+Azure API startup requires this existing pepper and fails if it is missing, disabled, or inaccessible; replicas
+never generate or replace it. Local single-instance HashiCorp Vault retains automatic first-use creation.
+For deployments outside AZD, run `.\infra\hooks\initialize-consumer-pepper.ps1` with `KEYVAULT_NAME` set before
+starting the API. Preserve the existing pepper and back it up with the consumer database; replacing it invalidates
+consumer keys. Re-enable or restore an unavailable existing pepper instead of generating a replacement.
+
 To rotate an existing credential, load the selected environment's non-secret output variables into the shell and
 run `.\infra\hooks\postprovision.ps1 -RotateCredential`, then deploy a replacement revision. Rotation appends a
 credential and never deletes the previous one, including if storing the new value or deploying the revision fails.

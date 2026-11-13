@@ -328,3 +328,20 @@ listed validation are complete.
   a concurrently installed .NET 11 preview had an incomplete workload manifest.
   Docker-API-dependent fixtures remain excluded because WSLC does not expose that API. No Azure rollout or real
   Entra sign-in was performed; replacement-revision sign-in/drain remains an operator deployment check.
+
+- [x] **T17-805 — Provision the Azure consumer pepper before API startup**
+  Initialize the mapped Key Vault pepper through AZD postprovision and predeploy hooks, preserving every existing
+  value. Require the pepper during Azure API startup without replica-side creation; keep local single-instance
+  HashiCorp Vault auto-creation. Document serialization of deployments to one environment and pepper retention.
+  **Depends on:** T17-804.
+  **Traceability:** REQ-1705.12.
+  **Validation:** Using the installed .NET 10.0.403 CLI,
+  `dotnet test AIProxyPlus.sln --no-restore --filter "FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Persistence&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.VaultSecretResolverTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.ConsumerAuthenticatorEndToEndTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.PostgresEndpointCredentialInvalidationTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Usage.UsageRecordBackgroundWriterTests"`
+  passed 495 tests, including all 9 architecture tests. Focused hasher and configuration classes passed 11 and 7
+  tests respectively. New cases verify missing Azure peppers fail startup without writes, replicas/restarts reuse
+  the same pepper, and existing local first-use creation remains supported.
+  `pwsh -NoProfile -File tests\infra\initialize-consumer-pepper.Tests.ps1` passed four bootstrap scenarios, including
+  idempotent rerun, mapped naming, metadata errors, and write failures.
+  `pwsh -NoProfile -File tests\infra\postprovision.Tests.ps1` passed all five OIDC lifecycle scenarios with the added
+  bootstrap invocation. AZD configuration includes both deployment and provisioning bootstrap hooks.
+  Docker-API-dependent fixtures remain excluded for WSLC. No Azure deployment or secret mutation was performed.
