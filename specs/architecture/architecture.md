@@ -853,8 +853,8 @@ session, antiforgery, and logout endpoints. One authority/issuer and client are 
   restarts. Deleting `vault-data` intentionally resets both encrypted Vault data and its local unseal key.
   Windows developers may opt into the `wslc` launch profile with WSLC client/session manager 3.0.4.0 or newer and
   standalone DCP 0.27.4, selected through the per-machine AppHost `DcpPublisher:CliPath` user secret. This is an
-  explicitly opted-in tooling combination rather than Aspire 13.4.6's bundled DCP 0.24.3; no application package
-  upgrade or topology change is required. The optional Windows x64 DCP tool is installed from Microsoft's
+  explicitly opted-in tooling combination rather than Aspire 13.6.5's bundled DCP 0.26.6; no topology change is
+  required. The optional Windows x64 DCP tool is installed from Microsoft's
   `dotnet-libraries` feed, separate from application package restores through CFS. Existing HTTP/HTTPS launch
   profiles retain Docker as their default runtime. Never substitute WSLC for the Docker CLI with a wrapper.
   Runtime volumes are independent; switching to WSLC does not migrate existing Docker data. Docker Compose,

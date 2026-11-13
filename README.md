@@ -75,6 +75,10 @@ repository-level `NuGet.config`; npm uses `src/AIProxyPlus.Web/.npmrc`. Docker b
 use the same proxy configuration. There are no credentials or fallbacks to the public NuGet or npm registries, so
 package resolution fails closed if either CFS proxy is unavailable.
 
+Check all resolved NuGet dependencies, including test and transitive packages, with
+`dotnet list AIProxyPlus.sln package --vulnerable --include-transitive`. Keep the AppHost SDK and centrally managed
+Aspire integrations aligned when applying security updates; do not suppress NuGet vulnerability warnings.
+
 ## Architecture at a glance
 
 - **Clean Architecture**: `AIProxyPlus.Domain` (zero dependencies) → `AIProxyPlus.Application` (ports + use cases) →
@@ -122,8 +126,8 @@ does not create a different OIDC identity or collide with its Consumer row in pe
 #### Windows: run containers with WSLC
 
 The optional `wslc` launch profile uses WSL containers instead of Docker Desktop. It requires WSLC client and
-session manager 3.0.4.0 or newer (`wslc version` and `wslc info --format json`). Aspire 13.4.6's bundled DCP 0.24.3
-does not support WSLC; even Aspire 13.6.5 bundles DCP 0.26.6. Install the standalone DCP 0.27.4 tools from Microsoft's
+session manager 3.0.4.0 or newer (`wslc version` and `wslc info --format json`). Aspire 13.6.5's bundled DCP 0.26.6
+does not support WSLC. Install the standalone DCP 0.27.4 tools from Microsoft's
 official `dotnet-libraries` feed, then configure Aspire's explicit local DCP-path override:
 
 ```powershell

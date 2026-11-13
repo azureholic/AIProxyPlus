@@ -273,3 +273,27 @@ listed validation are complete.
   realm discovery returned HTTP 200 after restart. Pre-existing Aspire and MessagePack vulnerability warnings
   remain; no application dependency upgrades, Compose/Testcontainers runtime migration, or cloud deployment were
   performed.
+
+## Dependency security follow-up (2026-11-13)
+
+- [x] **T17-307 — Clear reported NuGet vulnerability warnings**
+  Align the AppHost SDK and Aspire integration packages at 13.6.5 to fix the dashboard security-feature bypass
+  (CVE-2026-118740) and hosting elevation of privilege (CVE-2026-120006). This also resolves MessagePack 2.5.307,
+  fixing CVE-2026-92707 without a direct override. Upgrade Testcontainers and its PostgreSQL integration to 4.14.0,
+  which carries SSH.NET 2026.0.0 and fixes CVE-2026-48798/CVE-2026-85756 through the supported parent dependency.
+  Pin WebUtilities 2.3.14 only in the API test project to fix CVE-2026-118750 in WireMock's legacy transitive chain.
+  Retain the standalone DCP 0.27.4 override and WSLC launch profile; update the README and architecture version
+  references without changing topology or suppressing vulnerability warnings.
+  **Depends on:** T17-306.
+  **Traceability:** REQ-1701, REQ-1708.
+  **Validation:** `dotnet restore AIProxyPlus.sln` and `dotnet build AIProxyPlus.sln --no-restore` passed.
+  `dotnet list AIProxyPlus.sln package --vulnerable --include-transitive --no-restore` reported no vulnerable packages
+  in all 11 projects; GitHub advisory re-scans of the six affected resolved dependencies were also clean.
+  `dotnet test AIProxyPlus.sln --no-build --no-restore --filter "FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Persistence&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.VaultSecretResolverTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.ConsumerAuthenticatorEndToEndTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.PostgresEndpointCredentialInvalidationTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Usage.UsageRecordBackgroundWriterTests"`
+  passed 485 tests, including all 9 architecture tests and all 139 API tests. Docker-API-dependent infrastructure
+  tests were excluded because WSLC does not expose that API; the user declined starting Podman.
+  `dotnet run --project src\AIProxyPlus.AppHost --no-build --launch-profile wslc` started Aspire 13.6.5 with WSLC;
+  API live/ready, Vault readiness, Keycloak readiness, and realm discovery returned HTTP 200. The first startup
+  attempt timed out checking DCP; the unchanged command succeeded on retry after DCP health was verified.
+  Non-vulnerability compiler/analyzer, Testcontainers obsolete-constructor, and optional CLI-bundle warnings remain.
+  No frontend dependencies or cloud resources changed.
