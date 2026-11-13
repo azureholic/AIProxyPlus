@@ -1,9 +1,8 @@
 ---
-name: "Configure NuGet CFS"
+name: configure-nuget-cfs
 description: "Use when configuring NuGet, CI, containers, and Dependabot to resolve exclusively through Microsoft CFS."
-agent: "agent"
+disable-model-invocation: true
 ---
-
 # Reusable Prompt: Configure NuGet and Dependabot to Use Microsoft CFS
 
 Implement this task in the current repository. Do not merely explain the changes.
