@@ -366,3 +366,11 @@ listed validation are complete.
   Docker-API fixtures remain excluded for WSLC. Generated Bicep has existing unused-parameter/secure-input warnings;
   manifest publishing logged a nonfatal local auxiliary-backchannel access error. Tenant-level assigned/unassigned
   sign-in and Entra-initiated logout with an established session remain operator checks. No cloud changes were made.
+
+- [x] **T17-807 — Document deployment hook prerequisites**
+  Add PowerShell 7.2+ with `pwsh` on PATH to Azure deployment prerequisites; explicitly exclude Windows
+  PowerShell 5.1 because the mandatory hooks use newer cryptographic APIs.
+  **Depends on:** T17-805.
+  **Traceability:** REQ-1709.
+  **Validation:** Documentation-only prerequisite correction checked against the existing `pwsh` AZD hooks and
+  their SHA256/cryptographic random generation calls; no runtime behavior changed.

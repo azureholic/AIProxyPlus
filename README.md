@@ -215,6 +215,8 @@ PostgreSQL networking, Log Analytics, and Application Insights.
 ### Prerequisites
 
 - Azure CLI, Azure Developer CLI (`azd`), Docker, .NET 10 SDK, and Bicep CLI support through Azure CLI.
+- PowerShell 7.2 or newer with `pwsh` on PATH for the required AZD provisioning/deployment hooks and their
+  cryptographic APIs. Windows PowerShell 5.1 is not supported for these hooks.
 - An Azure subscription where the deployment identity can create resource groups, role assignments, Container
   Apps, PostgreSQL Flexible Server, Key Vault, ACR, networking, and monitoring resources.
 - Microsoft Graph `Application.ReadWrite.All` with admin consent when the deployment creates the Entra application
