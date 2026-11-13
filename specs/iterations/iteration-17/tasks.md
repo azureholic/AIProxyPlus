@@ -256,3 +256,20 @@ listed validation are complete.
   mark completed tasks and create one focused commit.
   **Depends on:** T17-802.
   **Traceability:** all requirements.
+
+## Local runtime follow-up — WSLC (2026-11-13)
+
+- [x] **T17-306 — Verify opt-in WSLC local orchestration**
+  Add a separate `wslc` launch profile without changing the existing Docker profiles or cloud topology. Install
+  standalone DCP 0.27.4 locally and persist its executable path in AppHost user secrets; retain the existing Aspire
+  packages because no stable Aspire release currently bundles WSLC-capable DCP.
+  **Depends on:** T17-305.
+  **Traceability:** REQ-1701.
+  **Validation:** `dotnet build src\AIProxyPlus.AppHost\AIProxyPlus.AppHost.csproj --no-restore` passed;
+  `dotnet test tests\AIProxyPlus.ArchitectureTests\AIProxyPlus.ArchitectureTests.csproj --no-restore` passed (9 tests).
+  `dotnet run --project src\AIProxyPlus.AppHost --no-build --launch-profile wslc` started successfully using the
+  persisted path override and WSLC 3.0.5.0. Postgres, Vault, and Keycloak ran with loopback-only published ports;
+  restarting AppHost reused the same three persistent container IDs. `/health/live`, `/health/ready`, and Keycloak
+  realm discovery returned HTTP 200 after restart. Pre-existing Aspire and MessagePack vulnerability warnings
+  remain; no application dependency upgrades, Compose/Testcontainers runtime migration, or cloud deployment were
+  performed.

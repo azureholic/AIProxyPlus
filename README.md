@@ -119,6 +119,41 @@ changed credentials. To reset only local identity data, stop the AppHost, remove
 development credentials outside local testing. The seeded `proxy-admin` subject is pinned so resetting Keycloak
 does not create a different OIDC identity or collide with its Consumer row in persistent Postgres.
 
+#### Windows: run containers with WSLC
+
+The optional `wslc` launch profile uses WSL containers instead of Docker Desktop. It requires WSLC client and
+session manager 3.0.4.0 or newer (`wslc version` and `wslc info --format json`). Aspire 13.4.6's bundled DCP 0.24.3
+does not support WSLC; even Aspire 13.6.5 bundles DCP 0.26.6. Install the standalone DCP 0.27.4 tools from Microsoft's
+official `dotnet-libraries` feed, then configure Aspire's explicit local DCP-path override:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$feed = Invoke-RestMethod 'https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-libraries/nuget/v3/index.json'
+$base = ($feed.resources | Where-Object { $_.'@type' -eq 'PackageBaseAddress/3.0.0' }).'@id'
+$tools = Join-Path $env:LOCALAPPDATA 'AIProxyPlus\tools\dcp\0.27.4'
+New-Item -ItemType Directory -Path $tools -ErrorAction Stop | Out-Null
+$archive = Join-Path $tools 'dcp.zip'
+Invoke-WebRequest "${base}microsoft.developercontrolplane.windows-amd64/0.27.4/microsoft.developercontrolplane.windows-amd64.0.27.4.nupkg" -OutFile $archive
+Expand-Archive -LiteralPath $archive -DestinationPath $tools
+Remove-Item -LiteralPath $archive
+$dcp = Join-Path $tools 'tools\dcp.exe'
+& $dcp info --container-runtime wslc
+if ($LASTEXITCODE -ne 0) { throw 'DCP could not verify the WSLC runtime.' }
+dotnet user-secrets set 'DcpPublisher:CliPath' $dcp --project src\AIProxyPlus.AppHost
+dotnet run --project src\AIProxyPlus.AppHost --launch-profile wslc
+```
+
+These installation commands target Windows x64; install once, then use only the last command on subsequent runs.
+This is an opt-in standalone-tool combination, not the DCP version bundled and tested with Aspire. The tools feed
+is used only for this local tool installation; application package restores still use the repository's CFS proxy.
+The local DCP-path override applies to all AppHost profiles; the existing `https` and `http` profiles still select
+Docker by default. Remove the override with
+`dotnet user-secrets remove 'DcpPublisher:CliPath' --project src\AIProxyPlus.AppHost` to restore bundled DCP.
+Do not alias or wrap `docker` to call `wslc`: their CLI formats differ, producing misleading Docker-health errors.
+Compose and Testcontainers still require a Docker-compatible runtime; this profile changes only Aspire local runs,
+not Azure publishing. WSLC volumes are separate from Docker volumes, so a first WSLC run needs its own database
+migrations and local identity setup.
+
 On first run:
 
 - The database schema is **not** auto-migrated — apply it once with:
