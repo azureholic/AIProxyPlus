@@ -297,3 +297,34 @@ listed validation are complete.
   attempt timed out checking DCP; the unchanged command succeeded on retry after DCP health was verified.
   Non-vulnerability compiler/analyzer, Testcontainers obsolete-constructor, and optional CLI-bundle warnings remain.
   No frontend dependencies or cloud resources changed.
+
+## PR #49 deployment review follow-up (2026-11-13)
+
+- [x] **T17-804 — Preserve browser sessions and safe credential rollout**
+  Share Data Protection metadata through PostgreSQL and protect key material through the configured secret store.
+  Keep the fixed application name across replicas/revisions and retain old key references. Make OIDC bootstrap
+  idempotent and rotation append-only; document explicit retirement after replacement sign-in, old-replica shutdown,
+  and callback drain. Preserve optional local PostgreSQL parameters and existing user-secret overrides, remove
+  retirement defaults masking the legacy section, and document `azd env new` for fresh checkouts.
+  **Depends on:** T17-205, T17-303, T17-502, T17-601, T17-307.
+  **Traceability:** REQ-1701.6, REQ-1703.8, REQ-1705, REQ-1706.11.
+  **Validation:** `dotnet restore AIProxyPlus.sln --configfile NuGet.config` and
+  `dotnet build src\AIProxyPlus.AppHost\AIProxyPlus.AppHost.csproj --no-restore` passed.
+  `dotnet test AIProxyPlus.sln --no-build --no-restore --filter "FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Persistence&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.VaultSecretResolverTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.ConsumerAuthenticatorEndToEndTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.PostgresEndpointCredentialInvalidationTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Usage.UsageRecordBackgroundWriterTests"`
+  passed 491 tests, including 9 architecture tests, 4 new key-ring tests, and both retirement compatibility cases.
+  An initial run hit the existing 300 ms circuit-breaker timing assumption under concurrent startup load; its
+  isolated rerun and the full filtered rerun passed without modifying the test.
+  `pwsh -NoProfile -File tests\infra\postprovision.Tests.ps1` passed all five credential lifecycle scenarios.
+  `az bicep build --file infra\main.bicep --stdout` passed. Aspire manifest generation retained required publish
+  credentials and excluded local Vault/Keycloak. `dotnet ef migrations has-pending-model-changes --project
+  src\AIProxyPlus.Infrastructure --no-build` reported no pending changes; the migration SQL was generated.
+  The solution transitive vulnerability scan remained clean after aligning Data Protection/EF dependencies at
+  10.0.14. WSLC startup returned HTTP 200 for API live/ready; an OIDC challenge returned 302 and the migrated
+  PostgreSQL ring contained a secret-store reference with no plaintext master key. The existing volume initially
+  rejected its configured password; explicit operator-approved local password synchronization preserved all data
+  and restored authentication. The temporary authentication-rule change was restored and password login verified.
+  After replacing the API process, readiness remained 200 and another OIDC challenge returned 302 using the
+  same single persisted key. The final vulnerability audit used the installed .NET 10.0.403 CLI explicitly because
+  a concurrently installed .NET 11 preview had an incomplete workload manifest.
+  Docker-API-dependent fixtures remain excluded because WSLC does not expose that API. No Azure rollout or real
+  Entra sign-in was performed; replacement-revision sign-in/drain remains an operator deployment check.

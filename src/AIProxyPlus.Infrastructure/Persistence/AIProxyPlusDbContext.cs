@@ -1,10 +1,13 @@
 using AIProxyPlus.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 
 namespace AIProxyPlus.Infrastructure.Persistence;
 
-public sealed class AIProxyPlusDbContext(DbContextOptions<AIProxyPlusDbContext> options) : DbContext(options)
+public sealed class AIProxyPlusDbContext(DbContextOptions<AIProxyPlusDbContext> options) : DbContext(options), IDataProtectionKeyContext
 {
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+
     public DbSet<Model> Models => Set<Model>();
 
     public DbSet<Endpoint> Endpoints => Set<Endpoint>();

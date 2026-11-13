@@ -12,10 +12,10 @@
     <mxCell id="localApi" value="AIProxyPlus API + React SPA&#10;.NET process, HTTP 8080" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
       <mxGeometry x="270" y="110" width="260" height="65" as="geometry" />
     </mxCell>
-    <mxCell id="localPg" value="PostgreSQL container&#10;persistent volume" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+    <mxCell id="localPg" value="PostgreSQL container&#10;persistent shared key-ring metadata" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
       <mxGeometry x="80" y="280" width="150" height="85" as="geometry" />
     </mxCell>
-    <mxCell id="localVault" value="HashiCorp Vault&#10;KV v2 + vault-data" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+    <mxCell id="localVault" value="HashiCorp Vault&#10;KV v2 + vault-data&#10;Data Protection key material" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
       <mxGeometry x="275" y="280" width="150" height="85" as="geometry" />
     </mxCell>
     <mxCell id="localKeycloak" value="Keycloak&#10;local OIDC provider" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
@@ -46,13 +46,13 @@
     <mxCell id="acaSubnet" value="Container Apps&#10;infrastructure subnet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
       <mxGeometry x="785" y="420" width="160" height="65" as="geometry" />
     </mxCell>
-    <mxCell id="postgres" value="PostgreSQL Flexible Server&#10;private access + TLS" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+    <mxCell id="postgres" value="PostgreSQL Flexible Server&#10;private access + TLS&#10;shared key-ring metadata" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
       <mxGeometry x="995" y="410" width="175" height="85" as="geometry" />
     </mxCell>
     <mxCell id="dns" value="Private DNS zone&#10;delegated PostgreSQL subnet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
       <mxGeometry x="890" y="520" width="180" height="55" as="geometry" />
     </mxCell>
-    <mxCell id="kv" value="Azure Key Vault&#10;RBAC + soft delete + purge protection" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+    <mxCell id="kv" value="Azure Key Vault&#10;RBAC + soft delete + purge protection&#10;Data Protection key material" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
       <mxGeometry x="1240" y="390" width="175" height="90" as="geometry" />
     </mxCell>
     <mxCell id="monitor" value="Application Insights + Log Analytics&#10;Azure Monitor OpenTelemetry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">

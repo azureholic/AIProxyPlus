@@ -52,6 +52,8 @@ configuration when switching environments.
    endpoints SHALL NOT be hardcoded in application code.
 5. The application SHALL keep a single production ingress origin so OIDC cookies, antiforgery, API routes,
    WebSockets, and SPA fallback retain their current semantics.
+6. Local PostgreSQL credentials SHALL be optional, using Aspire defaults when absent and preserving supplied
+   AppHost parameters for existing persistent volumes. Publish mode SHALL require both deployment credentials.
 
 ### REQ-1702 — AZD and Bicep deployment contract
 
@@ -77,6 +79,9 @@ The repository SHALL support a clean deployment from the repository root.
 5. The initial scale SHALL be parameterized with a safe default of one minimum replica and three maximum replicas.
 6. Revisions SHALL use single-revision mode unless a later rollout requirement deliberately changes this.
 7. WebSocket support SHALL remain enabled for Realtime ingress.
+8. Replicas and replacement revisions SHALL share a durable Data Protection ring in PostgreSQL with application
+   name `AIProxyPlus`; secret key material SHALL remain in the configured secret store, referenced immutably from
+   ring metadata. Store failures SHALL not fall back to replica-local keys. Both stores SHALL be backed up together.
 
 ### REQ-1704 — PostgreSQL Flexible Server
 
@@ -140,6 +145,9 @@ The existing application-layer `ISecretResolver` SHALL remain the only secret-st
     idempotent, separately permissioned bootstrap step that writes the returned secret directly to Key Vault without
     exposing it in deployment outputs or logs. The implementation MAY instead add certificate-based confidential
     client authentication if the OIDC composition root is extended and tested for it.
+11. Provisioning SHALL reuse an existing OIDC secret. Explicit rotation SHALL append a credential without deleting
+    old credentials. Retirement SHALL be an operator-owned post-rollout step after new-revision sign-in validation,
+    old-replica shutdown, and draining in-flight authentication; rollback SHALL preserve the previous credential.
 
 ### REQ-1707 — Azure observability
 

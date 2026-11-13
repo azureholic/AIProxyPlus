@@ -1,10 +1,16 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var postgresUserName = builder.AddParameter("postgres-username");
-var postgresPassword = builder.AddParameter("postgres-password", secret: true);
-var postgres = builder.AddAzurePostgresFlexibleServer("postgres")
-    .WithPasswordAuthentication(postgresUserName, postgresPassword)
-    .RunAsContainer(container => container
+var postgresServer = builder.AddAzurePostgresFlexibleServer("postgres")
+    .WithPasswordAuthentication(
+        builder.ExecutionContext.IsPublishMode ||
+        !string.IsNullOrWhiteSpace(builder.Configuration["Parameters:postgres-username"])
+            ? builder.AddParameter("postgres-username")
+            : null,
+        builder.ExecutionContext.IsPublishMode ||
+        !string.IsNullOrWhiteSpace(builder.Configuration["Parameters:postgres-password"])
+            ? builder.AddParameter("postgres-password", secret: true)
+            : null);
+var postgres = postgresServer.RunAsContainer(container => container
         .WithDataVolume()
         .WithLifetime(ContainerLifetime.Persistent))
     .AddDatabase("aiproxyplusdb");

@@ -63,6 +63,9 @@ The AppHost has two explicit execution topologies. Run mode uses local PostgreSQ
 containers. Publish mode emits Azure Container Apps, PostgreSQL Flexible Server, Azure Key Vault, Microsoft Entra
 ID, ACR, private PostgreSQL networking, and Azure Monitor resources; local Vault and Keycloak never enter the
 cloud manifest.
+Local PostgreSQL credentials are optional: Aspire supplies defaults when parameters are absent, while explicitly
+configured AppHost parameters remain supported for existing persistent volumes. Publish mode requires both
+deployment credential parameters; changing local parameters does not change credentials already stored in a volume.
 
 ![Local and Azure deployment topology](diagrams/05-deployment-topology.png)
 
@@ -432,6 +435,18 @@ identity/RBAC controlled. A private endpoint requires a network-integrated deplo
   not durable across a process restart, so an interrupted cleanup can leave an unreachable Vault version for an
   operator to remove; it cannot reactivate or affect request correctness because references are immutable.
   `Vault:Retirement` remains a compatibility fallback for existing deployments during the transition.
+- Data Protection uses a durable PostgreSQL `DataProtectionKeys` ring and the fixed application name `AIProxyPlus`
+  across replicas and revisions. The Infrastructure XML protector stores secret key material only in the selected
+  Vault/Key Vault at immutable `data-protection/{id}` references; database XML contains references and public key
+  metadata only. Both stores must be retained/backed up together, and old key material is not automatically retired.
+  Store/resolve failures propagate; there is no replica-local fallback. This protects session cookies, OIDC
+  state/correlation, and antiforgery across scale-out and revision replacement. Migrating from the old local ring
+  invalidates existing sessions once. The existing migration lock covers creation of the key-ring table.
+- Entra confidential-client bootstrap is idempotent when its Key Vault secret exists. Explicit rotation appends a
+  credential and updates Key Vault, never deleting an old credential during provisioning. Operators retire only
+  superseded AZD-managed key IDs after verifying the replacement revision and an actual sign-in, stopping old
+  replicas, and draining in-flight OIDC authentication (at least the configured remote-authentication timeout).
+  Failed deployments and rollback retain old credentials; secret expiration requires scheduled rotation.
 - **Scope note**: Vault holds secrets the proxy must *present outbound* (endpoint credentials, the admin key hash).
   Inbound **Consumer** API keys (see the domain model in §5 and authentication in §13) are a different concern —
   the proxy only ever needs to *verify* them, never retrieve or replay them — so they are stored as a salted

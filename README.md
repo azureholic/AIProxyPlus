@@ -170,7 +170,11 @@ On first run:
 - `GET /health/live` is always healthy; `GET /health/ready` reports Postgres/Vault reachability individually.
 
 Aspire keeps the Postgres, Vault, and Keycloak containers running across AppHost restarts, and all three use named
-storage volumes. Local Vault uses its file backend, so endpoint credentials survive AppHost, container, and Docker
+storage volumes. Local PostgreSQL credentials are optional: Aspire supplies defaults when
+`Parameters:postgres-username` and `Parameters:postgres-password` are absent. Existing AppHost user-secret values
+remain supported and must match credentials already initialized in a persistent PostgreSQL volume; changing a
+parameter does not change the database role's password. Publish mode still requires both deployment parameters.
+Local Vault uses its file backend, so endpoint credentials survive AppHost, container, and Docker
 restarts. To intentionally reset local Vault, stop the AppHost, remove its Vault container, delete `vault-data`,
 and restart; this removes both Vault data and the local-only unseal key, and existing API-key endpoints must then
 have their secrets set again.
@@ -219,15 +223,17 @@ PostgreSQL networking, Log Analytics, and Application Insights.
 - Permission to set secrets in the provisioned Key Vault. Bicep grants Key Vault Secrets Officer to the AZD
   principal supplied through `AZURE_PRINCIPAL_ID`.
 
-Authenticate and select the checked-in AZD environment:
+Authenticate and create an AZD environment for a fresh checkout (`.azure` environment state is not committed):
 
 ```powershell
 az login
 azd auth login
-azd env select aiproxyplus-dev
+azd env new aiproxyplus-dev
 azd env set AZURE_SUBSCRIPTION_ID "<subscription-id>"
 azd env set AZURE_LOCATION "westeurope"
 ```
+
+For an environment already created on this machine, use `azd env select aiproxyplus-dev` instead of `azd env new`.
 
 The templates default to `Standard_B1ms`, 32 GiB storage, seven-day backup retention, disabled HA, and one-to-three
 Container App replicas. Override the corresponding Bicep parameters for production. To reuse an existing Entra
@@ -242,8 +248,18 @@ azd up
 
 Provisioning uses the stable Microsoft Graph Bicep extension to create the Entra application/service principal.
 Because Graph Bicep cannot create `passwordCredentials`, the `postprovision` hook creates a one-year AZD-managed
-credential, writes it directly to `oidc-client-secret` in Key Vault, and retires the previous AZD-managed
-credential only after the new value is stored. No credential is emitted as a Bicep or AZD output.
+credential only when `oidc-client-secret` is absent from Key Vault, and writes it there directly. Subsequent
+provisioning reuses the existing secret. No credential is emitted as a Bicep or AZD output.
+
+To rotate an existing credential, load the selected environment's non-secret output variables into the shell and
+run `.\infra\hooks\postprovision.ps1 -RotateCredential`, then deploy a replacement revision. Rotation appends a
+credential and never deletes the previous one, including if storing the new value or deploying the revision fails.
+After the replacement revision is ready, explicitly verify an Entra sign-in, confirm all old replicas have stopped,
+and allow at least the OIDC remote-authentication timeout (15 minutes by default) for in-flight logins to drain.
+Only then list the application's credentials with `az ad app credential list --id <client-id>` and delete the
+specific superseded AZD-managed key IDs with `az ad app credential delete --id <client-id> --key-id <old-key-id>`.
+Never delete the current credential or unrelated application credentials. Schedule rotation before the one-year
+expiration; failed rollouts and rollback require retaining the old credential.
 
 ### Verify and operate
 
@@ -264,6 +280,14 @@ container files are ephemeral.
 PostgreSQL is private-only and requires TLS. Startup migrations are serialized with a PostgreSQL advisory lock, so
 multiple replicas cannot execute schema DDL concurrently. The API image runs as the .NET runtime's non-root
 `$APP_UID`; ACR pull and Key Vault access use managed identities rather than registry or service-principal secrets.
+
+Browser sessions, OIDC state, and antiforgery tokens use a shared PostgreSQL `DataProtectionKeys` key ring with the
+fixed application name `AIProxyPlus`. Secret key material is stored only in the configured Vault/Key Vault behind
+immutable `data-protection/*` references, protected at rest by that store; PostgreSQL holds the references and public
+key metadata, not plaintext key material. Back up both stores and retain old key references while cookies or
+in-flight OIDC callbacks can still need them. Migration permissions must create the new table; the runtime role
+needs select/insert access. The first rollout from replica-local keys signs existing browser sessions out once;
+subsequent revision replacements and scale-out share the durable ring.
 
 For an application rollback, activate a prior Container App revision or redeploy the previous commit. Database
 migrations are forward-only; take a PostgreSQL backup before a release that changes schema. To remove an

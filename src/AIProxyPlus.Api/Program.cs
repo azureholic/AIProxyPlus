@@ -24,6 +24,8 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
@@ -164,6 +166,11 @@ switch (secretStoreOptions.Provider)
 }
 
 builder.Services.AddMemoryCache();
+builder.Services.AddDataProtection()
+    .SetApplicationName("AIProxyPlus")
+    .PersistKeysToDbContext<AIProxyPlusDbContext>();
+builder.Services.AddOptions<KeyManagementOptions>().Configure<ISecretResolver>((options, secrets) =>
+    options.XmlEncryptor = new SecretStoreXmlEncryptor(secrets));
 builder.Services.AddSingleton<ApiKeyCredentialProvider>();
 builder.Services.AddSingleton<IEndpointCredentialCache>(services => services.GetRequiredService<ApiKeyCredentialProvider>());
 var runtimeDatabaseConnectionString = builder.Configuration.GetConnectionString("aiproxyplusdb");
