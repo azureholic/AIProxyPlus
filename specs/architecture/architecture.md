@@ -760,7 +760,9 @@ identity/RBAC controlled. A private endpoint requires a network-integrated deplo
   PostgreSQL has no public endpoint and is reached through delegated subnet/private DNS with TLS required.
   ACR admin credentials are disabled; image pull and Key Vault access use narrowly scoped managed identities.
   PostgreSQL startup migrations are serialized with a PostgreSQL advisory lock so replicas cannot run DDL
-  concurrently. Container Apps uses a startup probe on `/health/live` with a ten-minute budget (60 failures at
+  concurrently. Lock acquisition has an explicit ten-minute command timeout; the previous command timeout is
+  restored before running migrations and releasing the lock, including on acquisition failure.
+  Container Apps uses a startup probe on `/health/live` with a ten-minute budget (60 failures at
   ten-second intervals) before liveness takes over, covering startup migrations and migration-lock waits.
   Published PostgreSQL connection strings quote credential values, double embedded quotes, and explicitly
   require TLS with `SSL Mode=Require`.

@@ -301,7 +301,9 @@ multiple replicas cannot execute schema DDL concurrently. The API image runs as 
 `$APP_UID`; ACR pull and Key Vault access use managed identities rather than registry or service-principal secrets.
 Both published PostgreSQL connection strings quote credential values (including embedded quotes) and set
 `SSL Mode=Require`. A startup probe allows ten minutes for initialization and migration-lock waits before liveness
-takes over. Investigate migrations exceeding that budget before deploying; the probe does not hide startup failures.
+takes over. Lock acquisition explicitly allows up to ten minutes rather than the default 30-second SQL command
+timeout; migrations, lock release, and runtime queries retain their normal command timeouts.
+Investigate migrations exceeding that budget before deploying; the probe does not hide startup failures.
 
 Browser sessions, OIDC state, and antiforgery tokens use a shared PostgreSQL `DataProtectionKeys` key ring with the
 fixed application name `AIProxyPlus`. Secret key material is stored only in the configured Vault/Key Vault behind

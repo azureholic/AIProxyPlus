@@ -439,14 +439,13 @@ if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
     if (string.IsNullOrWhiteSpace(migrationsConnectionString))
     {
         await using var scope = app.Services.CreateAsyncScope();
-        await ApplyMigrationsWithLockAsync(
-            scope.ServiceProvider.GetRequiredService<AIProxyPlusDbContext>());
+        await scope.ServiceProvider.GetRequiredService<AIProxyPlusDbContext>().MigrateWithLockAsync();
     }
     else
     {
         var migrationsOptions = new DbContextOptionsBuilder<AIProxyPlusDbContext>().UseNpgsql(migrationsConnectionString).Options;
         await using var migrationsContext = new AIProxyPlusDbContext(migrationsOptions);
-        await ApplyMigrationsWithLockAsync(migrationsContext);
+        await migrationsContext.MigrateWithLockAsync();
     }
 }
 
@@ -962,27 +961,6 @@ else
 }
 
 app.Run();
-
-static async Task ApplyMigrationsWithLockAsync(AIProxyPlusDbContext context)
-{
-    const long migrationLockId = 0x414950524F585950;
-    await context.Database.OpenConnectionAsync();
-    var lockAcquired = false;
-    try
-    {
-        await context.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_lock({migrationLockId})");
-        lockAcquired = true;
-        await context.Database.MigrateAsync();
-    }
-    finally
-    {
-        if (lockAcquired)
-        {
-            await context.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_unlock({migrationLockId})");
-        }
-        await context.Database.CloseConnectionAsync();
-    }
-}
 
 static async Task RouteOrFailAsync(
     HttpContext httpContext, ProxyRoutingService router, OperationType operationType, CancellationToken cancellationToken)

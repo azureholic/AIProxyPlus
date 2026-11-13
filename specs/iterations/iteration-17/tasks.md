@@ -374,3 +374,18 @@ listed validation are complete.
   **Traceability:** REQ-1709.
   **Validation:** Documentation-only prerequisite correction checked against the existing `pwsh` AZD hooks and
   their SHA256/cryptographic random generation calls; no runtime behavior changed.
+
+- [x] **T17-808 — Align migration-lock acquisition timeout with the startup allowance**
+  Give PostgreSQL advisory-lock acquisition an explicit ten-minute command timeout and restore the original
+  nullable/custom timeout in a `finally` block before migrations or lock release. Keep both startup credential
+  paths on the same Infrastructure helper and preserve lock ownership, failure propagation, and runtime timeouts.
+  **Depends on:** T17-806.
+  **Traceability:** REQ-1706.3, REQ-1706.12.
+  **Validation:**
+  `dotnet test tests\AIProxyPlus.Infrastructure.Tests\AIProxyPlus.Infrastructure.Tests.csproj --no-restore -p:RuntimeFrameworkVersion=10.0.14 --filter FullyQualifiedName~DatabaseMigrationExtensionsTests --verbosity minimal`
+  passed all 6 cases, inspecting generated Npgsql command timeouts and checking restoration on successful
+  acquisition, failed acquisition, and failed migration, including releasing only an acquired lock.
+  `dotnet test AIProxyPlus.sln --no-restore -p:RuntimeFrameworkVersion=10.0.14 --filter "(FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Persistence&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.VaultSecretResolverTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.ConsumerAuthenticatorEndToEndTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Secrets.PostgresEndpointCredentialInvalidationTests&FullyQualifiedName!~AIProxyPlus.Infrastructure.Tests.Usage.UsageRecordBackgroundWriterTests)|FullyQualifiedName~PostgresDeploymentConnectionStringTests|FullyQualifiedName~DatabaseMigrationExtensionsTests" --verbosity minimal`
+  passed 503 tests, including 9 architecture tests and the 6 new migration-lock cases. Docker-API fixtures remain
+  excluded because the local `docker` command targets WSLC rather than a Docker API; no shared container services
+  were started. Existing unrelated nullable, socket-read, and Testcontainers deprecation warnings remain.
